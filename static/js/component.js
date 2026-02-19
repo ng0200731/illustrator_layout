@@ -493,7 +493,19 @@ function renderCanvas() {
         canvas.height = containerH;
     }
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Fill canvas background with grey
+    ctx.fillStyle = '#cccccc';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw white PDF page background with black border
+    if (pdfWidth > 0 && pdfHeight > 0) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0, 0, canvas.width, canvas.height);
+    }
 
     if (components.length === 0) return;
 
