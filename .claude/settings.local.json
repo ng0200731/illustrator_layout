@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py:*)",
+      "Bash(if not exist \".tmp\" mkdir .tmp)"
+    ]
+  }
+}

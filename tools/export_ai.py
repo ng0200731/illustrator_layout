@@ -17,6 +17,7 @@ def export_ai(data, outlined=False):
     """
     label = data.get('label', {})
     components = data.get('components', [])
+    separate_invisible = data.get('separateInvisible', False)
 
     page_w = label.get('width', 100) * mm
     page_h = label.get('height', 100) * mm
@@ -28,43 +29,66 @@ def export_ai(data, outlined=False):
     # Create PDF canvas (AI can open PDFs)
     c = canvas.Canvas(filepath, pagesize=(page_w, page_h))
 
-    # Separate visible and hidden paths
-    visible_paths = []
-    hidden_paths = []
-    text_components = []
+    if separate_invisible:
+        # Separate visible and hidden paths
+        visible_paths = []
+        hidden_paths = []
+        text_components = []
 
-    for comp in components:
-        comp_type = comp.get('type')
-        visible = comp.get('visible', True)
+        for comp in components:
+            comp_type = comp.get('type')
+            visible = comp.get('visible', True)
 
-        if comp_type == 'pdfpath':
-            if visible:
-                visible_paths.append(comp)
-            else:
-                hidden_paths.append(comp)
-        elif comp_type == 'text':
-            text_components.append(comp)
+            if comp_type == 'pdfpath':
+                if visible:
+                    visible_paths.append(comp)
+                else:
+                    hidden_paths.append(comp)
+            elif comp_type == 'text':
+                text_components.append(comp)
 
-    # Draw hidden paths first (bottom of Layers panel in Illustrator)
-    for comp in hidden_paths:
-        _draw_pdfpath(c, comp, page_h)
+        # Debug: Print counts
+        print(f"DEBUG: hidden_paths={len(hidden_paths)}, visible_paths={len(visible_paths)}")
 
-    # Draw red separator line (helps identify hidden/visible boundary)
-    if len(hidden_paths) > 0 and len(visible_paths) > 0:
-        c.setStrokeColorRGB(1, 0, 0)  # Red
-        c.setLineWidth(0.1)
-        c.line(0, page_h / 2, 0.01 * mm, page_h / 2)
+        # Draw hidden paths first (bottom of Layers panel in Illustrator)
+        for comp in hidden_paths:
+            _draw_pdfpath(c, comp, page_h)
 
-    # Draw visible paths (top of Layers panel in Illustrator)
-    for comp in visible_paths:
-        _draw_pdfpath(c, comp, page_h)
-
-    # Draw text components
-    for comp in text_components:
-        if outlined:
-            _draw_text_outlined(c, comp, page_h)
+        # Draw red separator line (helps identify hidden/visible boundary)
+        if len(hidden_paths) > 0 and len(visible_paths) > 0:
+            print("DEBUG: Drawing red separator line")
+            # Draw a 1px vertical red line OUTSIDE the artboard (to the right)
+            p = c.beginPath()
+            p.moveTo(page_w + 5, 0)  # Start 5mm to the right of artboard, at top
+            p.lineTo(page_w + 5, page_h)  # End 5mm to the right of artboard, at bottom
+            c.setStrokeColorRGB(1, 0, 0)  # Pure red
+            c.setLineWidth(1)  # 1 point thick
+            c.drawPath(p, fill=0, stroke=1)  # No fill, stroke only
         else:
-            _draw_text(c, comp, page_h)
+            print(f"DEBUG: Skipping red line - hidden={len(hidden_paths)}, visible={len(visible_paths)}")
+
+        # Draw visible paths (top of Layers panel in Illustrator)
+        for comp in visible_paths:
+            _draw_pdfpath(c, comp, page_h)
+
+        # Draw text components
+        for comp in text_components:
+            if outlined:
+                _draw_text_outlined(c, comp, page_h)
+            else:
+                _draw_text(c, comp, page_h)
+    else:
+        # Normal export: draw all components (including invisible ones)
+        for comp in components:
+            comp_type = comp.get('type')
+
+            if comp_type == 'pdfpath':
+                _draw_pdfpath(c, comp, page_h)
+            elif comp_type == 'text':
+                if outlined:
+                    _draw_text_outlined(c, comp, page_h)
+                else:
+                    _draw_text(c, comp, page_h)
 
     c.save()
     return filepath

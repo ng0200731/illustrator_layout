@@ -34,11 +34,14 @@ def export_ai():
         data = request.get_json()
         outlined = data.get('outlined', False)
 
+        # Debug: Print what we received
+        print(f"DEBUG Flask: outlined={outlined}, separateInvisible={data.get('separateInvisible', False)}")
+
         # Import export tool
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tools'))
         from export_ai import export_ai as generate_ai
 
-        # Generate AI file
+        # Generate AI file (data already contains separateInvisible)
         filepath = generate_ai(data, outlined)
 
         return send_file(filepath, as_attachment=True, download_name='export.ai')

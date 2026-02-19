@@ -79,8 +79,8 @@ function setupButtons() {
     document.getElementById('btn-ungroup').addEventListener('click', ungroupSelected);
     document.getElementById('btn-delete').addEventListener('click', deleteSelected);
     document.getElementById('btn-export-pdf').addEventListener('click', function() { exportFile('pdf'); });
-    document.getElementById('btn-export-ai-editable').addEventListener('click', function() { exportFile('ai', false); });
-    document.getElementById('btn-export-ai-outlined').addEventListener('click', function() { exportFile('ai', true); });
+    document.getElementById('btn-export-ai-editable').addEventListener('click', function() { exportFile('ai-separate', false); });
+    document.getElementById('btn-export-ai-outlined').addEventListener('click', function() { exportFile('ai-separate', true); });
     document.getElementById('btn-fit').addEventListener('click', fitCanvas);
 }
 
@@ -163,6 +163,7 @@ function parsePdfFile(file) {
                     document.getElementById('btn-export-pdf').disabled = false;
                     document.getElementById('btn-export-ai-editable').disabled = false;
                     document.getElementById('btn-export-ai-outlined').disabled = false;
+                    document.getElementById('btn-export-ai-separate').disabled = false;
 
                     // Center the PDF on canvas
                     centerPdfOnCanvas();
@@ -1543,8 +1544,12 @@ function exportFile(type, outlined) {
         })
     };
 
-    if (type === 'ai') {
+    if (type === 'ai' || type === 'ai-separate') {
         data.outlined = outlined || false;
+    }
+
+    if (type === 'ai-separate') {
+        data.separateInvisible = true;
     }
 
     var endpoint = type === 'pdf' ? '/export/pdf' : '/export/ai';
