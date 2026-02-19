@@ -1,30 +1,23 @@
 """Layout model for database operations"""
 from models.database import execute_query, get_db
-import uuid
 import json
 
 class Layout:
     @staticmethod
-    def generate_layout_id():
-        """Generate unique layout ID"""
-        return f"LAY-{uuid.uuid4().hex[:8].upper()}"
-
-    @staticmethod
     def create(name, layout_type, data, customer_id=None):
         """Create a new layout"""
-        layout_id = Layout.generate_layout_id()
         data_json = json.dumps(data) if isinstance(data, (dict, list)) else data
         query = '''
-            INSERT INTO layouts (layout_id, customer_id, name, type, data)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO layouts (customer_id, name, type, data)
+            VALUES (?, ?, ?, ?)
         '''
-        execute_query(query, (layout_id, customer_id, name, layout_type, data_json))
+        layout_id = execute_query(query, (customer_id, name, layout_type, data_json))
         return layout_id
 
     @staticmethod
     def get_by_id(layout_id):
         """Get layout by ID"""
-        query = 'SELECT * FROM layouts WHERE layout_id = ?'
+        query = 'SELECT * FROM layouts WHERE id = ?'
         row = execute_query(query, (layout_id,), fetch_one=True)
         if row:
             layout = dict(row)
@@ -66,12 +59,12 @@ class Layout:
                 data = COALESCE(?, data),
                 customer_id = COALESCE(?, customer_id),
                 updated_at = CURRENT_TIMESTAMP
-            WHERE layout_id = ?
+            WHERE id = ?
         '''
         execute_query(query, (name, data_json, customer_id, layout_id))
 
     @staticmethod
     def delete(layout_id):
         """Delete layout"""
-        query = 'DELETE FROM layouts WHERE layout_id = ?'
+        query = 'DELETE FROM layouts WHERE id = ?'
         execute_query(query, (layout_id,))

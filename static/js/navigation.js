@@ -138,6 +138,15 @@ function loadTabContent(tabId, url) {
             const doc = parser.parseFromString(html, 'text/html');
             const content = doc.querySelector('.tab-pane') || doc.body;
 
+            // Copy attributes from the source tab-pane to our contentPane
+            if (content.hasAttribute) {
+                Array.from(content.attributes).forEach(attr => {
+                    if (attr.name !== 'id' && attr.name !== 'class') {
+                        contentPane.setAttribute(attr.name, attr.value);
+                    }
+                });
+            }
+
             contentPane.innerHTML = content.innerHTML;
 
             // Execute any scripts in the loaded content

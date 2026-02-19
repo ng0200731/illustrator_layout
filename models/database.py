@@ -45,7 +45,6 @@ def init_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS layouts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            layout_id TEXT UNIQUE NOT NULL,
             customer_id TEXT,
             name TEXT NOT NULL,
             type TEXT NOT NULL,

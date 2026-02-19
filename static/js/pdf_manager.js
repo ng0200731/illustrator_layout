@@ -30,6 +30,22 @@ function init() {
     setupCanvasInteraction();
 
     renderCanvas();
+
+    // Check if we should load a layout from data attribute
+    const tabPane = canvas.closest('.tab-pane');
+    console.log('Tab pane found:', tabPane);
+    if (tabPane) {
+        const layoutId = tabPane.getAttribute('data-layout-id');
+        console.log('Layout ID from data attribute:', layoutId);
+        if (layoutId && layoutId.trim() !== '') {
+            console.log('Loading layout:', layoutId);
+            loadLayoutFromDatabase(layoutId);
+        } else {
+            console.log('No layout ID to load');
+        }
+    } else {
+        console.log('No tab pane found');
+    }
 }
 
 function setupDragDrop() {
@@ -1624,41 +1640,119 @@ function exportFile(type, outlined) {
 
 // Save layout to database
 function saveLayoutToDatabase() {
-    const layoutName = prompt('Enter a name for this layout:');
-    if (!layoutName) return;
+    // Show modal and load customers
+    const modal = document.getElementById('save-layout-modal');
+    const customerSelect = document.getElementById('layout-customer');
+    const nameInput = document.getElementById('layout-name');
 
-    const layoutData = {
-        name: layoutName,
-        type: 'pdf',
-        data: {
-            components: components,
-            pdfWidth: pdfWidth,
-            pdfHeight: pdfHeight,
-            scale: scale
-        },
-        customer_id: null // Can be extended later to associate with customer
-    };
+    // Clear previous values
+    customerSelect.innerHTML = '<option value="">Loading customers...</option>';
+    nameInput.value = '';
 
-    fetch('/layout/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(layoutData)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            alert('Layout saved successfully! ID: ' + data.layout_id);
-        } else {
-            alert('Error saving layout: ' + data.error);
+    // Show modal
+    modal.classList.add('active');
+
+    // Load customers
+    fetch('/customer/list')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.customers) {
+                customerSelect.innerHTML = '<option value="">Select a customer...</option>';
+                data.customers.forEach(customer => {
+                    const option = document.createElement('option');
+                    option.value = customer.customer_id;
+                    option.textContent = customer.company_name;
+                    customerSelect.appendChild(option);
+                });
+            } else {
+                customerSelect.innerHTML = '<option value="">Error loading customers</option>';
+                showLayoutMessage('Error loading customers', 'error');
+            }
+        })
+        .catch(error => {
+            customerSelect.innerHTML = '<option value="">Error loading customers</option>';
+            showLayoutMessage('Error loading customers: ' + error, 'error');
+        });
+
+    // Handle form submission
+    const form = document.getElementById('save-layout-form');
+    form.onsubmit = function(e) {
+        e.preventDefault();
+
+        const customerId = customerSelect.value;
+        const layoutName = nameInput.value.trim();
+
+        if (!customerId) {
+            showLayoutMessage('Please select a customer', 'error');
+            return;
         }
-    })
-    .catch(error => {
-        alert('Error saving layout: ' + error);
-    });
+
+        if (!layoutName) {
+            showLayoutMessage('Please enter a layout name', 'error');
+            return;
+        }
+
+        const layoutData = {
+            name: layoutName,
+            type: 'pdf',
+            data: {
+                components: components,
+                pdfWidth: pdfWidth,
+                pdfHeight: pdfHeight,
+                scale: scale
+            },
+            customer_id: customerId
+        };
+
+        fetch('/layout/save', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(layoutData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showLayoutMessage('Layout saved successfully! ID: ' + data.id, 'success');
+                closeSaveModal();
+            } else {
+                showLayoutMessage('Error saving layout: ' + data.error, 'error');
+            }
+        })
+        .catch(error => {
+            showLayoutMessage('Error saving layout: ' + error, 'error');
+        });
+    };
+}
+
+// Close save modal
+function closeSaveModal() {
+    const modal = document.getElementById('save-layout-modal');
+    modal.classList.remove('active');
+}
+
+// Show layout message
+function showLayoutMessage(text, type) {
+    // Remove existing message if any
+    const existingMessage = document.querySelector('.layout-message');
+    if (existingMessage) {
+        existingMessage.remove();
+    }
+
+    // Create new message
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'layout-message ' + type;
+    messageDiv.textContent = text;
+    document.body.appendChild(messageDiv);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        messageDiv.remove();
+    }, 5000);
 }
 
 // Load layout from database
 function loadLayoutFromDatabase(layoutId) {
+    console.log('Loading layout from database:', layoutId);
     fetch('/layout/' + layoutId)
         .then(response => response.json())
         .then(data => {
@@ -1666,43 +1760,36 @@ function loadLayoutFromDatabase(layoutId) {
                 const layout = data.layout;
                 const layoutData = layout.data;
 
+                console.log('Layout data loaded:', layoutData);
+
                 // Restore layout state
                 components = layoutData.components || [];
                 pdfWidth = layoutData.pdfWidth || 0;
                 pdfHeight = layoutData.pdfHeight || 0;
                 scale = layoutData.scale || 1;
 
-                // Update canvas
-                canvas.width = pdfWidth * scale;
-                canvas.height = pdfHeight * scale;
-
                 // Clear history and add initial state
                 historyStack = [];
                 historyIndex = -1;
-                saveHistory();
+                captureState();
 
                 // Render
                 renderCanvas();
                 renderComponentList();
-                updateColorPalette();
-                updateButtons();
+                renderColorPalette();
+                updateActionButtons();
 
-                // Hide empty state
+                // Hide empty state and enable export buttons
                 document.getElementById('empty-state').style.display = 'none';
+                document.getElementById('btn-export-pdf').disabled = false;
+                document.getElementById('btn-export-ai-editable').disabled = false;
+                document.getElementById('btn-export-ai-outlined').disabled = false;
             } else {
                 alert('Error loading layout: ' + data.error);
             }
         })
         .catch(error => {
+            console.error('Error loading layout:', error);
             alert('Error loading layout: ' + error);
         });
 }
-
-// Check if we need to load a layout on page load
-document.addEventListener('DOMContentLoaded', function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const loadLayoutId = urlParams.get('load');
-    if (loadLayoutId) {
-        loadLayoutFromDatabase(loadLayoutId);
-    }
-});

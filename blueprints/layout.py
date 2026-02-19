@@ -12,7 +12,8 @@ def create_draw_page():
 @layout_bp.route('/create/pdf', methods=['GET'])
 def create_pdf_page():
     """Render PDF manager page"""
-    return render_template('layout/create_pdf.html')
+    layout_id = request.args.get('load', '')
+    return render_template('layout/create_pdf.html', layout_id=layout_id)
 
 @layout_bp.route('/save', methods=['POST'])
 def save_layout():
@@ -25,7 +26,7 @@ def save_layout():
             data=data.get('data'),
             customer_id=data.get('customer_id')
         )
-        return jsonify({'success': True, 'layout_id': layout_id}), 201
+        return jsonify({'success': True, 'id': layout_id}), 201
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
@@ -36,9 +37,17 @@ def view_page():
 
 @layout_bp.route('/list', methods=['GET'])
 def list_layouts():
-    """Get all layouts as JSON"""
+    """Get all layouts as JSON with customer information"""
     try:
         layouts = Layout.get_all()
+        # Add customer name for each layout
+        for layout in layouts:
+            if layout.get('customer_id'):
+                from models.customer import Customer
+                customer = Customer.get_by_id(layout['customer_id'])
+                layout['customer_name'] = customer['company_name'] if customer else None
+            else:
+                layout['customer_name'] = None
         return jsonify({'success': True, 'layouts': layouts}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400

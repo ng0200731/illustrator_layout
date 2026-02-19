@@ -26,18 +26,22 @@ function displayLayouts(layouts) {
         return;
     }
 
+    console.log('Displaying layouts:', layouts);
     tbody.innerHTML = layouts.map(layout => {
+        console.log('Layout ID:', layout.id, 'Type:', typeof layout.id);
         const createdDate = new Date(layout.created_at).toLocaleDateString();
+        const customerName = layout.customer_name || '-';
+
         return `
             <tr>
-                <td>${layout.layout_id}</td>
+                <td>${layout.id}</td>
                 <td>${layout.name}</td>
                 <td>${layout.type.toUpperCase()}</td>
-                <td>${layout.customer_id || '-'}</td>
+                <td>${customerName}</td>
                 <td>${createdDate}</td>
                 <td class="actions">
-                    <button onclick="openLayout('${layout.layout_id}')">Open</button>
-                    <button onclick="deleteLayout('${layout.layout_id}')">Delete</button>
+                    <button onclick="openLayout(${layout.id})">Open</button>
+                    <button onclick="deleteLayout(${layout.id})">Delete</button>
                 </td>
             </tr>
         `;
@@ -46,24 +50,9 @@ function displayLayouts(layouts) {
 
 // Open a layout in a new tab
 function openLayout(layoutId) {
-    fetch('/layout/' + layoutId)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                const layout = data.layout;
-                // Open PDF manager tab and load the layout data
-                if (layout.type === 'pdf') {
-                    openTab('Layout: ' + layout.name, '/layout/create/pdf?load=' + layoutId);
-                } else {
-                    alert('Layout type not supported yet: ' + layout.type);
-                }
-            } else {
-                showLayoutMessage('Error loading layout: ' + data.error, 'error');
-            }
-        })
-        .catch(error => {
-            showLayoutMessage('Error: ' + error, 'error');
-        });
+    console.log('Opening layout with ID:', layoutId);
+    // Open PDF manager tab with layout ID in URL
+    openTab('Layout: ' + layoutId, '/layout/create/pdf?load=' + layoutId);
 }
 
 // Delete a layout
