@@ -649,7 +649,7 @@ function selectByColor(targetRgb, toggleVisibility) {
         // Select all paths with this color
         selectedSet = [];
         components.forEach(function(comp, idx) {
-            if (comp.type === 'pdfpath') {
+            if (comp.type === 'pdfpath' && !comp.locked) {
                 var fillMatch = comp.pathData.fill && colorKey(comp.pathData.fill) === targetKey;
                 var strokeMatch = comp.pathData.stroke && colorKey(comp.pathData.stroke) === targetKey;
 
