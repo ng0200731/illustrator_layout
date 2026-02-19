@@ -1,42 +1,87 @@
 <div class="tab-pane">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/customer.css') }}">
+
     <div class="form-container">
-        <h2>Create Customer</h2>
-        <form id="customerForm">
-            <div class="form-group">
-                <label for="company_name">Company Name *</label>
-                <input type="text" id="company_name" name="company_name" required>
-            </div>
+        <!-- Tab Navigation -->
+        <div class="form-tabs">
+            <button class="form-tab active" id="companyTab" onclick="switchFormTab('company')">Company</button>
+            <button class="form-tab" id="memberTab" onclick="switchFormTab('member')" disabled>Member</button>
+        </div>
 
-            <div class="form-group">
-                <label for="email_domain">Email Domain *</label>
-                <input type="text" id="email_domain" name="email_domain" placeholder="example.com" required>
-            </div>
+        <!-- Company Tab Content -->
+        <div class="form-tab-content active" id="companyContent">
+            <div class="form-section">
+                <div class="section-header">
+                    <button type="button" class="btn btn-dummy" onclick="fillDummyCompany()">Dummy Fill</button>
+                </div>
 
-            <div class="form-group">
-                <label for="email">Contact Email</label>
-                <input type="email" id="email" name="email">
-            </div>
+                <div class="form-group">
+                    <label for="company_name">Company Name *</label>
+                    <input type="text" id="company_name" name="company_name" required>
+                </div>
 
-            <div class="form-group">
-                <label for="phone">Phone</label>
-                <input type="tel" id="phone" name="phone">
-            </div>
+                <div class="form-group">
+                    <label for="email_domain">Email Domain *</label>
+                    <input type="text" id="email_domain" name="email_domain" placeholder="example.com" required>
+                </div>
 
-            <div class="form-group">
-                <label for="address">Address</label>
-                <textarea id="address" name="address"></textarea>
-            </div>
+                <div class="form-group">
+                    <label for="company_type">Type *</label>
+                    <select id="company_type" name="company_type" required>
+                        <option value="">Select type...</option>
+                        <option value="buyer">Buyer</option>
+                        <option value="agent">Agent</option>
+                        <option value="factory">Factory</option>
+                    </select>
+                </div>
 
-            <div class="form-group">
-                <label for="notes">Notes</label>
-                <textarea id="notes" name="notes"></textarea>
+                <div class="form-group">
+                    <button type="button" class="btn btn-primary" onclick="saveCompany()">Save & Continue</button>
+                    <button type="button" class="btn" onclick="resetCompanyForm()">Reset</button>
+                </div>
             </div>
+        </div>
 
-            <div class="form-group">
-                <button type="submit" class="btn btn-primary">Create Customer</button>
-                <button type="reset" class="btn">Reset</button>
+        <!-- Member Tab Content -->
+        <div class="form-tab-content" id="memberContent">
+            <div class="form-section">
+                <!-- Member List -->
+                <div id="memberList" class="member-list"></div>
+
+                <!-- Add Member Form -->
+                <div class="form-group">
+                    <label for="member_name">Name</label>
+                    <input type="text" id="member_name" name="member_name">
+                </div>
+
+                <div class="form-group">
+                    <label for="member_title">Title</label>
+                    <input type="text" id="member_title" name="member_title" placeholder="e.g., Manager, Director">
+                </div>
+
+                <div class="form-group">
+                    <label for="member_email_prefix">Email Prefix</label>
+                    <div class="email-input-group">
+                        <input type="text" id="member_email_prefix" name="member_email_prefix" placeholder="john.doe">
+                        <span class="email-separator">@</span>
+                        <span class="email-domain-display" id="email_domain_display">example.com</span>
+                    </div>
+                    <small>Full email: <span id="full_email_preview">-</span></small>
+                </div>
+
+                <div class="form-group">
+                    <label for="member_tel">Tel</label>
+                    <input type="tel" id="member_tel" name="member_tel">
+                </div>
+
+                <div class="form-group">
+                    <button type="button" class="btn btn-dummy" onclick="fillDummyMember()">Dummy Fill</button>
+                    <button type="button" class="btn btn-primary" onclick="addMember()">Add Member</button>
+                    <button type="button" class="btn" onclick="resetMemberForm()">Reset</button>
+                    <button type="button" class="btn" onclick="finishAndNew()">Finish & New Customer</button>
+                </div>
             </div>
-        </form>
+        </div>
 
         <div id="message" style="display: none;"></div>
     </div>

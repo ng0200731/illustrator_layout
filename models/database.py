@@ -17,12 +17,27 @@ def init_db():
             customer_id TEXT UNIQUE NOT NULL,
             company_name TEXT NOT NULL,
             email_domain TEXT NOT NULL,
-            email TEXT,
-            phone TEXT,
+            company_type TEXT,
             address TEXT,
             notes TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
+    # Create members table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id TEXT UNIQUE NOT NULL,
+            customer_id TEXT NOT NULL,
+            name TEXT,
+            title TEXT,
+            email TEXT,
+            phone TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE CASCADE
         )
     ''')
 

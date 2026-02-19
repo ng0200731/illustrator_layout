@@ -1,6 +1,7 @@
 """Customer blueprint for customer management routes"""
 from flask import Blueprint, render_template, request, jsonify
 from models.customer import Customer
+from models.member import Member
 
 customer_bp = Blueprint('customer', __name__, url_prefix='/customer')
 
@@ -17,8 +18,7 @@ def create_customer():
         customer_id = Customer.create(
             company_name=data.get('company_name'),
             email_domain=data.get('email_domain'),
-            email=data.get('email'),
-            phone=data.get('phone'),
+            company_type=data.get('company_type'),
             address=data.get('address'),
             notes=data.get('notes')
         )
@@ -36,6 +36,11 @@ def list_customers():
     """Get all customers as JSON"""
     try:
         customers = Customer.get_all()
+        # Add member count for each customer
+        for customer in customers:
+            members = Member.get_by_customer(customer['customer_id'])
+            customer['member_count'] = len(members)
+            customer['members'] = members
         return jsonify({'success': True, 'customers': customers}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
@@ -46,6 +51,9 @@ def get_customer(customer_id):
     try:
         customer = Customer.get_by_id(customer_id)
         if customer:
+            # Add members to customer data
+            members = Member.get_by_customer(customer_id)
+            customer['members'] = members
             return jsonify({'success': True, 'customer': customer}), 200
         else:
             return jsonify({'success': False, 'error': 'Customer not found'}), 404
@@ -61,8 +69,6 @@ def update_customer(customer_id):
             customer_id=customer_id,
             company_name=data.get('company_name'),
             email_domain=data.get('email_domain'),
-            email=data.get('email'),
-            phone=data.get('phone'),
             address=data.get('address'),
             notes=data.get('notes')
         )
@@ -75,6 +81,57 @@ def delete_customer(customer_id):
     """Delete customer"""
     try:
         Customer.delete(customer_id)
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+# Member endpoints
+@customer_bp.route('/<customer_id>/members', methods=['POST'])
+def add_member(customer_id):
+    """Add a member to a customer"""
+    try:
+        data = request.get_json()
+        member_id = Member.create(
+            customer_id=customer_id,
+            name=data.get('name'),
+            title=data.get('title'),
+            email=data.get('email'),
+            phone=data.get('phone')
+        )
+        return jsonify({'success': True, 'member_id': member_id}), 201
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@customer_bp.route('/<customer_id>/members', methods=['GET'])
+def get_members(customer_id):
+    """Get all members for a customer"""
+    try:
+        members = Member.get_by_customer(customer_id)
+        return jsonify({'success': True, 'members': members}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@customer_bp.route('/members/<member_id>', methods=['PUT'])
+def update_member(member_id):
+    """Update a member"""
+    try:
+        data = request.get_json()
+        Member.update(
+            member_id=member_id,
+            name=data.get('name'),
+            title=data.get('title'),
+            email=data.get('email'),
+            phone=data.get('phone')
+        )
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+@customer_bp.route('/members/<member_id>', methods=['DELETE'])
+def delete_member(member_id):
+    """Delete a member"""
+    try:
+        Member.delete(member_id)
         return jsonify({'success': True}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400

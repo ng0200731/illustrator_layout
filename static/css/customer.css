@@ -1,22 +1,542 @@
 /* Customer module specific styles */
 
-.form-container h2,
-.table-container h2 {
-    margin-bottom: 20px;
-    font-size: 24px;
-    font-weight: 600;
+.form-container {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 40px 20px;
 }
 
-#customerForm .form-group:last-child {
-    margin-top: 30px;
+.form-container h2,
+.table-container h2 {
+    margin-bottom: 50px;
+    font-size: 28px;
+    font-weight: 700;
+    text-align: center;
+    letter-spacing: -0.5px;
+}
+
+/* Form Tabs */
+.form-tabs {
     display: flex;
-    gap: 10px;
+    gap: 8px;
+    margin-bottom: 40px;
+    background: #f5f5f5;
+    padding: 6px;
+    border-radius: 8px;
+}
+
+.form-tab {
+    flex: 1;
+    padding: 12px 20px;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.2s;
+    color: #666;
+}
+
+.form-tab:hover:not(:disabled) {
+    background: #e8e8e8;
+    color: #333;
+}
+
+.form-tab.active {
+    background: black;
+    color: white;
+}
+
+.form-tab:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.form-tab-content {
+    display: none !important;
+}
+
+.form-tab-content.active {
+    display: block !important;
+}
+
+.form-section {
+    padding: 0;
+    border: none;
+    background: white;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 35px;
+}
+
+.section-header h3 {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #999;
+}
+
+.btn-dummy {
+    font-size: 11px;
+    padding: 6px 14px;
+    font-weight: 600;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.btn-dummy:hover {
+    background: #f5f5f5;
+    border-color: #999;
+}
+
+.form-group {
+    margin-bottom: 28px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    color: #333;
+    letter-spacing: 0.3px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="tel"],
+.form-group select {
+    width: 100%;
+    padding: 14px 16px;
+    border: 1.5px solid #ddd;
+    border-radius: 6px;
+    background: white;
+    font-family: inherit;
+    font-size: 15px;
+    transition: all 0.2s;
+}
+
+.form-group input[type="text"]:focus,
+.form-group input[type="tel"]:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: black;
+    box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.05);
+}
+
+.form-group input[type="text"]::placeholder,
+.form-group input[type="tel"]::placeholder {
+    color: #aaa;
+}
+
+.email-input-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.email-input-group input {
+    flex: 0 0 auto;
+    width: 280px;
+}
+
+.email-separator {
+    font-weight: 600;
+    font-size: 18px;
+    color: #999;
+}
+
+.email-domain-display {
+    color: #666;
+    font-style: normal;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.form-group small {
+    display: block;
+    margin-top: 8px;
+    color: #999;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.form-group select {
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%23666' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    padding-right: 45px;
+}
+
+.form-section > .form-group:last-child {
+    margin-top: 50px;
+    padding-top: 0;
+    border-top: none;
+    display: flex;
+    gap: 12px;
+    justify-content: flex-start;
+}
+
+.form-section > .form-group:last-child .btn {
+    min-width: 140px;
+    padding: 14px 28px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 6px;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+}
+
+.form-section > .form-group:last-child .btn-primary {
+    background: black;
+    color: white;
+    border: 2px solid black;
+}
+
+.form-section > .form-group:last-child .btn-primary:hover {
+    background: #333;
+    border-color: #333;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.form-section > .form-group:last-child .btn:not(.btn-primary) {
+    background: white;
+    color: #666;
+    border: 2px solid #ddd;
+}
+
+.form-section > .form-group:last-child .btn:not(.btn-primary):hover {
+    background: #f5f5f5;
+    border-color: #999;
+    color: #333;
 }
 
 #customerTable {
     margin-top: 20px;
+    width: 100%;
+    border-collapse: separate !important;
+    border-spacing: 0;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: none !important;
+}
+
+#customerTable thead {
+    background: #f8f8f8;
+}
+
+#customerTable thead th {
+    padding: 16px 20px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #666;
+    border-bottom: 2px solid #e5e5e5 !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-top: none !important;
 }
 
 #customerTable tbody tr {
     cursor: pointer;
+    transition: background 0.2s;
+    border-bottom: 1px solid #f0f0f0 !important;
+    border-left: none !important;
+    border-right: none !important;
+    border-top: none !important;
+}
+
+#customerTable tbody tr:hover {
+    background: #f9f9f9;
+}
+
+#customerTable tbody tr:last-child {
+    border-bottom: none !important;
+}
+
+#customerTable tbody td {
+    padding: 18px 20px;
+    font-size: 14px;
+    color: #333;
+    border: none !important;
+}
+
+#customerTable tbody td:first-child {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #666;
+}
+
+#customerTable .actions {
+    display: flex;
+    gap: 8px;
+}
+
+#customerTable .actions button {
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #ddd;
+    background: white;
+    color: #666;
+}
+
+#customerTable .actions button:hover {
+    background: #f5f5f5;
+    border-color: #999;
+    color: #333;
+}
+
+#customerTable .actions button:first-child {
+    border-color: black;
+    color: black;
+}
+
+#customerTable .actions button:first-child:hover {
+    background: black;
+    color: white;
+}
+
+#customerTable .actions button:last-child {
+    border-color: #d32f2f;
+    color: #d32f2f;
+}
+
+#customerTable .actions button:last-child:hover {
+    background: #d32f2f;
+    color: white;
+}
+
+.table-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 40px 20px;
+}
+
+/* Expandable row styling */
+.customer-row {
+    cursor: pointer;
+}
+
+.customer-row:hover {
+    background: #f9f9f9 !important;
+}
+
+.member-details-row {
+    background: #fafafa !important;
+}
+
+.member-details-row:hover {
+    background: #fafafa !important;
+}
+
+.member-details-container {
+    padding: 20px;
+    background: white;
+    border-radius: 6px;
+    margin: 10px;
+}
+
+.member-details-container h4 {
+    margin: 0 0 16px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #333;
+}
+
+.member-details-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.member-detail-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 18px;
+    background: #f9f9f9;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+.member-detail-card:hover {
+    background: #f5f5f5;
+    border-color: #ddd;
+}
+
+.member-detail-info {
+    flex: 1;
+}
+
+.member-detail-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 6px;
+}
+
+.member-detail-meta {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.member-detail-title,
+.member-detail-email,
+.member-detail-phone {
+    font-size: 13px;
+    color: #666;
+}
+
+.btn-delete-member-small {
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #d32f2f;
+    background: white;
+    color: #d32f2f;
+}
+
+.btn-delete-member-small:hover {
+    background: #d32f2f;
+    color: white;
+}
+
+/* Member list styling */
+.member-list {
+    margin-bottom: 30px;
+}
+
+.member-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: #f9f9f9;
+    border: 1px solid #e5e5e5;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    transition: all 0.2s;
+}
+
+.member-card:hover {
+    background: #f5f5f5;
+    border-color: #ddd;
+}
+
+.member-info {
+    flex: 1;
+}
+
+.member-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 6px;
+}
+
+.member-details {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.member-title,
+.member-email,
+.member-phone {
+    font-size: 13px;
+    color: #666;
+}
+
+.member-title::before {
+    content: "📋 ";
+}
+
+.member-email::before {
+    content: "✉️ ";
+}
+
+.member-phone::before {
+    content: "📞 ";
+}
+
+.btn-delete-member {
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid #d32f2f;
+    background: white;
+    color: #d32f2f;
+}
+
+.btn-delete-member:hover {
+    background: #d32f2f;
+    color: white;
+}
+
+/* Message styling */
+#message {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 16px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(400px);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+#message.success {
+    background: #000;
+    color: #fff;
+    border: 2px solid #000;
+}
+
+#message.error {
+    background: #fff;
+    color: #d32f2f;
+    border: 2px solid #d32f2f;
 }

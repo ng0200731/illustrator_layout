@@ -111,6 +111,11 @@ function setupCanvasInteraction() {
     document.addEventListener('mouseup', onCanvasMouseUp);
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
+
+    // Handle window resize
+    window.addEventListener('resize', function() {
+        renderCanvas();
+    });
 }
 
 function parsePdfFile(file) {
@@ -482,16 +487,24 @@ function renderCanvas() {
     var containerH = container.clientHeight;
 
     if (pdfWidth > 0 && pdfHeight > 0) {
-        scale = Math.min(containerW / pdfWidth, containerH / pdfHeight, 6) * pan.zoom;
+        // Add padding to prevent canvas from touching edges
+        var padding = 40;
+        var availableW = containerW - padding * 2;
+        var availableH = containerH - padding * 2;
+
+        // Calculate scale to fit PDF in available space
+        var fitScale = Math.min(availableW / pdfWidth, availableH / pdfHeight, 6);
+        scale = fitScale * pan.zoom;
 
         canvas.width = pdfWidth * scale;
         canvas.height = pdfHeight * scale;
 
-        canvas.style.left = pan.x + 'px';
-        canvas.style.top = pan.y + 'px';
+        // Apply pan transform
+        canvas.style.transform = 'translate(' + pan.x + 'px, ' + pan.y + 'px)';
     } else {
         canvas.width = containerW;
         canvas.height = containerH;
+        canvas.style.transform = 'none';
     }
 
     // Fill canvas background with grey
@@ -1459,16 +1472,21 @@ function centerPdfOnCanvas() {
     var containerH = container.clientHeight;
 
     if (pdfWidth > 0 && pdfHeight > 0) {
-        // Calculate scale to fit PDF in container
-        var fitScale = Math.min(containerW / pdfWidth, containerH / pdfHeight, 6);
+        // Add padding to prevent canvas from touching edges
+        var padding = 40;
+        var availableW = containerW - padding * 2;
+        var availableH = containerH - padding * 2;
+
+        // Calculate scale to fit PDF in available space
+        var fitScale = Math.min(availableW / pdfWidth, availableH / pdfHeight, 6);
 
         // Calculate canvas size at this scale
         var canvasW = pdfWidth * fitScale;
         var canvasH = pdfHeight * fitScale;
 
-        // Center the canvas
-        pan.x = (containerW - canvasW) / 2;
-        pan.y = (containerH - canvasH) / 2;
+        // Center the canvas (flexbox will handle this, but we set pan offsets to 0)
+        pan.x = 0;
+        pan.y = 0;
         pan.zoom = 1;
     }
 }
