@@ -164,6 +164,9 @@ function parsePdfFile(file) {
                     document.getElementById('btn-export-ai-editable').disabled = false;
                     document.getElementById('btn-export-ai-outlined').disabled = false;
 
+                    // Center the PDF on canvas
+                    centerPdfOnCanvas();
+
                     renderCanvas();
                     renderComponentList();
                     renderColorPalette();
@@ -1198,17 +1201,193 @@ function onKeyUp(e) {
     }
 }
 
+function calculateBBox(ops) {
+    var minX = Infinity, minY = Infinity;
+    var maxX = -Infinity, maxY = -Infinity;
+
+    ops.forEach(function(op) {
+        if (op.o === 'M' || op.o === 'L') {
+            minX = Math.min(minX, op.a[0]);
+            minY = Math.min(minY, op.a[1]);
+            maxX = Math.max(maxX, op.a[0]);
+            maxY = Math.max(maxY, op.a[1]);
+        } else if (op.o === 'C') {
+            // Bezier curve - check all control points
+            for (var i = 0; i < 6; i += 2) {
+                minX = Math.min(minX, op.a[i]);
+                minY = Math.min(minY, op.a[i + 1]);
+                maxX = Math.max(maxX, op.a[i]);
+                maxY = Math.max(maxY, op.a[i + 1]);
+            }
+        }
+    });
+
+    return {
+        x: minX,
+        y: minY,
+        w: maxX - minX,
+        h: maxY - minY
+    };
+}
+
+function makeStyleKey(pathData) {
+    var fillKey = pathData.fill ? colorKey(pathData.fill) : 'none';
+    var strokeKey = pathData.stroke ? colorKey(pathData.stroke) : 'none';
+    var lwKey = Math.round(pathData.lw * 100);
+    return fillKey + '|' + strokeKey + '|' + lwKey;
+}
+
+function pathsAreNearby(comp1, comp2, threshold) {
+    // Calculate center points
+    var c1x = comp1.x + comp1.w / 2;
+    var c1y = comp1.y + comp1.h / 2;
+    var c2x = comp2.x + comp2.w / 2;
+    var c2y = comp2.y + comp2.h / 2;
+
+    // Calculate distance
+    var dx = c1x - c2x;
+    var dy = c1y - c2y;
+    var distance = Math.sqrt(dx * dx + dy * dy);
+
+    // Threshold: 50mm (about 2 inches) - paths closer than this are considered "nearby"
+    return distance < threshold;
+}
+
+function clusterPathsByProximity(paths, threshold) {
+    if (paths.length === 0) return [];
+
+    var clusters = [];
+    var visited = new Array(paths.length).fill(false);
+
+    // For each unvisited path, start a new cluster
+    for (var i = 0; i < paths.length; i++) {
+        if (visited[i]) continue;
+
+        var cluster = [paths[i]];
+        visited[i] = true;
+
+        // Find all nearby paths and add them to this cluster
+        var changed = true;
+        while (changed) {
+            changed = false;
+            for (var j = 0; j < paths.length; j++) {
+                if (visited[j]) continue;
+
+                // Check if this path is near any path in the current cluster
+                var isNearby = false;
+                for (var k = 0; k < cluster.length; k++) {
+                    if (pathsAreNearby(cluster[k], paths[j], threshold)) {
+                        isNearby = true;
+                        break;
+                    }
+                }
+
+                if (isNearby) {
+                    cluster.push(paths[j]);
+                    visited[j] = true;
+                    changed = true;
+                }
+            }
+        }
+
+        clusters.push(cluster);
+    }
+
+    return clusters;
+}
+
+function mergePathsByColorAndProximity(pathIndices) {
+    // Group paths by style (color + stroke + linewidth)
+    var styleGroups = {};
+
+    pathIndices.forEach(function(idx) {
+        var comp = components[idx];
+        if (comp.type !== 'pdfpath') return;
+
+        var key = makeStyleKey(comp.pathData);
+        if (!styleGroups[key]) {
+            styleGroups[key] = {
+                paths: [],
+                style: {
+                    fill: comp.pathData.fill,
+                    stroke: comp.pathData.stroke,
+                    lw: comp.pathData.lw
+                }
+            };
+        }
+        styleGroups[key].paths.push(comp);
+    });
+
+    // For each style group, cluster by proximity
+    var merged = [];
+    Object.values(styleGroups).forEach(function(group) {
+        var clusters = clusterPathsByProximity(group.paths, 50); // 50mm threshold
+
+        // Merge each cluster into a single path
+        clusters.forEach(function(cluster) {
+            var allOps = [];
+            cluster.forEach(function(path) {
+                allOps = allOps.concat(path.pathData.ops);
+            });
+
+            var bbox = calculateBBox(allOps);
+            merged.push({
+                type: 'pdfpath',
+                x: bbox.x,
+                y: bbox.y,
+                w: bbox.w,
+                h: bbox.h,
+                pathData: {
+                    ops: allOps,
+                    fill: group.style.fill,
+                    stroke: group.style.stroke,
+                    lw: group.style.lw
+                },
+                visible: true,
+                locked: false,
+                groupId: null
+            });
+        });
+    });
+
+    return merged;
+}
+
 function groupSelected() {
     if (selectedSet.length < 2) return;
 
     captureState();
-    var groupId = 'grp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
 
-    selectedSet.forEach(function(idx) {
-        components[idx].groupId = groupId;
+    // Merge paths by color and proximity
+    var mergedPaths = mergePathsByColorAndProximity(selectedSet);
+
+    // Assign group ID to merged paths
+    var groupId = 'grp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    mergedPaths.forEach(function(path) {
+        path.groupId = groupId;
     });
 
+    // Remove original paths (in reverse order to maintain indices)
+    var sortedIndices = selectedSet.slice().sort(function(a, b) { return b - a; });
+    sortedIndices.forEach(function(idx) {
+        components.splice(idx, 1);
+    });
+
+    // Add merged paths
+    components = components.concat(mergedPaths);
+
+    // Update selection to point to new merged paths
+    selectedSet = [];
+    var startIdx = components.length - mergedPaths.length;
+    for (var i = 0; i < mergedPaths.length; i++) {
+        selectedSet.push(startIdx + i);
+    }
+    selectedIdx = selectedSet.length === 1 ? selectedSet[0] : -1;
+
+    renderCanvas();
     renderComponentList();
+    renderPropertiesPanel();
+    renderColorPalette();
 }
 
 function ungroupSelected() {
@@ -1251,6 +1430,26 @@ function resetViewport() {
     pan.y = 0;
     pan.zoom = 1;
     renderCanvas();
+}
+
+function centerPdfOnCanvas() {
+    var container = document.getElementById('canvas-container');
+    var containerW = container.clientWidth;
+    var containerH = container.clientHeight;
+
+    if (pdfWidth > 0 && pdfHeight > 0) {
+        // Calculate scale to fit PDF in container
+        var fitScale = Math.min(containerW / pdfWidth, containerH / pdfHeight, 6);
+
+        // Calculate canvas size at this scale
+        var canvasW = pdfWidth * fitScale;
+        var canvasH = pdfHeight * fitScale;
+
+        // Center the canvas
+        pan.x = (containerW - canvasW) / 2;
+        pan.y = (containerH - canvasH) / 2;
+        pan.zoom = 1;
+    }
 }
 
 function captureState() {
