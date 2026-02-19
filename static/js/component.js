@@ -1387,6 +1387,9 @@ function groupSelected() {
     renderComponentList();
     renderPropertiesPanel();
     renderColorPalette();
+
+    // Capture state after grouping is complete
+    captureState();
 }
 
 function ungroupSelected() {
@@ -1476,6 +1479,7 @@ function captureState() {
 }
 
 function undo() {
+    console.log('Undo called - historyIndex:', historyIndex, 'historyStack.length:', historyStack.length);
     if (historyIndex > 0) {
         historyIndex--;
         var state = historyStack[historyIndex];
@@ -1488,10 +1492,14 @@ function undo() {
         renderPropertiesPanel();
         renderColorPalette();
         updateUndoRedoButtons();
+        console.log('Undo completed - new historyIndex:', historyIndex);
+    } else {
+        console.log('Cannot undo - at beginning of history');
     }
 }
 
 function redo() {
+    console.log('Redo called - historyIndex:', historyIndex, 'historyStack.length:', historyStack.length);
     if (historyIndex < historyStack.length - 1) {
         historyIndex++;
         var state = historyStack[historyIndex];
@@ -1504,6 +1512,9 @@ function redo() {
         renderPropertiesPanel();
         renderColorPalette();
         updateUndoRedoButtons();
+        console.log('Redo completed - new historyIndex:', historyIndex);
+    } else {
+        console.log('Cannot redo - at end of history');
     }
 }
 
