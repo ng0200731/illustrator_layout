@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Illustrator Layout Manager</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Illustrator Layout Manager</h1>
+        <div class="header-actions">
+            <button id="btn-save">Save</button>
+            <button id="btn-export-menu">Export ▼</button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div id="canvas-container">
+            <canvas id="canvas"></canvas>
+            <div id="empty-state">
+                <p>Drag PDF file here</p>
+                <p>or</p>
+                <button id="btn-choose-file">Choose File</button>
+            </div>
+            <input type="file" id="file-input" accept=".pdf" style="display: none;">
+        </div>
+
+        <div id="right-panel">
+            <div class="panel-section">
+                <h2>COMPONENTS <span id="component-count">(0 items)</span></h2>
+                <div id="component-list">
+                    <div class="empty-message">No PDF loaded</div>
+                </div>
+            </div>
+
+            <div class="panel-section" id="properties-section" style="display: none;">
+                <h2>SELECTED</h2>
+                <div id="properties-panel"></div>
+            </div>
+
+            <div class="panel-section">
+                <h2>ACTIONS</h2>
+                <div class="action-buttons">
+                    <button id="btn-group" disabled>Group Selected</button>
+                    <button id="btn-ungroup" disabled>Ungroup</button>
+                    <button id="btn-delete" disabled>Delete Selected</button>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h2>EXPORT OPTIONS</h2>
+                <div class="export-buttons">
+                    <button id="btn-export-pdf" disabled>Export as PDF</button>
+                    <button id="btn-export-ai-editable" disabled>Export as AI (Editable)</button>
+                    <button id="btn-export-ai-outlined" disabled>Export as AI (Outlined)</button>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <div class="canvas-controls">
+                    <label>Zoom: <span id="zoom-level">100%</span></label>
+                    <button id="btn-fit">Fit</button>
+                    <p class="hint">Pan: Space + Drag</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Set PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    <script src="{{ url_for('static', filename='js/component.js') }}"></script>
+</body>
+</html>

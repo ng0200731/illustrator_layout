@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Temporary files
+.tmp/
+*.tmp
+*.log
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Credentials
+credentials.json
+token.json
+
+# Reserved Windows names
+nul
+con
+prn
+aux
+com1
+com2
+com3
+com4
+lpt1
+lpt2
+lpt3

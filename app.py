@@ -1,0 +1,49 @@
+from flask import Flask, render_template, request, send_file, jsonify
+import json
+import os
+import sys
+
+app = Flask(__name__)
+
+# Ensure .tmp directory exists
+os.makedirs('.tmp', exist_ok=True)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/export/pdf', methods=['POST'])
+def export_pdf():
+    try:
+        data = request.get_json()
+
+        # Import export tool
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tools'))
+        from export_pdf import export_pdf as generate_pdf
+
+        # Generate PDF
+        filepath = generate_pdf(data)
+
+        return send_file(filepath, as_attachment=True, download_name='export.pdf')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/export/ai', methods=['POST'])
+def export_ai():
+    try:
+        data = request.get_json()
+        outlined = data.get('outlined', False)
+
+        # Import export tool
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tools'))
+        from export_ai import export_ai as generate_ai
+
+        # Generate AI file
+        filepath = generate_ai(data, outlined)
+
+        return send_file(filepath, as_attachment=True, download_name='export.ai')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5001)
