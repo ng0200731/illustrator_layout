@@ -57,13 +57,15 @@ def export_ai(data, outlined=False):
         # Draw red separator line (helps identify hidden/visible boundary)
         if len(hidden_paths) > 0 and len(visible_paths) > 0:
             print("DEBUG: Drawing red separator line")
-            # Draw a 1px vertical red line OUTSIDE the artboard (to the right)
+            # Draw a thin vertical red FILLED rectangle OUTSIDE the artboard (to the right)
             p = c.beginPath()
             p.moveTo(page_w + 5, 0)  # Start 5mm to the right of artboard, at top
-            p.lineTo(page_w + 5, page_h)  # End 5mm to the right of artboard, at bottom
-            c.setStrokeColorRGB(1, 0, 0)  # Pure red
-            c.setLineWidth(1)  # 1 point thick
-            c.drawPath(p, fill=0, stroke=1)  # No fill, stroke only
+            p.lineTo(page_w + 5.5, 0)  # 0.5mm wide
+            p.lineTo(page_w + 5.5, page_h)  # Down to bottom
+            p.lineTo(page_w + 5, page_h)  # Back to left edge
+            p.close()  # Close the rectangle
+            c.setFillColorRGB(1, 0, 0)  # Pure red fill
+            c.drawPath(p, fill=1, stroke=0)  # Fill only, no stroke
         else:
             print(f"DEBUG: Skipping red line - hidden={len(hidden_paths)}, visible={len(visible_paths)}")
 

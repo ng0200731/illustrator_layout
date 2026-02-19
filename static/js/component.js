@@ -163,7 +163,6 @@ function parsePdfFile(file) {
                     document.getElementById('btn-export-pdf').disabled = false;
                     document.getElementById('btn-export-ai-editable').disabled = false;
                     document.getElementById('btn-export-ai-outlined').disabled = false;
-                    document.getElementById('btn-export-ai-separate').disabled = false;
 
                     // Center the PDF on canvas
                     centerPdfOnCanvas();
@@ -1427,9 +1426,7 @@ function fitCanvas() {
 }
 
 function resetViewport() {
-    pan.x = 0;
-    pan.y = 0;
-    pan.zoom = 1;
+    centerPdfOnCanvas();
     renderCanvas();
 }
 
