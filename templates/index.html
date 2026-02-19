@@ -10,12 +10,6 @@
 <body>
     <header>
         <h1>Illustrator Layout Manager</h1>
-        <div class="header-actions">
-            <button id="undo-btn" onclick="undo()" disabled>↶ Undo</button>
-            <button id="redo-btn" onclick="redo()" disabled>↷ Redo</button>
-            <button id="btn-save">Save</button>
-            <button id="btn-export-menu">Export ▼</button>
-        </div>
     </header>
 
     <div class="main-container">
@@ -31,6 +25,15 @@
         </div>
 
         <div id="right-panel">
+            <div class="panel-section">
+                <h2>ACTIONS</h2>
+                <div class="action-buttons">
+                    <button id="undo-btn" onclick="undo()" disabled>↶ Undo</button>
+                    <button id="redo-btn" onclick="redo()" disabled>↷ Redo</button>
+                    <button id="btn-save">Save</button>
+                </div>
+            </div>
+
             <div class="panel-section">
                 <h2>COMPONENTS <span id="component-count">(0 items)</span></h2>
                 <div id="component-list">
@@ -49,7 +52,7 @@
             </div>
 
             <div class="panel-section">
-                <h2>ACTIONS</h2>
+                <h2>SELECTION</h2>
                 <div class="action-buttons">
                     <button id="btn-group" disabled>Group Selected</button>
                     <button id="btn-ungroup" disabled>Ungroup</button>
@@ -60,9 +63,9 @@
             <div class="panel-section">
                 <h2>EXPORT OPTIONS</h2>
                 <div class="export-buttons">
-                    <button id="btn-export-pdf" disabled>Export as PDF</button>
-                    <button id="btn-export-ai-editable" disabled>Export as AI (Editable)</button>
-                    <button id="btn-export-ai-outlined" disabled>Export as AI (Outlined)</button>
+                    <button id="btn-export-pdf" disabled>PDF</button>
+                    <button id="btn-export-ai-editable" disabled>AI E</button>
+                    <button id="btn-export-ai-outlined" disabled>AI O</button>
                 </div>
             </div>
         </div>

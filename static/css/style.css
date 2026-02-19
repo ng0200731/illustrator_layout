@@ -31,12 +31,12 @@ header h1 {
 }
 
 button {
-    padding: 8px 16px;
+    padding: 4px 8px;
     background: #fff;
     color: #000;
     border: 1px solid #000;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 10px;
     font-family: inherit;
 }
 
@@ -121,15 +121,15 @@ button:disabled {
 }
 
 .panel-section {
-    padding: 16px;
+    padding: 8px;
     border-bottom: 1px solid #000;
 }
 
 .panel-section h2 {
-    font-size: 12px;
+    font-size: 8.6px;
     font-weight: 600;
-    letter-spacing: 0.5px;
-    margin-bottom: 12px;
+    letter-spacing: 0.25px;
+    margin-bottom: 6px;
 }
 
 #component-count {
@@ -143,19 +143,19 @@ button:disabled {
 }
 
 .empty-message {
-    padding: 20px;
+    padding: 10px;
     text-align: center;
     opacity: 0.5;
-    font-size: 14px;
+    font-size: 10px;
 }
 
 .component-item {
     display: flex;
     align-items: center;
-    padding: 8px;
+    padding: 4px;
     border: 1px solid transparent;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 9.3px;
 }
 
 .component-item:hover {
@@ -163,22 +163,22 @@ button:disabled {
 }
 
 .component-item.selected {
-    background: #000;
-    color: #fff;
-    border-color: #000;
+    background: #fff;
+    color: #000;
+    border: 2px solid #000;
 }
 
 .component-item input[type="checkbox"] {
-    margin-right: 8px;
+    margin-right: 4px;
 }
 
 .component-item .icon-btn {
     background: none;
     border: none;
-    padding: 4px;
-    margin-left: 4px;
+    padding: 2px;
+    margin-left: 2px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 10px;
 }
 
 .component-item .icon-btn:hover {
@@ -186,7 +186,7 @@ button:disabled {
 }
 
 .component-item.selected .icon-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.1);
 }
 
 .component-label {
@@ -197,13 +197,13 @@ button:disabled {
 }
 
 #properties-panel {
-    font-size: 13px;
+    font-size: 9.3px;
 }
 
 .property-row {
     display: flex;
     justify-content: space-between;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 .property-row label {
@@ -211,64 +211,67 @@ button:disabled {
 }
 
 .property-row input {
-    width: 80px;
-    padding: 4px;
+    width: 40px;
+    padding: 2px;
     border: 1px solid #000;
-    font-size: 12px;
+    font-size: 8.6px;
 }
 
 .property-group {
-    margin-bottom: 12px;
+    margin-bottom: 6px;
 }
 
 .property-group-title {
     font-weight: 600;
-    margin-bottom: 6px;
+    margin-bottom: 3px;
 }
 
 .action-buttons,
 .export-buttons {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    flex-direction: row;
+    gap: 4px;
 }
 
-.action-buttons button,
-.export-buttons button {
+.action-buttons button {
     width: 100%;
 }
 
+.export-buttons button {
+    flex: 1;
+}
+
 .canvas-controls {
-    font-size: 13px;
+    font-size: 9.3px;
 }
 
 .canvas-controls label {
     display: block;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 .canvas-controls button {
-    margin-top: 8px;
+    margin-top: 4px;
     width: 100%;
 }
 
 .hint {
-    margin-top: 8px;
+    margin-top: 4px;
     opacity: 0.6;
-    font-size: 12px;
+    font-size: 8.6px;
 }
 
 #color-palette {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: 2px;
     max-height: 200px;
     overflow-y: auto;
 }
 
 .color-swatch {
-    width: 24px;
-    height: 24px;
+    width: 12px;
+    height: 12px;
     border: 1px solid #000;
     cursor: pointer;
     flex-shrink: 0;

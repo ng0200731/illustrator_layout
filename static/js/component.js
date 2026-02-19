@@ -81,7 +81,6 @@ function setupButtons() {
     document.getElementById('btn-export-pdf').addEventListener('click', function() { exportFile('pdf'); });
     document.getElementById('btn-export-ai-editable').addEventListener('click', function() { exportFile('ai-separate', false); });
     document.getElementById('btn-export-ai-outlined').addEventListener('click', function() { exportFile('ai-separate', true); });
-    document.getElementById('btn-fit').addEventListener('click', fitCanvas);
 }
 
 function setupCanvasInteraction() {
@@ -597,7 +596,7 @@ function collectUniqueColors() {
     var colorMap = {};
 
     components.forEach(function(comp) {
-        if (comp.type === 'pdfpath' && comp.visible) {
+        if (comp.type === 'pdfpath') {
             if (comp.pathData.fill) {
                 var key = colorKey(comp.pathData.fill);
                 if (!colorMap[key]) {
