@@ -9,6 +9,11 @@ var pdfWidth = 0;
 var pdfHeight = 0;
 var pan = { x: 0, y: 0, zoom: 1, dragging: false, startX: 0, startY: 0, spaceDown: false };
 var dragState = { active: false, startX: 0, startY: 0, componentIdx: -1 };
+var rectSelect = { active: false, startX: 0, startY: 0, endX: 0, endY: 0 };
+var groupExpanded = {}; // Track which groups are expanded
+var historyStack = [];
+var historyIndex = -1;
+var maxHistorySize = 50;
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -16,9 +21,6 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function init() {
-    console.log('Initializing app...');
-    console.log('PDF.js available:', typeof pdfjsLib !== 'undefined');
-
     canvas = document.getElementById('canvas');
     ctx = canvas.getContext('2d');
 
@@ -28,7 +30,6 @@ function init() {
     setupCanvasInteraction();
 
     renderCanvas();
-    console.log('Initialization complete');
 }
 
 function setupDragDrop() {
@@ -48,16 +49,10 @@ function setupDragDrop() {
         e.preventDefault();
         container.classList.remove('drag-over');
 
-        console.log('Drop event triggered');
-
         if (e.dataTransfer.files && e.dataTransfer.files.length) {
             var file = e.dataTransfer.files[0];
-            console.log('File dropped:', file.name, file.type);
             if (file.name.toLowerCase().endsWith('.pdf')) {
-                console.log('Starting PDF parse...');
                 parsePdfFile(file);
-            } else {
-                console.log('Not a PDF file');
             }
         }
     });
@@ -103,20 +98,15 @@ function parsePdfFile(file) {
     var reader = new FileReader();
 
     reader.onload = function(e) {
-        console.log('FileReader loaded, size:', e.target.result.byteLength);
         var data = new Uint8Array(e.target.result);
 
-        console.log('Loading PDF with PDF.js...');
         pdfjsLib.getDocument({ data: data }).promise.then(function(pdf) {
-            console.log('PDF loaded successfully, pages:', pdf.numPages);
             pdf.getPage(1).then(function(page) {
-                console.log('Got page 1');
                 var viewport = page.getViewport({ scale: 1.0 });
 
                 // Convert PDF points to mm (72 points = 25.4mm)
                 pdfWidth = viewport.width / 72 * 25.4;
                 pdfHeight = viewport.height / 72 * 25.4;
-                console.log('PDF dimensions:', pdfWidth, 'x', pdfHeight, 'mm');
 
                 // Extract vector paths and text
                 Promise.all([
@@ -125,7 +115,6 @@ function parsePdfFile(file) {
                 ]).then(function(results) {
                     var paths = results[0];
                     var texts = results[1];
-                    console.log('Extracted paths:', paths.length, 'texts:', texts.length);
 
                     // Clear existing components
                     components = [];
@@ -175,9 +164,10 @@ function parsePdfFile(file) {
                     document.getElementById('btn-export-ai-editable').disabled = false;
                     document.getElementById('btn-export-ai-outlined').disabled = false;
 
-                    console.log('Total components:', components.length);
                     renderCanvas();
                     renderComponentList();
+                    renderColorPalette();
+                    captureState(); // Capture initial state
                 }).catch(function(err) {
                     console.error('Error extracting PDF content:', err);
                 });
@@ -198,8 +188,6 @@ function parsePdfFile(file) {
 
 function extractPdfObjects(page, pdfW, pdfH) {
     return page.getOperatorList().then(function(opList) {
-        console.log('Operator list length:', opList.fnArray.length);
-
         var objects = [];
         var currentPath = [];
         var currentState = {
@@ -218,13 +206,6 @@ function extractPdfObjects(page, pdfW, pdfH) {
             return max > 1 ? [arr[0] / 255, arr[1] / 255, arr[2] / 255] : arr;
         }
 
-        // Log first 20 operators to see what we're dealing with
-        console.log('First 20 operators:');
-        for (var i = 0; i < Math.min(20, opList.fnArray.length); i++) {
-            var opName = Object.keys(OPS).find(key => OPS[key] === opList.fnArray[i]);
-            console.log(i + ':', opName, opList.argsArray[i]);
-        }
-
         for (var i = 0; i < opList.fnArray.length; i++) {
             var fn = opList.fnArray[i];
             var args = opList.argsArray[i];
@@ -239,10 +220,8 @@ function extractPdfObjects(page, pdfW, pdfH) {
                 currentState.ctm = mulMat(currentState.ctm, args);
             } else if (fn === OPS.setFillRGBColor) {
                 currentState.fill = normalizeColor([args[0], args[1], args[2]]);
-                if (i < 50) console.log('setFillRGBColor:', [args[0], args[1], args[2]], '-> normalized:', currentState.fill);
             } else if (fn === OPS.setStrokeRGBColor) {
                 currentState.stroke = normalizeColor([args[0], args[1], args[2]]);
-                if (i < 50) console.log('setStrokeRGBColor:', [args[0], args[1], args[2]], '-> normalized:', currentState.stroke);
             } else if (fn === OPS.setFillCMYKColor) {
                 // Convert CMYK to RGB
                 var c = args[0], m = args[1], y = args[2], k = args[3];
@@ -251,7 +230,6 @@ function extractPdfObjects(page, pdfW, pdfH) {
                     (1 - m) * (1 - k),
                     (1 - y) * (1 - k)
                 ];
-                if (i < 50) console.log('setFillCMYKColor:', [args[0], args[1], args[2], args[3]], '-> RGB:', currentState.fill);
             } else if (fn === OPS.setStrokeCMYKColor) {
                 // Convert CMYK to RGB
                 var c = args[0], m = args[1], y = args[2], k = args[3];
@@ -260,15 +238,12 @@ function extractPdfObjects(page, pdfW, pdfH) {
                     (1 - m) * (1 - k),
                     (1 - y) * (1 - k)
                 ];
-                if (i < 50) console.log('setStrokeCMYKColor:', [args[0], args[1], args[2], args[3]], '-> RGB:', currentState.stroke);
             } else if (fn === OPS.setFillGray) {
                 var gray = args[0];
                 currentState.fill = [gray, gray, gray];
-                if (i < 50) console.log('setFillGray:', [args[0]]);
             } else if (fn === OPS.setStrokeGray) {
                 var gray = args[0];
                 currentState.stroke = [gray, gray, gray];
-                if (i < 50) console.log('setStrokeGray:', [args[0]]);
             } else if (fn === OPS.setLineWidth) {
                 currentState.lineWidth = args[0];
             } else if (fn === OPS.constructPath) {
@@ -387,20 +362,14 @@ function extractPdfObjects(page, pdfW, pdfH) {
 
 function extractTextContent(page, pdfH) {
     return page.getTextContent().then(function(textContent) {
-        console.log('Text items found:', textContent.items.length);
         var texts = [];
 
-        textContent.items.forEach(function(item, idx) {
-            if (idx < 5) {
-                console.log('Text item', idx, ':', item.str, item);
-            }
-
+        textContent.items.forEach(function(item) {
             // Filter readable text
             var readable = item.str.replace(/[\x00-\x1f\ufffd]/g, '');
             var printable = readable.replace(/[^\x20-\x7e\u00a0-\u024f\u0400-\u04ff\u4e00-\u9fff\u3000-\u30ff\uac00-\ud7af]/g, '');
 
             if (printable.length < readable.length * 0.5 || printable.trim().length === 0) {
-                if (idx < 5) console.log('  -> Filtered out (not readable)');
                 return;
             }
 
@@ -420,13 +389,8 @@ function extractTextContent(page, pdfH) {
                 fontSize: fontSize,
                 fontFamily: item.fontName || 'Arial'
             });
-
-            if (texts.length <= 5) {
-                console.log('  -> Added text:', printable);
-            }
         });
 
-        console.log('Total texts extracted:', texts.length);
         return texts;
     });
 }
@@ -473,8 +437,22 @@ function calculateBBox(ops) {
     };
 }
 
+function isRectIntersecting(comp, rect) {
+    // Check if component bounding box intersects with selection rectangle
+    return !(comp.x + comp.w < rect.x ||
+             comp.x > rect.x + rect.w ||
+             comp.y + comp.h < rect.y ||
+             comp.y > rect.y + rect.h);
+}
+
 function renderCanvas() {
     if (!canvas || !ctx) return;
+
+    // Update zoom display
+    var zoomDisplay = document.getElementById('zoom-level');
+    if (zoomDisplay) {
+        zoomDisplay.textContent = Math.round(pan.zoom * 100) + '%';
+    }
 
     var container = document.getElementById('canvas-container');
     var containerW = container.clientWidth;
@@ -517,6 +495,23 @@ function renderCanvas() {
             drawText(comp, idx);
         }
     });
+
+    // Draw selection rectangle if active
+    if (rectSelect.active) {
+        var minX = Math.min(rectSelect.startX, rectSelect.endX) * scale;
+        var minY = Math.min(rectSelect.startY, rectSelect.endY) * scale;
+        var maxX = Math.max(rectSelect.startX, rectSelect.endX) * scale;
+        var maxY = Math.max(rectSelect.startY, rectSelect.endY) * scale;
+
+        ctx.fillStyle = 'rgba(0, 102, 255, 0.1)';
+        ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
+
+        ctx.strokeStyle = '#0066ff';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+        ctx.setLineDash([]);
+    }
 }
 
 function drawPdfPath(comp, idx) {
@@ -587,6 +582,145 @@ function rgbToString(rgb) {
     return 'rgb(' + Math.round(rgb[0] * 255) + ',' + Math.round(rgb[1] * 255) + ',' + Math.round(rgb[2] * 255) + ')';
 }
 
+function colorKey(rgb) {
+    // Round to nearest 1% to group similar colors
+    return Math.round(rgb[0] * 100) + ',' +
+           Math.round(rgb[1] * 100) + ',' +
+           Math.round(rgb[2] * 100);
+}
+
+function collectUniqueColors() {
+    var colors = [];
+    var colorMap = {};
+
+    components.forEach(function(comp) {
+        if (comp.type === 'pdfpath' && comp.visible) {
+            if (comp.pathData.fill) {
+                var key = colorKey(comp.pathData.fill);
+                if (!colorMap[key]) {
+                    colorMap[key] = comp.pathData.fill;
+                    colors.push({ rgb: comp.pathData.fill, type: 'fill' });
+                }
+            }
+            if (comp.pathData.stroke) {
+                var key = colorKey(comp.pathData.stroke);
+                if (!colorMap[key]) {
+                    colorMap[key] = comp.pathData.stroke;
+                    colors.push({ rgb: comp.pathData.stroke, type: 'stroke' });
+                }
+            }
+        }
+    });
+
+    return colors;
+}
+
+function selectByColor(targetRgb, toggleVisibility) {
+    var targetKey = colorKey(targetRgb);
+
+    if (toggleVisibility) {
+        // Toggle visibility of all paths with this color
+        captureState();
+        var hasVisible = false;
+        components.forEach(function(comp) {
+            if (comp.type === 'pdfpath') {
+                var fillMatch = comp.pathData.fill && colorKey(comp.pathData.fill) === targetKey;
+                var strokeMatch = comp.pathData.stroke && colorKey(comp.pathData.stroke) === targetKey;
+                if (fillMatch || strokeMatch) {
+                    if (comp.visible) hasVisible = true;
+                }
+            }
+        });
+
+        // If any are visible, hide all; otherwise show all
+        components.forEach(function(comp) {
+            if (comp.type === 'pdfpath') {
+                var fillMatch = comp.pathData.fill && colorKey(comp.pathData.fill) === targetKey;
+                var strokeMatch = comp.pathData.stroke && colorKey(comp.pathData.stroke) === targetKey;
+                if (fillMatch || strokeMatch) {
+                    comp.visible = !hasVisible;
+                }
+            }
+        });
+
+        renderCanvas();
+        renderComponentList();
+    } else {
+        // Select all paths with this color
+        selectedSet = [];
+        components.forEach(function(comp, idx) {
+            if (comp.type === 'pdfpath') {
+                var fillMatch = comp.pathData.fill && colorKey(comp.pathData.fill) === targetKey;
+                var strokeMatch = comp.pathData.stroke && colorKey(comp.pathData.stroke) === targetKey;
+
+                if (fillMatch || strokeMatch) {
+                    selectedSet.push(idx);
+                }
+            }
+        });
+
+        selectedIdx = selectedSet.length === 1 ? selectedSet[0] : -1;
+        renderCanvas();
+        renderComponentList();
+        renderPropertiesPanel();
+    }
+}
+
+function renderColorPalette() {
+    var palette = document.getElementById('color-palette');
+    if (!palette) return;
+
+    var colors = collectUniqueColors();
+    var colorCount = document.getElementById('color-count');
+    if (colorCount) {
+        colorCount.textContent = '(' + colors.length + ' colors)';
+    }
+
+    palette.innerHTML = '';
+
+    colors.forEach(function(colorInfo) {
+        var swatch = document.createElement('div');
+        swatch.className = 'color-swatch';
+        swatch.style.backgroundColor = rgbToString(colorInfo.rgb);
+        swatch.title = rgbToString(colorInfo.rgb) + '\nLeft-click: Select\nRight-click: Toggle visibility';
+
+        // Check if any visible paths with this color exist
+        var targetKey = colorKey(colorInfo.rgb);
+        var hasVisiblePaths = false;
+
+        for (var i = 0; i < components.length; i++) {
+            var comp = components[i];
+            if (comp.type === 'pdfpath' && comp.visible) {
+                var fillMatch = comp.pathData.fill && colorKey(comp.pathData.fill) === targetKey;
+                var strokeMatch = comp.pathData.stroke && colorKey(comp.pathData.stroke) === targetKey;
+                if (fillMatch || strokeMatch) {
+                    hasVisiblePaths = true;
+                    break;
+                }
+            }
+        }
+
+        // Dim the swatch if no visible paths with this color exist
+        if (!hasVisiblePaths) {
+            swatch.style.opacity = '0.3';
+        }
+
+        // Left-click: select paths with this color
+        swatch.addEventListener('click', function() {
+            selectByColor(colorInfo.rgb, false);
+        });
+
+        // Right-click: toggle visibility
+        swatch.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+            selectByColor(colorInfo.rgb, true);
+            renderColorPalette();
+        });
+
+        palette.appendChild(swatch);
+    });
+}
+
 function renderComponentList() {
     var list = document.getElementById('component-list');
     list.innerHTML = '';
@@ -598,59 +732,180 @@ function renderComponentList() {
         return;
     }
 
-    components.forEach(function(comp, idx) {
-        var item = document.createElement('div');
-        item.className = 'component-item';
-        if (idx === selectedIdx || selectedSet.indexOf(idx) !== -1) {
-            item.classList.add('selected');
-        }
+    // Group components by groupId
+    var groups = {};
+    var ungrouped = [];
 
-        var checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.checked = selectedSet.indexOf(idx) !== -1;
-        checkbox.addEventListener('click', function(e) {
-            e.stopPropagation();
-            toggleSelection(idx);
+    components.forEach(function(comp, idx) {
+        if (comp.groupId) {
+            if (!groups[comp.groupId]) {
+                groups[comp.groupId] = [];
+            }
+            groups[comp.groupId].push({ comp: comp, idx: idx });
+        } else {
+            ungrouped.push({ comp: comp, idx: idx });
+        }
+    });
+
+    // Render groups first
+    Object.keys(groups).forEach(function(groupId) {
+        var groupItems = groups[groupId];
+        var isExpanded = groupExpanded[groupId] !== false; // Default to expanded
+
+        // Check if all group members are selected
+        var allSelected = groupItems.every(function(item) {
+            return selectedSet.indexOf(item.idx) !== -1;
         });
+
+        // Create group header
+        var groupHeader = document.createElement('div');
+        groupHeader.className = 'component-item group-header';
+        if (allSelected) {
+            groupHeader.classList.add('selected');
+        }
+        groupHeader.style.fontWeight = '600';
+
+        var expandBtn = document.createElement('span');
+        expandBtn.textContent = isExpanded ? '▼' : '▶';
+        expandBtn.style.marginRight = '4px';
+        expandBtn.style.cursor = 'pointer';
 
         var eyeBtn = document.createElement('button');
         eyeBtn.className = 'icon-btn';
-        eyeBtn.textContent = comp.visible ? '👁' : '👁‍🗨';
+        var allVisible = groupItems.every(function(item) { return item.comp.visible; });
+        eyeBtn.textContent = allVisible ? '👁' : '👁‍🗨';
         eyeBtn.addEventListener('click', function(e) {
             e.stopPropagation();
-            toggleVisibility(idx);
+            groupItems.forEach(function(item) {
+                item.comp.visible = !allVisible;
+            });
+            renderCanvas();
+            renderComponentList();
         });
 
         var lockBtn = document.createElement('button');
         lockBtn.className = 'icon-btn';
-        lockBtn.textContent = comp.locked ? '🔒' : '🔓';
+        var allLocked = groupItems.every(function(item) { return item.comp.locked; });
+        lockBtn.textContent = allLocked ? '🔒' : '🔓';
         lockBtn.addEventListener('click', function(e) {
             e.stopPropagation();
-            toggleLock(idx);
+            groupItems.forEach(function(item) {
+                item.comp.locked = !allLocked;
+            });
+            renderComponentList();
         });
 
         var label = document.createElement('span');
         label.className = 'component-label';
-        label.textContent = comp.type === 'text' ? 'Text: "' + comp.content.substring(0, 20) + '"' : 'Path ' + (idx + 1);
+        label.textContent = 'Group (' + groupItems.length + ' items)';
 
-        item.appendChild(checkbox);
-        item.appendChild(eyeBtn);
-        item.appendChild(lockBtn);
-        item.appendChild(label);
+        groupHeader.appendChild(expandBtn);
+        groupHeader.appendChild(eyeBtn);
+        groupHeader.appendChild(lockBtn);
+        groupHeader.appendChild(label);
 
-        item.addEventListener('click', function() {
-            selectComponent(idx);
+        groupHeader.addEventListener('click', function(e) {
+            // Toggle expand/collapse
+            if (e.target === expandBtn || e.target === groupHeader) {
+                groupExpanded[groupId] = !isExpanded;
+                renderComponentList();
+            } else {
+                // Select all group members
+                selectedSet = groupItems.map(function(item) { return item.idx; });
+                selectedIdx = -1;
+                renderCanvas();
+                renderComponentList();
+                renderPropertiesPanel();
+            }
         });
 
-        list.appendChild(item);
+        list.appendChild(groupHeader);
+
+        // Render group members if expanded
+        if (isExpanded) {
+            groupItems.forEach(function(item) {
+                var compItem = createComponentItem(item.comp, item.idx, true);
+                list.appendChild(compItem);
+            });
+        }
+    });
+
+    // Render ungrouped components
+    ungrouped.forEach(function(item) {
+        var compItem = createComponentItem(item.comp, item.idx, false);
+        list.appendChild(compItem);
     });
 
     updateActionButtons();
 }
 
+function createComponentItem(comp, idx, isGroupMember) {
+    var item = document.createElement('div');
+    item.className = 'component-item';
+    if (selectedSet.indexOf(idx) !== -1) {
+        item.classList.add('selected');
+    }
+    if (isGroupMember) {
+        item.style.paddingLeft = '24px';
+    }
+
+    var checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = selectedSet.indexOf(idx) !== -1;
+    checkbox.addEventListener('click', function(e) {
+        e.stopPropagation();
+        toggleSelection(idx);
+    });
+
+    var eyeBtn = document.createElement('button');
+    eyeBtn.className = 'icon-btn';
+    eyeBtn.textContent = comp.visible ? '👁' : '👁‍🗨';
+    eyeBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        toggleVisibility(idx);
+    });
+
+    var lockBtn = document.createElement('button');
+    lockBtn.className = 'icon-btn';
+    lockBtn.textContent = comp.locked ? '🔒' : '🔓';
+    lockBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        toggleLock(idx);
+    });
+
+    var label = document.createElement('span');
+    label.className = 'component-label';
+    label.textContent = comp.type === 'text' ? 'Text: "' + comp.content.substring(0, 20) + '"' : 'Path ' + (idx + 1);
+
+    item.appendChild(checkbox);
+    item.appendChild(eyeBtn);
+    item.appendChild(lockBtn);
+    item.appendChild(label);
+
+    item.addEventListener('click', function() {
+        selectComponent(idx);
+    });
+
+    return item;
+}
+
 function selectComponent(idx) {
-    selectedIdx = idx;
-    selectedSet = [idx];
+    var comp = components[idx];
+
+    // If component is part of a group, select all group members
+    if (comp.groupId) {
+        selectedSet = [];
+        components.forEach(function(c, i) {
+            if (c.groupId === comp.groupId) {
+                selectedSet.push(i);
+            }
+        });
+        selectedIdx = -1;
+    } else {
+        selectedIdx = idx;
+        selectedSet = [idx];
+    }
+
     renderCanvas();
     renderComponentList();
     renderPropertiesPanel();
@@ -676,12 +931,15 @@ function toggleSelection(idx) {
 }
 
 function toggleVisibility(idx) {
+    captureState();
     components[idx].visible = !components[idx].visible;
     renderCanvas();
     renderComponentList();
+    renderColorPalette();
 }
 
 function toggleLock(idx) {
+    captureState();
     components[idx].locked = !components[idx].locked;
     renderComponentList();
 }
@@ -773,6 +1031,7 @@ function onCanvasMouseDown(e) {
                 selectComponent(i);
             }
 
+            captureState(); // Capture state before drag
             dragState.active = true;
             dragState.startX = x;
             dragState.startY = y;
@@ -781,15 +1040,35 @@ function onCanvasMouseDown(e) {
         }
     }
 
-    // Clicked on empty space
-    selectedIdx = -1;
-    selectedSet = [];
+    // Clicked on empty space - start rectangle selection
+    if (!e.ctrlKey) {
+        selectedIdx = -1;
+        selectedSet = [];
+    }
+
+    rectSelect.active = true;
+    rectSelect.startX = x;
+    rectSelect.startY = y;
+    rectSelect.endX = x;
+    rectSelect.endY = y;
+
     renderCanvas();
     renderComponentList();
     renderPropertiesPanel();
 }
 
 function onCanvasMouseMove(e) {
+    // Handle rectangle selection
+    if (rectSelect.active) {
+        var rect = canvas.getBoundingClientRect();
+        var x = (e.clientX - rect.left) / scale;
+        var y = (e.clientY - rect.top) / scale;
+        rectSelect.endX = x;
+        rectSelect.endY = y;
+        renderCanvas();
+        return;
+    }
+
     // Handle pan mode
     if (pan.dragging) {
         var dx = e.clientX - pan.startX;
@@ -824,6 +1103,44 @@ function onCanvasMouseMove(e) {
 }
 
 function onCanvasMouseUp(e) {
+    // Handle rectangle selection
+    if (rectSelect.active) {
+        var minX = Math.min(rectSelect.startX, rectSelect.endX);
+        var minY = Math.min(rectSelect.startY, rectSelect.endY);
+        var maxX = Math.max(rectSelect.startX, rectSelect.endX);
+        var maxY = Math.max(rectSelect.startY, rectSelect.endY);
+
+        var selRect = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+
+        // Find all components intersecting the rectangle
+        var newSelection = [];
+        for (var i = 0; i < components.length; i++) {
+            if (!components[i].locked && isRectIntersecting(components[i], selRect)) {
+                newSelection.push(i);
+            }
+        }
+
+        // Update selection
+        if (e.ctrlKey) {
+            // Add to existing selection
+            newSelection.forEach(function(idx) {
+                if (selectedSet.indexOf(idx) === -1) {
+                    selectedSet.push(idx);
+                }
+            });
+        } else {
+            selectedSet = newSelection;
+        }
+
+        selectedIdx = selectedSet.length === 1 ? selectedSet[0] : -1;
+
+        rectSelect.active = false;
+        renderCanvas();
+        renderComponentList();
+        renderPropertiesPanel();
+        return;
+    }
+
     dragState.active = false;
     pan.dragging = false;
     if (pan.spaceDown) {
@@ -849,6 +1166,13 @@ function onCanvasWheel(e) {
 function onKeyDown(e) {
     if (e.key === 'Delete' && selectedSet.length > 0) {
         deleteSelected();
+    } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+            redo();
+        } else {
+            undo();
+        }
     } else if (e.key === ' ') {
         e.preventDefault();
         pan.spaceDown = true;
@@ -877,6 +1201,7 @@ function onKeyUp(e) {
 function groupSelected() {
     if (selectedSet.length < 2) return;
 
+    captureState();
     var groupId = 'grp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
 
     selectedSet.forEach(function(idx) {
@@ -887,6 +1212,7 @@ function groupSelected() {
 }
 
 function ungroupSelected() {
+    captureState();
     selectedSet.forEach(function(idx) {
         components[idx].groupId = null;
     });
@@ -895,6 +1221,7 @@ function ungroupSelected() {
 }
 
 function deleteSelected() {
+    captureState();
     // Sort in reverse order to delete from end
     selectedSet.sort(function(a, b) { return b - a; });
 
@@ -908,6 +1235,7 @@ function deleteSelected() {
     renderCanvas();
     renderComponentList();
     renderPropertiesPanel();
+    renderColorPalette();
 }
 
 function fitCanvas() {
@@ -916,6 +1244,79 @@ function fitCanvas() {
     pan.zoom = 1;
     document.getElementById('zoom-level').textContent = '100%';
     renderCanvas();
+}
+
+function resetViewport() {
+    pan.x = 0;
+    pan.y = 0;
+    pan.zoom = 1;
+    renderCanvas();
+}
+
+function captureState() {
+    // Deep clone components array
+    var state = {
+        components: JSON.parse(JSON.stringify(components)),
+        selectedIdx: selectedIdx,
+        selectedSet: selectedSet.slice()
+    };
+
+    // Remove future history if we're not at the end
+    if (historyIndex < historyStack.length - 1) {
+        historyStack = historyStack.slice(0, historyIndex + 1);
+    }
+
+    // Add new state
+    historyStack.push(state);
+
+    // Limit history size
+    if (historyStack.length > maxHistorySize) {
+        historyStack.shift();
+    } else {
+        historyIndex++;
+    }
+
+    updateUndoRedoButtons();
+}
+
+function undo() {
+    if (historyIndex > 0) {
+        historyIndex--;
+        var state = historyStack[historyIndex];
+        components = JSON.parse(JSON.stringify(state.components));
+        selectedIdx = state.selectedIdx;
+        selectedSet = state.selectedSet.slice();
+
+        renderCanvas();
+        renderComponentList();
+        renderPropertiesPanel();
+        renderColorPalette();
+        updateUndoRedoButtons();
+    }
+}
+
+function redo() {
+    if (historyIndex < historyStack.length - 1) {
+        historyIndex++;
+        var state = historyStack[historyIndex];
+        components = JSON.parse(JSON.stringify(state.components));
+        selectedIdx = state.selectedIdx;
+        selectedSet = state.selectedSet.slice();
+
+        renderCanvas();
+        renderComponentList();
+        renderPropertiesPanel();
+        renderColorPalette();
+        updateUndoRedoButtons();
+    }
+}
+
+function updateUndoRedoButtons() {
+    var undoBtn = document.getElementById('undo-btn');
+    var redoBtn = document.getElementById('redo-btn');
+
+    if (undoBtn) undoBtn.disabled = historyIndex <= 0;
+    if (redoBtn) redoBtn.disabled = historyIndex >= historyStack.length - 1;
 }
 
 function saveComponents() {

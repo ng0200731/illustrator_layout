@@ -63,6 +63,29 @@ button:disabled {
     overflow: hidden;
 }
 
+#canvas-reset-btn {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid #000;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    padding: 0;
+}
+
+#canvas-reset-btn:hover {
+    background: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
 #canvas {
     display: block;
     position: absolute;
@@ -233,4 +256,25 @@ button:disabled {
     margin-top: 8px;
     opacity: 0.6;
     font-size: 12px;
+}
+
+#color-palette {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.color-swatch {
+    width: 24px;
+    height: 24px;
+    border: 1px solid #000;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.color-swatch:hover {
+    border: 2px solid #0066ff;
+    box-shadow: 0 0 4px rgba(0, 102, 255, 0.5);
 }
