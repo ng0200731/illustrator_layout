@@ -1,80 +1,21 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Illustrator Layout Manager</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-</head>
-<body>
-    <header>
-        <h1>Illustrator Layout Manager</h1>
-    </header>
+{% extends "base.html" %}
 
-    <div class="main-container">
-        <div id="canvas-container">
-            <button id="canvas-reset-btn" onclick="resetViewport()" title="Reset View">⌂</button>
-            <canvas id="canvas"></canvas>
-            <div id="empty-state">
-                <p>Drag PDF file here</p>
-                <p>or</p>
-                <button id="btn-choose-file">Choose File</button>
-            </div>
-            <input type="file" id="file-input" accept=".pdf" style="display: none;">
-        </div>
+{% block title %}Illustrator Layout Manager{% endblock %}
 
-        <div id="right-panel">
-            <div class="panel-section">
-                <h2>ACTIONS</h2>
-                <div class="action-buttons">
-                    <button id="undo-btn" onclick="undo()" disabled>← Undo</button>
-                    <button id="redo-btn" onclick="redo()" disabled>→ Redo</button>
-                    <button id="btn-save">Save</button>
-                </div>
-            </div>
-
-            <div class="panel-section">
-                <h2>COMPONENTS <span id="component-count">(0 items)</span></h2>
-                <div id="component-list">
-                    <div class="empty-message">No PDF loaded</div>
-                </div>
-            </div>
-
-            <div class="panel-section">
-                <h2>COLORS <span id="color-count">(0 colors)</span></h2>
-                <div id="color-palette"></div>
-            </div>
-
-            <div class="panel-section" id="properties-section" style="display: none;">
-                <h2>SELECTED</h2>
-                <div id="properties-panel"></div>
-            </div>
-
-            <div class="panel-section">
-                <h2>SELECTION</h2>
-                <div class="action-buttons">
-                    <button id="btn-group" disabled>Group Selected</button>
-                    <button id="btn-ungroup" disabled>Ungroup</button>
-                    <button id="btn-delete" disabled>Delete Selected</button>
-                </div>
-            </div>
-
-            <div class="panel-section">
-                <h2>EXPORT OPTIONS</h2>
-                <div class="export-buttons">
-                    <button id="btn-export-pdf" disabled>PDF</button>
-                    <button id="btn-export-ai-editable" disabled>AI E</button>
-                    <button id="btn-export-ai-outlined" disabled>AI O</button>
-                </div>
-            </div>
-        </div>
+{% block content %}
+<div class="tab-pane active">
+    <div style="padding: 40px; text-align: center;">
+        <h2>Welcome to Illustrator Layout Manager</h2>
+        <p style="margin-top: 20px;">Select an option from the sidebar to get started.</p>
     </div>
+</div>
 
-    <script>
-        // Set PDF.js worker
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    </script>
-    <script src="{{ url_for('static', filename='js/component.js') }}"></script>
-</body>
-</html>
+<script>
+    // Auto-open first tab on load if no tabs are open
+    document.addEventListener('DOMContentLoaded', function() {
+        if (tabs.length === 0) {
+            openTab('Customer (Create)', '/customer/create');
+        }
+    });
+</script>
+{% endblock %}

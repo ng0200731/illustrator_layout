@@ -1,0 +1,95 @@
+<div class="tab-pane">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pdf_manager.css') }}">
+
+    <div class="pdf-manager-container">
+        <div id="canvas-container">
+            <button id="canvas-reset-btn" onclick="resetViewport()" title="Reset View">⌂</button>
+            <canvas id="canvas"></canvas>
+            <div id="empty-state">
+                <p>Drag PDF file here</p>
+                <p>or</p>
+                <button id="btn-choose-file">Choose File</button>
+            </div>
+            <input type="file" id="file-input" accept=".pdf" style="display: none;">
+        </div>
+
+        <div id="right-panel">
+            <div class="panel-section">
+                <h2>ACTIONS</h2>
+                <div class="action-buttons">
+                    <button id="undo-btn" onclick="undo()" disabled>← Undo</button>
+                    <button id="redo-btn" onclick="redo()" disabled>→ Redo</button>
+                    <button id="btn-save-layout" onclick="saveLayoutToDatabase()">Save Layout</button>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h2>COMPONENTS <span id="component-count">(0 items)</span></h2>
+                <div id="component-list">
+                    <div class="empty-message">No PDF loaded</div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h2>COLORS <span id="color-count">(0 colors)</span></h2>
+                <div id="color-palette"></div>
+            </div>
+
+            <div class="panel-section" id="properties-section" style="display: none;">
+                <h2>SELECTED</h2>
+                <div id="properties-panel"></div>
+            </div>
+
+            <div class="panel-section">
+                <h2>SELECTION</h2>
+                <div class="action-buttons">
+                    <button id="btn-group" disabled>Group Selected</button>
+                    <button id="btn-ungroup" disabled>Ungroup</button>
+                    <button id="btn-delete" disabled>Delete Selected</button>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h2>EXPORT OPTIONS</h2>
+                <div class="export-buttons">
+                    <button id="btn-export-pdf" disabled>PDF</button>
+                    <button id="btn-export-ai-editable" disabled>AI E</button>
+                    <button id="btn-export-ai-outlined" disabled>AI O</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Prevent default drag behavior on the entire document to stop PDF from opening in browser
+        document.addEventListener('dragover', function(e) {
+            e.preventDefault();
+        }, false);
+
+        document.addEventListener('drop', function(e) {
+            e.preventDefault();
+        }, false);
+
+        // Load PDF.js library first
+        (function() {
+            var pdfScript = document.createElement('script');
+            pdfScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            pdfScript.onload = function() {
+                // Set PDF.js worker after library loads
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+                // Then load the PDF manager script
+                var managerScript = document.createElement('script');
+                managerScript.src = "{{ url_for('static', filename='js/pdf_manager.js') }}";
+                managerScript.onload = function() {
+                    // Initialize PDF manager after script loads
+                    if (typeof init === 'function') {
+                        init();
+                    }
+                };
+                document.body.appendChild(managerScript);
+            };
+            document.body.appendChild(pdfScript);
+        })();
+    </script>
+</div>

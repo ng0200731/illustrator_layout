@@ -3,10 +3,22 @@ import json
 import os
 import sys
 
+# Import models and blueprints
+from models import init_db
+from blueprints.customer import customer_bp
+from blueprints.layout import layout_bp
+
 app = Flask(__name__)
 
 # Ensure .tmp directory exists
 os.makedirs('.tmp', exist_ok=True)
+
+# Initialize database
+init_db()
+
+# Register blueprints
+app.register_blueprint(customer_bp)
+app.register_blueprint(layout_bp)
 
 @app.route('/')
 def index():

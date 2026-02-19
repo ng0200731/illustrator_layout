@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Illustrator Layout Manager{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="app-container">
+        <!-- Left Sidebar (20%) -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>Layout Manager</h1>
+            </div>
+            <nav class="sidebar-nav">
+                <ul class="menu">
+                    <li class="menu-item">
+                        <div class="menu-header" onclick="toggleMenu(this)">
+                            <span class="menu-icon">▶</span>
+                            <span>Customer</span>
+                        </div>
+                        <ul class="submenu">
+                            <li onclick="openTab('Customer (Create)', '/customer/create')">Create</li>
+                            <li onclick="openTab('Customer (View)', '/customer/view')">View</li>
+                        </ul>
+                    </li>
+                    <li class="menu-item">
+                        <div class="menu-header" onclick="toggleMenu(this)">
+                            <span class="menu-icon">▶</span>
+                            <span>Layout</span>
+                        </div>
+                        <ul class="submenu">
+                            <li class="menu-item">
+                                <div class="menu-header" onclick="toggleMenu(this)">
+                                    <span class="menu-icon">▶</span>
+                                    <span>Create</span>
+                                </div>
+                                <ul class="submenu">
+                                    <li onclick="openTab('Layout (Draw)', '/layout/create/draw')">Draw</li>
+                                    <li onclick="openTab('Layout (PDF)', '/layout/create/pdf')">PDF</li>
+                                </ul>
+                            </li>
+                            <li onclick="openTab('Layout (View)', '/layout/view')">View</li>
+                        </ul>
+                    </li>
+                </ul>
+            </nav>
+        </aside>
+
+        <!-- Right Content Area (80%) -->
+        <main class="content-area">
+            <!-- Tab Bar -->
+            <div class="tab-bar" id="tabBar"></div>
+
+            <!-- Tab Content -->
+            <div class="tab-content" id="tabContent">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/navigation.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
