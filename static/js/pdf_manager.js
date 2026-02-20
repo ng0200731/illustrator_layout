@@ -16,7 +16,10 @@ function getCanvasState(canvas) {
             groupExpanded: {},
             historyStack: [],
             historyIndex: -1,
-            maxHistorySize: 50
+            maxHistorySize: 50,
+            currentLayoutId: null,
+            currentLayoutName: null,
+            currentCustomerId: null
         });
     }
     return canvasStates.get(canvas);
@@ -1830,16 +1833,32 @@ function exportFile(type, outlined) {
     });
 }
 
+// Pending overwrite data (used by confirmation flow)
+var _pendingOverwrite = null;
+
 // Save layout to database
 function saveLayoutToDatabase() {
     // Show modal and load customers
     const modal = _el('save-layout-modal');
     const customerSelect = _el('layout-customer');
     const nameInput = _el('layout-name');
+    const formView = _el('save-layout-form-view');
+    const confirmView = _el('save-layout-confirm-view');
 
-    // Clear previous values
+    // Reset to form view
+    formView.style.display = '';
+    confirmView.style.display = 'none';
+    _pendingOverwrite = null;
+
+    // Pre-fill if we loaded a layout
+    if (state && state.currentLayoutId) {
+        nameInput.value = state.currentLayoutName || '';
+    } else {
+        nameInput.value = '';
+    }
+
+    // Clear customer select
     customerSelect.innerHTML = '<option value="">Loading customers...</option>';
-    nameInput.value = '';
 
     // Show modal
     modal.classList.add('active');
@@ -1856,6 +1875,10 @@ function saveLayoutToDatabase() {
                     option.textContent = customer.company_name;
                     customerSelect.appendChild(option);
                 });
+                // Pre-select customer if loaded from existing layout
+                if (state && state.currentCustomerId) {
+                    customerSelect.value = state.currentCustomerId;
+                }
             } else {
                 customerSelect.innerHTML = '<option value="">Error loading customers</option>';
                 showLayoutMessage('Error loading customers', 'error');
@@ -1896,24 +1919,84 @@ function saveLayoutToDatabase() {
             customer_id: customerId
         };
 
-        fetch('/layout/save', {
+        // Check for existing layout with same customer+name
+        fetch('/layout/check-duplicate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(layoutData)
+            body: JSON.stringify({ customer_id: customerId, name: layoutName })
         })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showLayoutMessage('Layout saved successfully! ID: ' + data.id, 'success');
-                closeSaveModal();
+        .then(r => r.json())
+        .then(result => {
+            if (result.success && result.exists) {
+                // Show overwrite confirmation
+                _pendingOverwrite = { layoutData: layoutData, existingId: result.layout.id };
+                var msg = _el('overwrite-message');
+                msg.textContent = 'A layout named "' + layoutName + '" already exists for this customer. Do you want to overwrite it?';
+                formView.style.display = 'none';
+                confirmView.style.display = '';
             } else {
-                showLayoutMessage('Error saving layout: ' + data.error, 'error');
+                // No duplicate — save as new
+                doSaveLayout(layoutData, null);
             }
         })
         .catch(error => {
-            showLayoutMessage('Error saving layout: ' + error, 'error');
+            showLayoutMessage('Error checking layout: ' + error, 'error');
         });
     };
+}
+
+// Actually save (new) or update (overwrite) the layout
+function doSaveLayout(layoutData, overwriteId) {
+    var url, method;
+    if (overwriteId) {
+        url = '/layout/' + overwriteId;
+        method = 'PUT';
+    } else {
+        url = '/layout/save';
+        method = 'POST';
+    }
+
+    fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(layoutData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            var savedId = overwriteId || data.id;
+            // Track the saved layout
+            if (state) {
+                state.currentLayoutId = savedId;
+                state.currentLayoutName = layoutData.name;
+                state.currentCustomerId = layoutData.customer_id;
+            }
+            showLayoutMessage('Layout saved successfully!', 'success');
+            closeSaveModal();
+        } else {
+            showLayoutMessage('Error saving layout: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        showLayoutMessage('Error saving layout: ' + error, 'error');
+    });
+}
+
+// Confirm overwrite
+function confirmOverwrite() {
+    if (_pendingOverwrite) {
+        doSaveLayout(_pendingOverwrite.layoutData, _pendingOverwrite.existingId);
+        _pendingOverwrite = null;
+    }
+}
+
+// Cancel overwrite — go back to form
+function cancelOverwrite() {
+    var formView = _el('save-layout-form-view');
+    var confirmView = _el('save-layout-confirm-view');
+    formView.style.display = '';
+    confirmView.style.display = 'none';
+    _pendingOverwrite = null;
 }
 
 // Close save modal
@@ -1953,6 +2036,13 @@ function loadLayoutFromDatabase(layoutId) {
                 const layoutData = layout.data;
 
                 console.log('Layout data loaded:', layoutData);
+
+                // Track loaded layout for overwrite detection
+                if (state) {
+                    state.currentLayoutId = layout.id;
+                    state.currentLayoutName = layout.name;
+                    state.currentCustomerId = layout.customer_id;
+                }
 
                 // Restore layout state
                 components = layoutData.components || [];

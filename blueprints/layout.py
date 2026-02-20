@@ -30,6 +30,21 @@ def save_layout():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
+@layout_bp.route('/check-duplicate', methods=['POST'])
+def check_duplicate():
+    """Check if a layout with the same customer+name already exists"""
+    try:
+        data = request.get_json()
+        existing = Layout.find_by_customer_and_name(
+            customer_id=data.get('customer_id'),
+            name=data.get('name')
+        )
+        if existing:
+            return jsonify({'success': True, 'exists': True, 'layout': existing}), 200
+        return jsonify({'success': True, 'exists': False}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
 @layout_bp.route('/view', methods=['GET'])
 def view_page():
     """Render layout list page"""

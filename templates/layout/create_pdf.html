@@ -108,23 +108,35 @@
     <!-- Save Layout Modal -->
     <div id="save-layout-modal" class="modal-overlay">
         <div class="modal-content">
-            <h2>Save Layout</h2>
-            <form id="save-layout-form">
-                <div class="modal-form-group">
-                    <label for="layout-customer">Customer <span class="required">*</span></label>
-                    <select id="layout-customer" required>
-                        <option value="">Select a customer...</option>
-                    </select>
-                </div>
-                <div class="modal-form-group">
-                    <label for="layout-name">Layout Name <span class="required">*</span></label>
-                    <input type="text" id="layout-name" placeholder="Enter layout name" required>
-                </div>
+            <!-- Save form (default view) -->
+            <div id="save-layout-form-view">
+                <h2>Save Layout</h2>
+                <form id="save-layout-form">
+                    <div class="modal-form-group">
+                        <label for="layout-customer">Customer <span class="required">*</span></label>
+                        <select id="layout-customer" required>
+                            <option value="">Select a customer...</option>
+                        </select>
+                    </div>
+                    <div class="modal-form-group">
+                        <label for="layout-name">Layout Name <span class="required">*</span></label>
+                        <input type="text" id="layout-name" placeholder="Enter layout name" required>
+                    </div>
+                    <div class="modal-buttons">
+                        <button type="button" class="btn-secondary" onclick="closeSaveModal()">Cancel</button>
+                        <button type="submit" class="btn-primary">Save Layout</button>
+                    </div>
+                </form>
+            </div>
+            <!-- Overwrite confirmation view -->
+            <div id="save-layout-confirm-view" style="display:none;">
+                <h2>Overwrite Layout?</h2>
+                <p id="overwrite-message" style="margin:12px 0;line-height:1.5;"></p>
                 <div class="modal-buttons">
-                    <button type="button" class="btn-secondary" onclick="closeSaveModal()">Cancel</button>
-                    <button type="submit" class="btn-primary">Save Layout</button>
+                    <button type="button" class="btn-secondary" onclick="cancelOverwrite()">Cancel</button>
+                    <button type="button" class="btn-primary" onclick="confirmOverwrite()">Overwrite</button>
                 </div>
-            </form>
+            </div>
         </div>
     </div>
 </div>

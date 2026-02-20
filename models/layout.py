@@ -50,6 +50,13 @@ class Layout:
         return [dict(row) for row in rows]
 
     @staticmethod
+    def find_by_customer_and_name(customer_id, name):
+        """Find layout by customer ID and name"""
+        query = 'SELECT id, name, customer_id, type, created_at, updated_at FROM layouts WHERE customer_id = ? AND name = ?'
+        row = execute_query(query, (customer_id, name), fetch_one=True)
+        return dict(row) if row else None
+
+    @staticmethod
     def update(layout_id, name=None, data=None, customer_id=None):
         """Update layout"""
         data_json = json.dumps(data) if data and isinstance(data, (dict, list)) else data
