@@ -26,11 +26,17 @@
         </table>
     </div>
 
-    <script src="{{ url_for('static', filename='js/layout.js') }}"></script>
     <script>
-        // Load layouts when this tab is opened
-        if (typeof loadLayouts === 'function') {
-            loadLayouts();
-        }
+        // Load layout.js and then call loadLayouts
+        (function() {
+            var script = document.createElement('script');
+            script.src = "{{ url_for('static', filename='js/layout.js') }}";
+            script.onload = function() {
+                if (typeof loadLayouts === 'function') {
+                    loadLayouts();
+                }
+            };
+            document.body.appendChild(script);
+        })();
     </script>
 </div>

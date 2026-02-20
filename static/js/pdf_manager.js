@@ -1,28 +1,125 @@
-// Global state
-var components = [];
-var selectedIdx = -1;
-var selectedSet = [];
+// Store state per canvas using WeakMap
+var canvasStates = new WeakMap();
+
+function getCanvasState(canvas) {
+    if (!canvasStates.has(canvas)) {
+        canvasStates.set(canvas, {
+            components: [],
+            selectedIdx: -1,
+            selectedSet: [],
+            scale: 1,
+            pdfWidth: 0,
+            pdfHeight: 0,
+            pan: { x: 0, y: 0, zoom: 1, dragging: false, startX: 0, startY: 0, spaceDown: false },
+            dragState: { active: false, startX: 0, startY: 0, componentIdx: -1 },
+            rectSelect: { active: false, startX: 0, startY: 0, endX: 0, endY: 0 },
+            groupExpanded: {},
+            historyStack: [],
+            historyIndex: -1,
+            maxHistorySize: 50
+        });
+    }
+    return canvasStates.get(canvas);
+}
+
+// Current active canvas and its state
 var canvas = null;
 var ctx = null;
-var scale = 1;
-var pdfWidth = 0;
-var pdfHeight = 0;
-var pan = { x: 0, y: 0, zoom: 1, dragging: false, startX: 0, startY: 0, spaceDown: false };
-var dragState = { active: false, startX: 0, startY: 0, componentIdx: -1 };
-var rectSelect = { active: false, startX: 0, startY: 0, endX: 0, endY: 0 };
-var groupExpanded = {}; // Track which groups are expanded
-var historyStack = [];
-var historyIndex = -1;
-var maxHistorySize = 50;
+var state = null;
+
+// Proxy getters for backward compatibility
+Object.defineProperty(window, 'components', {
+    get: function() { return state ? state.components : []; },
+    set: function(val) { if (state) state.components = val; }
+});
+Object.defineProperty(window, 'selectedIdx', {
+    get: function() { return state ? state.selectedIdx : -1; },
+    set: function(val) { if (state) state.selectedIdx = val; }
+});
+Object.defineProperty(window, 'selectedSet', {
+    get: function() { return state ? state.selectedSet : []; },
+    set: function(val) { if (state) state.selectedSet = val; }
+});
+Object.defineProperty(window, 'scale', {
+    get: function() { return state ? state.scale : 1; },
+    set: function(val) { if (state) state.scale = val; }
+});
+Object.defineProperty(window, 'pdfWidth', {
+    get: function() { return state ? state.pdfWidth : 0; },
+    set: function(val) { if (state) state.pdfWidth = val; }
+});
+Object.defineProperty(window, 'pdfHeight', {
+    get: function() { return state ? state.pdfHeight : 0; },
+    set: function(val) { if (state) state.pdfHeight = val; }
+});
+Object.defineProperty(window, 'pan', {
+    get: function() { return state ? state.pan : { x: 0, y: 0, zoom: 1, dragging: false, startX: 0, startY: 0, spaceDown: false }; },
+    set: function(val) { if (state) state.pan = val; }
+});
+Object.defineProperty(window, 'dragState', {
+    get: function() { return state ? state.dragState : { active: false, startX: 0, startY: 0, componentIdx: -1 }; },
+    set: function(val) { if (state) state.dragState = val; }
+});
+Object.defineProperty(window, 'rectSelect', {
+    get: function() { return state ? state.rectSelect : { active: false, startX: 0, startY: 0, endX: 0, endY: 0 }; },
+    set: function(val) { if (state) state.rectSelect = val; }
+});
+Object.defineProperty(window, 'groupExpanded', {
+    get: function() { return state ? state.groupExpanded : {}; },
+    set: function(val) { if (state) state.groupExpanded = val; }
+});
+Object.defineProperty(window, 'historyStack', {
+    get: function() { return state ? state.historyStack : []; },
+    set: function(val) { if (state) state.historyStack = val; }
+});
+Object.defineProperty(window, 'historyIndex', {
+    get: function() { return state ? state.historyIndex : -1; },
+    set: function(val) { if (state) state.historyIndex = val; }
+});
+Object.defineProperty(window, 'maxHistorySize', {
+    get: function() { return state ? state.maxHistorySize : 50; },
+    set: function(val) { if (state) state.maxHistorySize = val; }
+});
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', function() {
     init();
 });
 
+function initWithTabPane(tabPane) {
+    if (!tabPane) return;
+
+    canvas = tabPane.querySelector('#canvas');
+    if (!canvas) return;
+
+    ctx = canvas.getContext('2d');
+    state = getCanvasState(canvas);
+
+    setupDragDrop();
+    setupFileInput();
+    setupButtons();
+    setupCanvasInteraction();
+
+    renderCanvas();
+
+    // Check if we should load a layout from data attribute
+    console.log('Tab pane found:', tabPane);
+    const layoutId = tabPane.getAttribute('data-layout-id');
+    console.log('Layout ID from data attribute:', layoutId);
+    if (layoutId && layoutId.trim() !== '') {
+        console.log('Loading layout:', layoutId);
+        loadLayoutFromDatabase(layoutId);
+    } else {
+        console.log('No layout ID to load');
+    }
+}
+
 function init() {
     canvas = document.getElementById('canvas');
+    if (!canvas) return;
+
     ctx = canvas.getContext('2d');
+    state = getCanvasState(canvas);
 
     setupDragDrop();
     setupFileInput();
@@ -48,8 +145,16 @@ function init() {
     }
 }
 
+// Helper to get element scoped to current canvas's tab pane
+function _el(id) {
+    if (!canvas) return document.getElementById(id);
+    var tabPane = canvas.closest('.tab-pane');
+    if (!tabPane) return document.getElementById(id);
+    return tabPane.querySelector('#' + id);
+}
+
 function setupDragDrop() {
-    var container = document.getElementById('canvas-container');
+    var container = _el('canvas-container');
 
     // Prevent default drag behavior on the container
     container.addEventListener('dragover', function(e) {
@@ -92,8 +197,8 @@ function setupDragDrop() {
 }
 
 function setupFileInput() {
-    var fileInput = document.getElementById('file-input');
-    var chooseBtn = document.getElementById('btn-choose-file');
+    var fileInput = _el('file-input');
+    var chooseBtn = _el('btn-choose-file');
 
     chooseBtn.addEventListener('click', function() {
         fileInput.click();
@@ -107,17 +212,17 @@ function setupFileInput() {
 }
 
 function setupButtons() {
-    var saveBtn = document.getElementById('btn-save-layout');
+    var saveBtn = _el('btn-save-layout');
     if (saveBtn) {
         saveBtn.addEventListener('click', saveLayoutToDatabase);
     }
 
-    document.getElementById('btn-group').addEventListener('click', groupSelected);
-    document.getElementById('btn-ungroup').addEventListener('click', ungroupSelected);
-    document.getElementById('btn-delete').addEventListener('click', deleteSelected);
-    document.getElementById('btn-export-pdf').addEventListener('click', function() { exportFile('pdf'); });
-    document.getElementById('btn-export-ai-editable').addEventListener('click', function() { exportFile('ai-separate', false); });
-    document.getElementById('btn-export-ai-outlined').addEventListener('click', function() { exportFile('ai-separate', true); });
+    _el('btn-group').addEventListener('click', groupSelected);
+    _el('btn-ungroup').addEventListener('click', ungroupSelected);
+    _el('btn-delete').addEventListener('click', deleteSelected);
+    _el('btn-export-pdf').addEventListener('click', function() { exportFile('pdf'); });
+    _el('btn-export-ai-editable').addEventListener('click', function() { exportFile('ai-separate', false); });
+    _el('btn-export-ai-outlined').addEventListener('click', function() { exportFile('ai-separate', true); });
 }
 
 function setupCanvasInteraction() {
@@ -198,12 +303,12 @@ function parsePdfFile(file) {
                     });
 
                     // Hide empty state
-                    document.getElementById('empty-state').style.display = 'none';
+                    _el('empty-state').style.display = 'none';
 
                     // Enable export buttons
-                    document.getElementById('btn-export-pdf').disabled = false;
-                    document.getElementById('btn-export-ai-editable').disabled = false;
-                    document.getElementById('btn-export-ai-outlined').disabled = false;
+                    _el('btn-export-pdf').disabled = false;
+                    _el('btn-export-ai-editable').disabled = false;
+                    _el('btn-export-ai-outlined').disabled = false;
 
                     // Center the PDF on canvas
                     centerPdfOnCanvas();
@@ -493,12 +598,12 @@ function renderCanvas() {
     if (!canvas || !ctx) return;
 
     // Update zoom display
-    var zoomDisplay = document.getElementById('zoom-level');
+    var zoomDisplay = _el('zoom-level');
     if (zoomDisplay) {
         zoomDisplay.textContent = Math.round(pan.zoom * 100) + '%';
     }
 
-    var container = document.getElementById('canvas-container');
+    var container = _el('canvas-container');
     var containerW = container.clientWidth;
     var containerH = container.clientHeight;
 
@@ -719,11 +824,11 @@ function selectByColor(targetRgb, toggleVisibility) {
 }
 
 function renderColorPalette() {
-    var palette = document.getElementById('color-palette');
+    var palette = _el('color-palette');
     if (!palette) return;
 
     var colors = collectUniqueColors();
-    var colorCount = document.getElementById('color-count');
+    var colorCount = _el('color-count');
     if (colorCount) {
         colorCount.textContent = '(' + colors.length + ' colors)';
     }
@@ -774,10 +879,10 @@ function renderColorPalette() {
 }
 
 function renderComponentList() {
-    var list = document.getElementById('component-list');
+    var list = _el('component-list');
     list.innerHTML = '';
 
-    document.getElementById('component-count').textContent = '(' + components.length + ' items)';
+    _el('component-count').textContent = '(' + components.length + ' items)';
 
     if (components.length === 0) {
         list.innerHTML = '<div class="empty-message">No PDF loaded</div>';
@@ -997,8 +1102,8 @@ function toggleLock(idx) {
 }
 
 function renderPropertiesPanel() {
-    var panel = document.getElementById('properties-panel');
-    var section = document.getElementById('properties-section');
+    var panel = _el('properties-panel');
+    var section = _el('properties-section');
 
     if (selectedIdx === -1 || selectedSet.length === 0) {
         section.style.display = 'none';
@@ -1052,9 +1157,9 @@ function updateActionButtons() {
     var hasSelection = selectedSet.length > 0;
     var canGroup = selectedSet.length > 1;
 
-    document.getElementById('btn-group').disabled = !canGroup;
-    document.getElementById('btn-ungroup').disabled = !hasSelection;
-    document.getElementById('btn-delete').disabled = !hasSelection;
+    _el('btn-group').disabled = !canGroup;
+    _el('btn-ungroup').disabled = !hasSelection;
+    _el('btn-delete').disabled = !hasSelection;
 }
 
 function onCanvasMouseDown(e) {
@@ -1473,7 +1578,7 @@ function fitCanvas() {
     pan.x = 0;
     pan.y = 0;
     pan.zoom = 1;
-    document.getElementById('zoom-level').textContent = '100%';
+    _el('zoom-level').textContent = '100%';
     renderCanvas();
 }
 
@@ -1483,7 +1588,7 @@ function resetViewport() {
 }
 
 function centerPdfOnCanvas() {
-    var container = document.getElementById('canvas-container');
+    var container = _el('canvas-container');
     var containerW = container.clientWidth;
     var containerH = container.clientHeight;
 
@@ -1574,8 +1679,8 @@ function redo() {
 }
 
 function updateUndoRedoButtons() {
-    var undoBtn = document.getElementById('undo-btn');
-    var redoBtn = document.getElementById('redo-btn');
+    var undoBtn = _el('undo-btn');
+    var redoBtn = _el('redo-btn');
 
     if (undoBtn) undoBtn.disabled = historyIndex <= 0;
     if (redoBtn) redoBtn.disabled = historyIndex >= historyStack.length - 1;
@@ -1641,9 +1746,9 @@ function exportFile(type, outlined) {
 // Save layout to database
 function saveLayoutToDatabase() {
     // Show modal and load customers
-    const modal = document.getElementById('save-layout-modal');
-    const customerSelect = document.getElementById('layout-customer');
-    const nameInput = document.getElementById('layout-name');
+    const modal = _el('save-layout-modal');
+    const customerSelect = _el('layout-customer');
+    const nameInput = _el('layout-name');
 
     // Clear previous values
     customerSelect.innerHTML = '<option value="">Loading customers...</option>';
@@ -1675,7 +1780,7 @@ function saveLayoutToDatabase() {
         });
 
     // Handle form submission
-    const form = document.getElementById('save-layout-form');
+    const form = _el('save-layout-form');
     form.onsubmit = function(e) {
         e.preventDefault();
 
@@ -1726,7 +1831,7 @@ function saveLayoutToDatabase() {
 
 // Close save modal
 function closeSaveModal() {
-    const modal = document.getElementById('save-layout-modal');
+    const modal = _el('save-layout-modal');
     modal.classList.remove('active');
 }
 
@@ -1780,10 +1885,10 @@ function loadLayoutFromDatabase(layoutId) {
                 updateActionButtons();
 
                 // Hide empty state and enable export buttons
-                document.getElementById('empty-state').style.display = 'none';
-                document.getElementById('btn-export-pdf').disabled = false;
-                document.getElementById('btn-export-ai-editable').disabled = false;
-                document.getElementById('btn-export-ai-outlined').disabled = false;
+                _el('empty-state').style.display = 'none';
+                _el('btn-export-pdf').disabled = false;
+                _el('btn-export-ai-editable').disabled = false;
+                _el('btn-export-ai-outlined').disabled = false;
             } else {
                 alert('Error loading layout: ' + data.error);
             }

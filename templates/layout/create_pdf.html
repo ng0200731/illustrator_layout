@@ -1,4 +1,4 @@
-<div class="tab-pane" data-layout-id="{{ layout_id if layout_id else '' }}">
+<div class="tab-pane" data-layout-id="{{ layout_id if layout_id else '' }}" data-tab-instance="{{ range(1000000, 9999999) | random }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pdf_manager.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/layout_modal.css') }}">
 
@@ -73,6 +73,10 @@
 
         // Load PDF.js library first
         (function() {
+            // Find the tab pane with the unique instance ID
+            var allTabPanes = document.querySelectorAll('.tab-pane[data-tab-instance]');
+            var currentTabPane = allTabPanes[allTabPanes.length - 1]; // Get the most recently added one
+
             var pdfScript = document.createElement('script');
             pdfScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
             pdfScript.onload = function() {
@@ -83,8 +87,10 @@
                 var managerScript = document.createElement('script');
                 managerScript.src = "{{ url_for('static', filename='js/pdf_manager.js') }}";
                 managerScript.onload = function() {
-                    // Initialize PDF manager after script loads
-                    if (typeof init === 'function') {
+                    // Initialize PDF manager after script loads, passing the tab pane
+                    if (currentTabPane && typeof initWithTabPane === 'function') {
+                        initWithTabPane(currentTabPane);
+                    } else if (typeof init === 'function') {
                         init();
                     }
                 };
