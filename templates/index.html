@@ -3,7 +3,7 @@
 {% block title %}Illustrator Layout Manager{% endblock %}
 
 {% block content %}
-<div class="tab-pane active">
+<div class="tab-pane active" id="welcome-tab-content">
     <div style="padding: 40px; text-align: center;">
         <h2>Welcome to Illustrator Layout Manager</h2>
         <p style="margin-top: 20px;">Select an option from the sidebar to get started.</p>
@@ -11,10 +11,13 @@
 </div>
 
 <script>
-    // Auto-open first tab on load if no tabs are open
+    // Register welcome tab on load if no tabs are restored from session
     document.addEventListener('DOMContentLoaded', function() {
         if (tabs.length === 0) {
-            openTab('Customer (Create)', '/customer/create');
+            tabs.push({ id: 'welcome-tab', title: 'Welcome', url: '/' });
+            activeTabId = 'welcome-tab';
+            saveTabsToStorage();
+            renderTabs();
         }
     });
 </script>
