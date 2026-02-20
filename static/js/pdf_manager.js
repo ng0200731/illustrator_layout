@@ -89,11 +89,14 @@ document.addEventListener('DOMContentLoaded', function() {
 function initWithTabPane(tabPane) {
     if (!tabPane) return;
 
-    canvas = tabPane.querySelector('#canvas');
-    if (!canvas) return;
+    var canvasEl = tabPane.querySelector('#canvas');
+    if (!canvasEl) return;
 
-    ctx = canvas.getContext('2d');
-    state = getCanvasState(canvas);
+    // Store reference to tab pane on canvas element
+    canvasEl._tabPane = tabPane;
+
+    // Set as active canvas
+    switchToCanvas(canvasEl);
 
     setupDragDrop();
     setupFileInput();
@@ -112,6 +115,17 @@ function initWithTabPane(tabPane) {
     } else {
         console.log('No layout ID to load');
     }
+}
+
+// Switch active canvas context
+function switchToCanvas(canvasEl) {
+    if (!canvasEl) return;
+    canvas = canvasEl;
+    ctx = canvas.getContext('2d');
+    state = getCanvasState(canvas);
+    console.log('Switched to canvas:', canvas, 'with state:', state);
+    console.log('Components count:', state.components.length);
+    console.log('PDF dimensions:', state.pdfWidth, 'x', state.pdfHeight);
 }
 
 function init() {
@@ -155,6 +169,9 @@ function _el(id) {
 
 function setupDragDrop() {
     var container = _el('canvas-container');
+
+    if (container._dragDropSetup) return; // Already setup
+    container._dragDropSetup = true;
 
     // Prevent default drag behavior on the container
     container.addEventListener('dragover', function(e) {
@@ -200,43 +217,113 @@ function setupFileInput() {
     var fileInput = _el('file-input');
     var chooseBtn = _el('btn-choose-file');
 
-    chooseBtn.addEventListener('click', function() {
-        fileInput.click();
-    });
+    if (chooseBtn && !chooseBtn._listenerAdded) {
+        chooseBtn.addEventListener('click', function() {
+            fileInput.click();
+        });
+        chooseBtn._listenerAdded = true;
+    }
 
-    fileInput.addEventListener('change', function(e) {
-        if (e.target.files && e.target.files.length) {
-            parsePdfFile(e.target.files[0]);
-        }
-    });
+    if (fileInput && !fileInput._listenerAdded) {
+        fileInput.addEventListener('change', function(e) {
+            if (e.target.files && e.target.files.length) {
+                parsePdfFile(e.target.files[0]);
+            }
+        });
+        fileInput._listenerAdded = true;
+    }
 }
 
 function setupButtons() {
     var saveBtn = _el('btn-save-layout');
-    if (saveBtn) {
+    if (saveBtn && !saveBtn._listenerAdded) {
         saveBtn.addEventListener('click', saveLayoutToDatabase);
+        saveBtn._listenerAdded = true;
     }
 
-    _el('btn-group').addEventListener('click', groupSelected);
-    _el('btn-ungroup').addEventListener('click', ungroupSelected);
-    _el('btn-delete').addEventListener('click', deleteSelected);
-    _el('btn-export-pdf').addEventListener('click', function() { exportFile('pdf'); });
-    _el('btn-export-ai-editable').addEventListener('click', function() { exportFile('ai-separate', false); });
-    _el('btn-export-ai-outlined').addEventListener('click', function() { exportFile('ai-separate', true); });
+    var groupBtn = _el('btn-group');
+    var ungroupBtn = _el('btn-ungroup');
+    var deleteBtn = _el('btn-delete');
+    var exportPdfBtn = _el('btn-export-pdf');
+    var exportAiEditableBtn = _el('btn-export-ai-editable');
+    var exportAiOutlinedBtn = _el('btn-export-ai-outlined');
+
+    if (groupBtn && !groupBtn._listenerAdded) {
+        groupBtn.addEventListener('click', groupSelected);
+        groupBtn._listenerAdded = true;
+    }
+    if (ungroupBtn && !ungroupBtn._listenerAdded) {
+        ungroupBtn.addEventListener('click', ungroupSelected);
+        ungroupBtn._listenerAdded = true;
+    }
+    if (deleteBtn && !deleteBtn._listenerAdded) {
+        deleteBtn.addEventListener('click', deleteSelected);
+        deleteBtn._listenerAdded = true;
+    }
+    if (exportPdfBtn && !exportPdfBtn._listenerAdded) {
+        exportPdfBtn.addEventListener('click', function() { exportFile('pdf'); });
+        exportPdfBtn._listenerAdded = true;
+    }
+    if (exportAiEditableBtn && !exportAiEditableBtn._listenerAdded) {
+        exportAiEditableBtn.addEventListener('click', function() { exportFile('ai-separate', false); });
+        exportAiEditableBtn._listenerAdded = true;
+    }
+    if (exportAiOutlinedBtn && !exportAiOutlinedBtn._listenerAdded) {
+        exportAiOutlinedBtn.addEventListener('click', function() { exportFile('ai-separate', true); });
+        exportAiOutlinedBtn._listenerAdded = true;
+    }
 }
 
 function setupCanvasInteraction() {
-    canvas.addEventListener('mousedown', onCanvasMouseDown);
-    canvas.addEventListener('wheel', onCanvasWheel);
-    document.addEventListener('mousemove', onCanvasMouseMove);
-    document.addEventListener('mouseup', onCanvasMouseUp);
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup', onKeyUp);
+    // Store the current canvas element for this setup
+    var currentCanvas = canvas;
 
-    // Handle window resize
-    window.addEventListener('resize', function() {
-        renderCanvas();
-    });
+    // Remove any existing listeners to avoid duplicates
+    var oldMouseDown = currentCanvas._mouseDownHandler;
+    var oldWheel = currentCanvas._wheelHandler;
+
+    if (oldMouseDown) {
+        currentCanvas.removeEventListener('mousedown', oldMouseDown);
+    }
+    if (oldWheel) {
+        currentCanvas.removeEventListener('wheel', oldWheel);
+    }
+
+    // Create new handlers
+    var mouseDownHandler = function(e) {
+        // Switch to this canvas when interacting with it
+        switchToCanvas(currentCanvas);
+        onCanvasMouseDown(e);
+    };
+
+    var wheelHandler = function(e) {
+        // Switch to this canvas when interacting with it
+        switchToCanvas(currentCanvas);
+        onCanvasWheel(e);
+    };
+
+    // Store handlers on canvas for later removal
+    currentCanvas._mouseDownHandler = mouseDownHandler;
+    currentCanvas._wheelHandler = wheelHandler;
+
+    // Add new listeners
+    currentCanvas.addEventListener('mousedown', mouseDownHandler);
+    currentCanvas.addEventListener('wheel', wheelHandler);
+
+    // Global listeners (only add once)
+    if (!window._pdfManagerGlobalListenersAdded) {
+        document.addEventListener('mousemove', onCanvasMouseMove);
+        document.addEventListener('mouseup', onCanvasMouseUp);
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            renderCanvas();
+        });
+
+        window._pdfManagerGlobalListenersAdded = true;
+    }
 }
 
 function parsePdfFile(file) {

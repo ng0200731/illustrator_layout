@@ -56,6 +56,28 @@ function switchTab(tabId) {
     const activePane = document.getElementById(tabId + '-content');
     if (activePane) {
         activePane.classList.add('active');
+
+        // If this tab has a canvas, switch to it
+        const canvasEl = activePane.querySelector('#canvas');
+        if (canvasEl && typeof switchToCanvas === 'function') {
+            switchToCanvas(canvasEl);
+
+            // Wait for tab to be visible, then re-render everything
+            setTimeout(function() {
+                if (typeof renderCanvas === 'function') {
+                    renderCanvas();
+                }
+                if (typeof renderComponentList === 'function') {
+                    renderComponentList();
+                }
+                if (typeof renderColorPalette === 'function') {
+                    renderColorPalette();
+                }
+                if (typeof updateActionButtons === 'function') {
+                    updateActionButtons();
+                }
+            }, 10);
+        }
     }
 }
 
