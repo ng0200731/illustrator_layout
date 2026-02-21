@@ -1,0 +1,169 @@
+/* Font View Styles */
+
+.font-view-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 20px;
+    gap: 20px;
+}
+
+.header-section {
+    border-bottom: 1px solid black;
+    padding-bottom: 10px;
+}
+
+.header-section h2 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+}
+
+#fonts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 15px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.font-card {
+    border: 1px solid black;
+    padding: 15px;
+    cursor: pointer;
+    background: white;
+    transition: all 0.2s;
+}
+
+.font-card:hover {
+    background: #f5f5f5;
+    transform: translateY(-2px);
+    box-shadow: 2px 2px 0 black;
+}
+
+.font-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.font-name {
+    font-weight: 600;
+    font-size: 16px;
+    flex: 1;
+}
+
+.font-actions {
+    display: flex;
+    gap: 5px;
+}
+
+.font-actions button {
+    padding: 5px 8px;
+    border: 1px solid black;
+    background: white;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.font-actions button:hover {
+    background: black;
+    color: white;
+}
+
+.font-filename {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 5px;
+}
+
+.font-date {
+    font-size: 11px;
+    color: #999;
+}
+
+.preview-section {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 50%;
+    height: 100%;
+    background: white;
+    border-left: 2px solid black;
+    padding: 20px;
+    overflow-y: auto;
+    z-index: 1000;
+}
+
+.preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    border-bottom: 1px solid black;
+    padding-bottom: 10px;
+}
+
+.preview-header h2 {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+}
+
+#btn-close-preview {
+    padding: 5px 10px;
+    border: 1px solid black;
+    background: white;
+    cursor: pointer;
+    font-size: 18px;
+}
+
+#btn-close-preview:hover {
+    background: black;
+    color: white;
+}
+
+.preview-group {
+    margin-bottom: 30px;
+}
+
+.preview-label {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: #666;
+}
+
+.character-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+    gap: 5px;
+}
+
+.character-item {
+    width: 40px;
+    height: 40px;
+    border: 1px solid black;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    cursor: pointer;
+    background: white;
+    transition: all 0.2s;
+}
+
+.character-item:hover {
+    background: black;
+    color: white;
+    transform: scale(1.1);
+}
+
+.empty-message {
+    text-align: center;
+    color: #666;
+    padding: 40px;
+    font-size: 14px;
+    grid-column: 1 / -1;
+}

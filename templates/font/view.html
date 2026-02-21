@@ -1,0 +1,23 @@
+<div class="tab-pane">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/font_view.css') }}">
+
+    <div class="font-view-container">
+        <div class="header-section">
+            <h2>ALL FONTS <span id="font-count">(0 fonts)</span></h2>
+        </div>
+
+        <div id="fonts-grid">
+            <div class="empty-message">No fonts uploaded yet</div>
+        </div>
+
+        <div class="preview-section" id="preview-section" style="display: none;">
+            <div class="preview-header">
+                <h2>FONT PREVIEW</h2>
+                <button id="btn-close-preview" onclick="closePreview()">✕</button>
+            </div>
+            <div id="font-preview-content"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/font_view.js') }}"></script>
+</div>

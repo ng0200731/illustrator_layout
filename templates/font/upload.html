@@ -1,0 +1,29 @@
+<div class="tab-pane">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/font_manager.css') }}">
+
+    <div class="font-manager-container">
+        <div class="upload-section">
+            <h2>UPLOAD FONT</h2>
+            <div class="upload-area" id="upload-area">
+                <p>Drag font file here (.ttf, .otf)</p>
+                <p>or</p>
+                <button id="btn-choose-font">Choose File</button>
+            </div>
+            <input type="file" id="font-input" accept=".ttf,.otf" style="display: none;">
+        </div>
+
+        <div class="preview-section" id="preview-section" style="display: none;">
+            <h2>FONT PREVIEW</h2>
+            <div id="font-preview-content"></div>
+        </div>
+
+        <div class="fonts-list-section">
+            <h2>RECENTLY UPLOADED <span id="font-count">(0 fonts)</span></h2>
+            <div id="fonts-list">
+                <div class="empty-message">No fonts uploaded yet</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/font_upload.js') }}"></script>
+</div>

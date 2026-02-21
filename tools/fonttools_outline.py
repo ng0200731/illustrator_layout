@@ -86,7 +86,8 @@ def text_to_path(text, font_family, font_size, x, y):
 
 def _get_font_path(font_family):
     """
-    Get system font file path for given font family
+    Get font file path for given font family
+    Priority: 1) Uploaded fonts, 2) System fonts, 3) Fallback
 
     Args:
         font_family: str, font family name
@@ -94,6 +95,19 @@ def _get_font_path(font_family):
     Returns:
         str: Path to font file or None
     """
+    # Check uploaded fonts first
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from models.font import Font
+
+    try:
+        uploaded_font = Font.get_by_name(font_family)
+        if uploaded_font and os.path.exists(uploaded_font['file_path']):
+            return uploaded_font['file_path']
+    except Exception as e:
+        print(f"Warning: Could not check uploaded fonts: {e}")
+
+    # Fall back to system fonts
     # Common Windows font paths
     windows_fonts = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
 

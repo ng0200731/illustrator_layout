@@ -7,11 +7,13 @@ import sys
 from models import init_db
 from blueprints.customer import customer_bp
 from blueprints.layout import layout_bp
+from blueprints.font import font_bp
 
 app = Flask(__name__)
 
-# Ensure .tmp directory exists
+# Ensure .tmp and fonts directories exist
 os.makedirs('.tmp', exist_ok=True)
+os.makedirs('fonts', exist_ok=True)
 
 # Initialize database
 init_db()
@@ -19,6 +21,7 @@ init_db()
 # Register blueprints
 app.register_blueprint(customer_bp)
 app.register_blueprint(layout_bp)
+app.register_blueprint(font_bp)
 
 @app.route('/')
 def index():

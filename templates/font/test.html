@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Font Manager Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #upload-area {
+            border: 2px dashed #000;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            background: white;
+            margin: 20px 0;
+        }
+        #upload-area:hover { background: #f5f5f5; }
+        button {
+            padding: 10px 20px;
+            border: 1px solid black;
+            background: white;
+            cursor: pointer;
+        }
+        button:hover { background: black; color: white; }
+        #status { margin-top: 20px; padding: 10px; background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <h1>Font Upload Test</h1>
+
+    <div id="upload-area">
+        <p>Drag font file here (.ttf, .otf)</p>
+        <p>or</p>
+        <button id="btn-choose-font">Choose File</button>
+    </div>
+    <input type="file" id="font-input" accept=".ttf,.otf" style="display: none;">
+
+    <div id="status">Status: Ready</div>
+
+    <script>
+        const uploadArea = document.getElementById('upload-area');
+        const fontInput = document.getElementById('font-input');
+        const btnChooseFont = document.getElementById('btn-choose-font');
+        const status = document.getElementById('status');
+
+        function log(msg) {
+            console.log(msg);
+            status.textContent = 'Status: ' + msg;
+        }
+
+        // Button click
+        btnChooseFont.addEventListener('click', (e) => {
+            e.stopPropagation();
+            log('Button clicked, opening file dialog...');
+            fontInput.click();
+        });
+
+        // File input change
+        fontInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                log('File selected: ' + e.target.files[0].name);
+                uploadFont(e.target.files[0]);
+            }
+        });
+
+        // Drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.style.background = '#f5f5f5';
+            log('Dragging over...');
+        });
+
+        uploadArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.style.background = 'white';
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            uploadArea.style.background = 'white';
+
+            if (e.dataTransfer.files.length > 0) {
+                log('File dropped: ' + e.dataTransfer.files[0].name);
+                uploadFont(e.dataTransfer.files[0]);
+            }
+        });
+
+        // Click on upload area
+        uploadArea.addEventListener('click', (e) => {
+            if (e.target === uploadArea || e.target.tagName === 'P') {
+                log('Upload area clicked, opening file dialog...');
+                fontInput.click();
+            }
+        });
+
+        async function uploadFont(file) {
+            log('Uploading: ' + file.name);
+
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (ext !== 'ttf' && ext !== 'otf') {
+                alert('Only .ttf and .otf files are allowed');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('font', file);
+            formData.append('font_name', file.name.replace(/\.(ttf|otf)$/i, ''));
+
+            try {
+                const response = await fetch('/font/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    log('Upload successful!');
+                    alert('Font uploaded successfully: ' + result.font.font_name);
+                } else {
+                    log('Upload failed: ' + result.error);
+                    alert('Upload failed: ' + result.error);
+                }
+            } catch (error) {
+                log('Upload error: ' + error.message);
+                alert('Upload error: ' + error.message);
+            }
+        }
+
+        log('Test page loaded and ready');
+    </script>
+</body>
+</html>

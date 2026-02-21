@@ -2075,3 +2075,38 @@ function loadLayoutFromDatabase(layoutId) {
             alert('Error loading layout: ' + error);
         });
 }
+
+// Add text to canvas from font manager
+window.addTextToCanvas = function(char, fontName) {
+    if (!canvas || !pdfWidth || !pdfHeight) {
+        alert('Please load a PDF first');
+        return;
+    }
+
+    // Add text component at center of canvas
+    var newComponent = {
+        type: 'text',
+        content: char,
+        x: pdfWidth / 2,
+        y: pdfHeight / 2,
+        w: 10,
+        h: 5,
+        fontFamily: fontName,
+        fontSize: 24,
+        visible: true,
+        locked: false,
+        groupId: null
+    };
+
+    components.push(newComponent);
+    captureState();
+    renderCanvas();
+    renderComponentList();
+    updateActionButtons();
+
+    // Select the new component
+    selectedSet = [components.length - 1];
+    selectedIdx = components.length - 1;
+    renderCanvas();
+    renderPropertiesPanel();
+};

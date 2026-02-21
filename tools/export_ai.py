@@ -143,23 +143,17 @@ def _draw_pdfpath(c, comp, page_h):
         c.drawPath(p, fill=0, stroke=1)
 
 def _draw_text(c, comp, page_h):
-    """Draw text component (editable)"""
+    """Draw text component (editable if font is embedded)"""
     content = comp.get('content', '')
     x = comp.get('x', 0) * mm
     y = page_h - (comp.get('y', 0) * mm) - (comp.get('height', 0) * mm * 0.8)
     font_family = comp.get('fontFamily', 'Helvetica')
     font_size = comp.get('fontSize', 12)
 
-    # Map common font names to ReportLab fonts
-    font_map = {
-        'Arial': 'Helvetica',
-        'Times New Roman': 'Times-Roman',
-        'Courier New': 'Courier'
-    }
+    # Try to register custom font
+    resolved_font, is_custom = _register_custom_font(c, font_family)
 
-    font_family = font_map.get(font_family, 'Helvetica')
-
-    c.setFont(font_family, font_size)
+    c.setFont(resolved_font, font_size)
     c.setFillColorRGB(0, 0, 0)
     c.drawString(x, y, content)
 
@@ -205,3 +199,42 @@ def _draw_text_outlined(c, comp, page_h):
         # Fallback to regular text if outlining fails
         print(f"Warning: Text outlining failed, using regular text: {e}")
         _draw_text(c, comp, page_h)
+
+def _register_custom_font(c, font_family):
+    """
+    Register custom font with ReportLab if available
+    Returns: (font_name, is_custom) tuple
+    """
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    # Check if font is uploaded
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+    from models.font import Font
+
+    try:
+        uploaded_font = Font.get_by_name(font_family)
+        if uploaded_font and os.path.exists(uploaded_font['file_path']):
+            # Check if already registered
+            try:
+                pdfmetrics.getFont(font_family)
+                return (font_family, True)
+            except:
+                pass
+
+            # Register TTF with ReportLab
+            try:
+                pdfmetrics.registerFont(TTFont(font_family, uploaded_font['file_path']))
+                return (font_family, True)
+            except Exception as e:
+                print(f"Warning: Could not register font {font_family}: {e}")
+    except Exception as e:
+        print(f"Warning: Could not check uploaded fonts: {e}")
+
+    # Fall back to standard fonts
+    font_map = {
+        'Arial': 'Helvetica',
+        'Times New Roman': 'Times-Roman',
+        'Courier New': 'Courier'
+    }
+    return (font_map.get(font_family, 'Helvetica'), False)
