@@ -1,22 +1,36 @@
 <div class="tab-pane">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/customer.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/font_view.css') }}">
 
-    <div class="font-view-container">
-        <div class="header-section">
-            <h2>ALL FONTS <span id="font-count">(0 fonts)</span></h2>
-        </div>
-
-        <div id="fonts-grid">
-            <div class="empty-message">No fonts uploaded yet</div>
-        </div>
-
-        <div class="preview-section" id="preview-section" style="display: none;">
-            <div class="preview-header">
-                <h2>FONT PREVIEW</h2>
-                <button id="btn-close-preview" onclick="closePreview()">✕</button>
+    <div class="table-container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="margin: 0;">Font Family</h2>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <input type="text" id="search-font" placeholder="Search font name..." style="padding: 8px 12px; border: 1.5px solid #ddd; border-radius: 6px; font-size: 13px;" />
+                <select id="search-customer" style="padding: 8px 12px; border: 1.5px solid #ddd; border-radius: 6px; font-size: 13px; background: white; cursor: pointer;">
+                    <option value="">All Customers</option>
+                    <option value="__public__">Public</option>
+                </select>
+                <button class="btn btn-primary" onclick="loadAllFonts()">Refresh List</button>
             </div>
-            <div id="font-preview-content"></div>
         </div>
+        <div id="message" style="display: none;"></div>
+        <table id="fontTable">
+            <thead>
+                <tr>
+                    <th>Customer</th>
+                    <th>Font Name</th>
+                    <th>Updated</th>
+                    <th>Preview</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="fontTableBody">
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: 40px;">Loading...</td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 
     <script src="{{ url_for('static', filename='js/font_view.js') }}"></script>

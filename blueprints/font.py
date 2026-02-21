@@ -51,20 +51,24 @@ def upload_font():
         # Secure the filename
         filename = secure_filename(file.filename)
 
-        # Check if font already exists
-        existing = Font.get_by_filename(filename)
-        if existing:
-            return jsonify({'success': False, 'error': 'Font already exists'}), 400
-
-        # Save file
-        file_path = os.path.join(FONTS_FOLDER, filename)
-        file.save(file_path)
-
-        # Get font name from request or use filename
+        # Get font name and customer from request
         font_name = request.form.get('font_name', filename.rsplit('.', 1)[0])
+        customer_id = request.form.get('customer_id', None)
+        if customer_id == '':
+            customer_id = None
+
+        # Check if same font already exists for this customer
+        existing = Font.get_by_filename_and_customer(filename, customer_id)
+        if existing:
+            return jsonify({'success': False, 'error': 'This font is already assigned to this customer'}), 400
+
+        # Save file (only if not already on disk)
+        file_path = os.path.join(FONTS_FOLDER, filename)
+        if not os.path.exists(file_path):
+            file.save(file_path)
 
         # Save to database
-        font_id = Font.create(font_name, filename, file_path)
+        font_id = Font.create(font_name, filename, file_path, customer_id)
 
         return jsonify({
             'success': True,
@@ -84,6 +88,24 @@ def list_fonts():
     try:
         fonts = Font.get_all()
         return jsonify({'success': True, 'fonts': fonts}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@font_bp.route('/<int:font_id>/rename', methods=['PUT'])
+def rename_font(font_id):
+    """Rename a font"""
+    try:
+        data = request.get_json()
+        new_name = data.get('font_name', '').strip()
+        if not new_name:
+            return jsonify({'success': False, 'error': 'Font name is required'}), 400
+
+        font = Font.get_by_id(font_id)
+        if not font:
+            return jsonify({'success': False, 'error': 'Font not found'}), 404
+
+        Font.rename(font_id, new_name)
+        return jsonify({'success': True}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

@@ -12,15 +12,27 @@
             <input type="file" id="font-input" accept=".ttf,.otf" style="display: none;">
         </div>
 
-        <div class="preview-section" id="preview-section" style="display: none;">
-            <h2>FONT PREVIEW</h2>
+        <div class="review-section" id="review-section" style="display: none;">
+            <h2>REVIEW FONT</h2>
             <div id="font-preview-content"></div>
+            <button id="btn-upload-to-db">Upload to Database</button>
         </div>
+    </div>
 
-        <div class="fonts-list-section">
-            <h2>RECENTLY UPLOADED <span id="font-count">(0 fonts)</span></h2>
-            <div id="fonts-list">
-                <div class="empty-message">No fonts uploaded yet</div>
+    <!-- Upload Modal -->
+    <div class="font-upload-modal" id="font-upload-modal">
+        <div class="font-upload-modal-content">
+            <h2>ASSIGN FONT TO</h2>
+            <div class="modal-body">
+                <label for="font-customer-select">Customer</label>
+                <select id="font-customer-select">
+                    <option value="">Loading customers...</option>
+                </select>
+                <div class="modal-divider">or</div>
+                <button id="btn-upload-public" type="button">Public</button>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-modal-cancel" type="button">Cancel</button>
             </div>
         </div>
     </div>
