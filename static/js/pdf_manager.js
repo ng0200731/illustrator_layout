@@ -19,7 +19,20 @@ function getCanvasState(canvas) {
             maxHistorySize: 50,
             currentLayoutId: null,
             currentLayoutName: null,
-            currentCustomerId: null
+            currentCustomerId: null,
+            currentCustomerName: null,
+            edges: [],
+            edgeMode: false,
+            edgeDrawing: null,
+            candidateEdges: [],
+            snapPoints: [],
+            highlightedEdge: null,
+            snapStart: null,
+            snapEnd: null,
+            textRegionMode: false,
+            textRegionDraw: null,
+            pendingTextRegion: null,
+            textDropPoint: null
         });
     }
     return canvasStates.get(canvas);
@@ -105,18 +118,18 @@ function initWithTabPane(tabPane) {
     setupFileInput();
     setupButtons();
     setupCanvasInteraction();
+    setupCollapsibleSections();
+    setupTextToolDrag();
+    setupAlignmentButtons();
 
     renderCanvas();
 
-    // Check if we should load a layout from data attribute
-    console.log('Tab pane found:', tabPane);
-    const layoutId = tabPane.getAttribute('data-layout-id');
-    console.log('Layout ID from data attribute:', layoutId);
+    var layoutId = tabPane.getAttribute('data-layout-id');
     if (layoutId && layoutId.trim() !== '') {
-        console.log('Loading layout:', layoutId);
         loadLayoutFromDatabase(layoutId);
     } else {
-        console.log('No layout ID to load');
+        // New layout — prompt customer selection
+        showCustomerSelectModal();
     }
 }
 
@@ -193,6 +206,13 @@ function setupDragDrop() {
         e.preventDefault();
         e.stopPropagation();
         container.classList.remove('drag-over');
+
+        // Check if this is a text tool drop
+        var toolType = e.dataTransfer.getData('text/plain');
+        if (toolType === 'textregion') {
+            handleTextToolDrop(e);
+            return;
+        }
 
         if (e.dataTransfer.files && e.dataTransfer.files.length) {
             var file = e.dataTransfer.files[0];
@@ -740,8 +760,98 @@ function renderCanvas() {
             drawPdfPath(comp, idx);
         } else if (comp.type === 'text') {
             drawText(comp, idx);
+        } else if (comp.type === 'textregion') {
+            drawTextRegion(comp, idx);
         }
     });
+
+    // Draw defined edges (green rectangles, only unconfirmed)
+    if (state && state.edges) {
+        ctx.save();
+        state.edges.forEach(function(edge) {
+            if (edge.confirmed) return;
+            var ex = edge.x * scale;
+            var ey = edge.y * scale;
+            var ew = edge.w * scale;
+            var eh = edge.h * scale;
+            ctx.fillStyle = 'rgba(0, 200, 0, 0.1)';
+            ctx.fillRect(ex, ey, ew, eh);
+            ctx.strokeStyle = '#00cc00';
+            ctx.lineWidth = 1.5;
+            ctx.strokeRect(ex, ey, ew, eh);
+            // Draw dimensions label
+            ctx.fillStyle = '#00cc00';
+            ctx.font = '10px sans-serif';
+            ctx.fillText(edge.w.toFixed(1) + ' x ' + edge.h.toFixed(1) + ' mm', ex + 2, ey - 4);
+        });
+        ctx.restore();
+    }
+
+    // Draw snap point indicators in edge mode
+    if (state && state.edgeMode && state.snapPoints) {
+        ctx.save();
+        state.snapPoints.forEach(function(pt) {
+            ctx.beginPath();
+            ctx.arc(pt.x * scale, pt.y * scale, 3, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0, 200, 0, 0.4)';
+            ctx.fill();
+        });
+        // Highlight snapped start point
+        if (state.snapStart) {
+            ctx.beginPath();
+            ctx.arc(state.snapStart.x * scale, state.snapStart.y * scale, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#00cc00';
+            ctx.fill();
+        }
+        // Highlight snapped end point
+        if (state.snapEnd) {
+            ctx.beginPath();
+            ctx.arc(state.snapEnd.x * scale, state.snapEnd.y * scale, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#00cc00';
+            ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    // Draw edge rectangle being drawn
+    if (state && state.edgeDrawing) {
+        ctx.save();
+        var ed = state.edgeDrawing;
+        var ex = Math.min(ed.startX, ed.endX) * scale;
+        var ey = Math.min(ed.startY, ed.endY) * scale;
+        var ew = Math.abs(ed.endX - ed.startX) * scale;
+        var eh = Math.abs(ed.endY - ed.startY) * scale;
+        ctx.fillStyle = 'rgba(0, 200, 0, 0.08)';
+        ctx.fillRect(ex, ey, ew, eh);
+        ctx.strokeStyle = '#00cc00';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(ex, ey, ew, eh);
+        ctx.setLineDash([]);
+        // Show live dimensions
+        var liveW = Math.abs(ed.endX - ed.startX).toFixed(1);
+        var liveH = Math.abs(ed.endY - ed.startY).toFixed(1);
+        ctx.fillStyle = '#00cc00';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(liveW + ' x ' + liveH + ' mm', ex + 2, ey - 4);
+        ctx.restore();
+    }
+
+    // Draw text region being drawn
+    if (state && state.textRegionDraw) {
+        ctx.save();
+        var tr = state.textRegionDraw;
+        var rx = Math.min(tr.startX, tr.endX) * scale;
+        var ry = Math.min(tr.startY, tr.endY) * scale;
+        var rw = Math.abs(tr.endX - tr.startX) * scale;
+        var rh = Math.abs(tr.endY - tr.startY) * scale;
+        ctx.strokeStyle = '#00cc00';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(rx, ry, rw, rh);
+        ctx.setLineDash([]);
+        ctx.restore();
+    }
 
     // Draw selection rectangle if active
     if (rectSelect.active) {
@@ -1266,6 +1376,25 @@ function onCanvasMouseDown(e) {
         return;
     }
 
+    // Edge mode — start drawing edge, snap to nearest point
+    if (state.edgeMode) {
+        var snapPt = findNearestSnapPoint(x, y, state.snapPoints, 5 / pan.zoom);
+        if (snapPt) {
+            state.snapStart = snapPt;
+            state.edgeDrawing = { startX: snapPt.x, startY: snapPt.y, endX: x, endY: y };
+        } else {
+            state.snapStart = null;
+            state.edgeDrawing = { startX: x, startY: y, endX: x, endY: y };
+        }
+        return;
+    }
+
+    // Text region mode — start drawing region rectangle
+    if (state.textRegionMode) {
+        state.textRegionDraw = { startX: x, startY: y, endX: x, endY: y };
+        return;
+    }
+
     // Check if clicking on a component
     for (var i = components.length - 1; i >= 0; i--) {
         var comp = components[i];
@@ -1305,6 +1434,36 @@ function onCanvasMouseDown(e) {
 }
 
 function onCanvasMouseMove(e) {
+    // Edge mode drawing — snap end to nearest point
+    if (state && state.edgeMode && state.edgeDrawing) {
+        var rect = canvas.getBoundingClientRect();
+        var x = (e.clientX - rect.left) / scale;
+        var y = (e.clientY - rect.top) / scale;
+        var snapPt = findNearestSnapPoint(x, y, state.snapPoints, 5 / pan.zoom);
+        if (snapPt) {
+            state.snapEnd = snapPt;
+            state.edgeDrawing.endX = snapPt.x;
+            state.edgeDrawing.endY = snapPt.y;
+        } else {
+            state.snapEnd = null;
+            state.edgeDrawing.endX = x;
+            state.edgeDrawing.endY = y;
+        }
+        renderCanvas();
+        return;
+    }
+
+    // Text region drawing
+    if (state && state.textRegionMode && state.textRegionDraw) {
+        var rect = canvas.getBoundingClientRect();
+        var x = (e.clientX - rect.left) / scale;
+        var y = (e.clientY - rect.top) / scale;
+        state.textRegionDraw.endX = x;
+        state.textRegionDraw.endY = y;
+        renderCanvas();
+        return;
+    }
+
     // Handle rectangle selection
     if (rectSelect.active) {
         var rect = canvas.getBoundingClientRect();
@@ -1350,6 +1509,51 @@ function onCanvasMouseMove(e) {
 }
 
 function onCanvasMouseUp(e) {
+    // Edge mode — finalize edge rectangle from snap-to-snap
+    if (state && state.edgeMode && state.edgeDrawing) {
+        var ed = state.edgeDrawing;
+        var ex = Math.min(ed.startX, ed.endX);
+        var ey = Math.min(ed.startY, ed.endY);
+        var ew = Math.abs(ed.endX - ed.startX);
+        var eh = Math.abs(ed.endY - ed.startY);
+        if (ew > 0.3 || eh > 0.3) {
+            state.edges.push({
+                id: 'edge-' + Date.now(),
+                x: ex, y: ey,
+                w: ew, h: eh,
+                confirmed: false
+            });
+            renderEdgeList();
+        }
+        state.edgeDrawing = null;
+        state.snapStart = null;
+        state.snapEnd = null;
+        renderCanvas();
+        return;
+    }
+
+    // Text region mode — finalize region and open modal
+    if (state && state.textRegionMode && state.textRegionDraw) {
+        var tr = state.textRegionDraw;
+        var rx = Math.min(tr.startX, tr.endX);
+        var ry = Math.min(tr.startY, tr.endY);
+        var rw = Math.abs(tr.endX - tr.startX);
+        var rh = Math.abs(tr.endY - tr.startY);
+        if (rw > 1 && rh > 1) {
+            state.pendingTextRegion = { x: rx, y: ry, w: rw, h: rh, snappedEdgeId: null };
+            // Check if snapped to an edge
+            if (state.textDropPoint && state.textDropPoint.snappedEdgeId) {
+                state.pendingTextRegion.snappedEdgeId = state.textDropPoint.snappedEdgeId;
+            }
+            showTextSettingsModal();
+        }
+        state.textRegionDraw = null;
+        state.textRegionMode = false;
+        canvas.style.cursor = 'default';
+        renderCanvas();
+        return;
+    }
+
     // Handle rectangle selection
     if (rectSelect.active) {
         var minX = Math.min(rectSelect.startX, rectSelect.endX);
@@ -1914,7 +2118,8 @@ function saveLayoutToDatabase() {
                 components: components,
                 pdfWidth: pdfWidth,
                 pdfHeight: pdfHeight,
-                scale: scale
+                scale: scale,
+                edges: state ? state.edges : []
             },
             customer_id: customerId
         };
@@ -2035,13 +2240,12 @@ function loadLayoutFromDatabase(layoutId) {
                 const layout = data.layout;
                 const layoutData = layout.data;
 
-                console.log('Layout data loaded:', layoutData);
-
                 // Track loaded layout for overwrite detection
                 if (state) {
                     state.currentLayoutId = layout.id;
                     state.currentLayoutName = layout.name;
                     state.currentCustomerId = layout.customer_id;
+                    state.edges = layoutData.edges || [];
                 }
 
                 // Restore layout state
@@ -2059,7 +2263,20 @@ function loadLayoutFromDatabase(layoutId) {
                 renderCanvas();
                 renderComponentList();
                 renderColorPalette();
+                renderEdgeList();
                 updateActionButtons();
+
+                // Update customer display
+                if (layout.customer_id) {
+                    fetch('/customer/' + layout.customer_id)
+                        .then(function(r) { return r.json(); })
+                        .then(function(cdata) {
+                            if (cdata.success && cdata.customer) {
+                                state.currentCustomerName = cdata.customer.company_name;
+                                updateCustomerDisplay();
+                            }
+                        });
+                }
 
                 // Hide empty state and enable export buttons
                 _el('empty-state').style.display = 'none';
@@ -2110,3 +2327,516 @@ window.addTextToCanvas = function(char, fontName) {
     renderCanvas();
     renderPropertiesPanel();
 };
+
+// ============================================================
+// Collapsible Sections
+// ============================================================
+
+function setupCollapsibleSections() {
+    var tabPane = canvas ? canvas.closest('.tab-pane') : document;
+    var headers = tabPane.querySelectorAll('.collapsible-header');
+    headers.forEach(function(header) {
+        if (header._collapsibleSetup) return;
+        header._collapsibleSetup = true;
+        header.addEventListener('click', function() {
+            var section = header.closest('.panel-section');
+            section.classList.toggle('collapsed');
+        });
+    });
+}
+
+// ============================================================
+// Customer Display & Selection
+// ============================================================
+
+function updateCustomerDisplay() {
+    var label = _el('customer-name-label');
+    if (label && state) {
+        label.textContent = state.currentCustomerName || 'No customer selected';
+    }
+}
+
+function showCustomerSelectModal() {
+    var modal = _el('customer-select-modal');
+    if (!modal) return;
+    var select = _el('customer-select-dropdown');
+    // Clear and reload
+    select.innerHTML = '<option value="">Select a customer...</option>';
+    fetch('/customer/list')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success && data.customers) {
+                data.customers.forEach(function(c) {
+                    var opt = document.createElement('option');
+                    opt.value = c.customer_id;
+                    opt.textContent = c.company_name;
+                    select.appendChild(opt);
+                });
+            }
+        });
+    modal.classList.add('active');
+}
+
+function closeCustomerSelectModal() {
+    var modal = _el('customer-select-modal');
+    if (modal) modal.classList.remove('active');
+}
+
+function confirmCustomerSelect() {
+    var select = _el('customer-select-dropdown');
+    var val = select.value;
+    var text = select.options[select.selectedIndex].text;
+    if (!val) return;
+    if (state) {
+        state.currentCustomerId = val;
+        state.currentCustomerName = text;
+    }
+    updateCustomerDisplay();
+    closeCustomerSelectModal();
+}
+
+// ============================================================
+// Edge Detection & Define Edge
+// ============================================================
+
+function extractCandidateEdges() {
+    var edges = [];
+    components.forEach(function(comp) {
+        if (comp.type !== 'pdfpath') return;
+        var ops = comp.pathData.ops;
+        var lastPt = null;
+        ops.forEach(function(op) {
+            if (op.o === 'M') {
+                lastPt = { x: op.a[0], y: op.a[1] };
+            } else if (op.o === 'L' && lastPt) {
+                var dx = op.a[0] - lastPt.x;
+                var dy = op.a[1] - lastPt.y;
+                var len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0.5) {
+                    edges.push({ x1: lastPt.x, y1: lastPt.y, x2: op.a[0], y2: op.a[1] });
+                }
+                lastPt = { x: op.a[0], y: op.a[1] };
+            } else if (op.o === 'C') {
+                lastPt = { x: op.a[4], y: op.a[5] };
+            } else if (op.o === 'Z') {
+                lastPt = null;
+            }
+        });
+    });
+    return edges;
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+    var dx = x2 - x1, dy = y2 - y1;
+    var lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.sqrt((px - x1) * (px - x1) + (py - y1) * (py - y1));
+    var t = Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / lenSq));
+    var projX = x1 + t * dx, projY = y1 + t * dy;
+    return Math.sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
+}
+
+function findNearestEdge(px, py, candidates, threshold) {
+    var best = null, bestDist = threshold;
+    candidates.forEach(function(edge) {
+        var d = distToSegment(px, py, edge.x1, edge.y1, edge.x2, edge.y2);
+        if (d < bestDist) {
+            bestDist = d;
+            best = edge;
+        }
+    });
+    return best;
+}
+
+function extractSnapPoints() {
+    var points = [];
+    var seen = {};
+    components.forEach(function(comp) {
+        if (comp.type !== 'pdfpath') return;
+        var ops = comp.pathData.ops;
+        ops.forEach(function(op) {
+            var px, py;
+            if (op.o === 'M' || op.o === 'L') {
+                px = op.a[0]; py = op.a[1];
+            } else if (op.o === 'C') {
+                px = op.a[4]; py = op.a[5];
+            } else {
+                return;
+            }
+            // Deduplicate by rounding to 0.1mm
+            var key = Math.round(px * 10) + ',' + Math.round(py * 10);
+            if (!seen[key]) {
+                seen[key] = true;
+                points.push({ x: px, y: py });
+            }
+        });
+    });
+    return points;
+}
+
+function findNearestSnapPoint(px, py, points, threshold) {
+    var best = null, bestDist = threshold;
+    points.forEach(function(pt) {
+        var dx = px - pt.x, dy = py - pt.y;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d < bestDist) {
+            bestDist = d;
+            best = pt;
+        }
+    });
+    return best;
+}
+
+function toggleEdgeMode() {
+    if (!state) return;
+    state.edgeMode = !state.edgeMode;
+    var btn = _el('btn-define-edge');
+    if (btn) {
+        if (state.edgeMode) {
+            btn.classList.add('btn-active');
+            canvas.style.cursor = 'crosshair';
+            state.candidateEdges = extractCandidateEdges();
+            state.snapPoints = extractSnapPoints();
+        } else {
+            btn.classList.remove('btn-active');
+            canvas.style.cursor = 'default';
+            state.candidateEdges = [];
+            state.snapPoints = [];
+            state.highlightedEdge = null;
+            state.edgeDrawing = null;
+            state.snapStart = null;
+            state.snapEnd = null;
+        }
+    }
+    renderCanvas();
+}
+
+function renderEdgeList() {
+    var list = _el('edge-list');
+    if (!list || !state) return;
+    if (state.edges.length === 0) {
+        list.innerHTML = '<div class="empty-message">No edges defined</div>';
+        return;
+    }
+    list.innerHTML = '';
+    state.edges.forEach(function(edge, i) {
+        var div = document.createElement('div');
+        div.className = 'edge-item' + (edge.confirmed ? ' confirmed' : '');
+        var actions = '';
+        if (!edge.confirmed) {
+            actions = '<button class="edge-btn-confirm" onclick="confirmEdge(\'' + edge.id + '\')" title="Confirm">✓</button>';
+        } else {
+            actions = '<button class="edge-btn-edit" onclick="editEdge(\'' + edge.id + '\')" title="Edit">✎</button>';
+        }
+        actions += '<button class="edge-btn-remove" onclick="deleteEdge(\'' + edge.id + '\')" title="Remove">✕</button>';
+        div.innerHTML = '<div class="edge-info">' +
+            '<span class="edge-dim">Block ' + (i + 1) + '</span> ' +
+            '<span>W: ' + edge.w.toFixed(1) + 'mm  H: ' + edge.h.toFixed(1) + 'mm</span>' +
+            '</div>' +
+            '<div class="edge-actions">' + actions + '</div>';
+        list.appendChild(div);
+    });
+}
+
+function confirmEdge(edgeId) {
+    if (!state) return;
+    state.edges.forEach(function(e) {
+        if (e.id === edgeId) e.confirmed = true;
+    });
+    renderEdgeList();
+    renderCanvas();
+}
+
+function editEdge(edgeId) {
+    if (!state) return;
+    state.edges.forEach(function(e) {
+        if (e.id === edgeId) e.confirmed = false;
+    });
+    renderEdgeList();
+    renderCanvas();
+}
+
+function deleteEdge(edgeId) {
+    if (!state) return;
+    state.edges = state.edges.filter(function(e) { return e.id !== edgeId; });
+    renderEdgeList();
+    renderCanvas();
+}
+
+// ============================================================
+// Text Tool — Drag, Snap, Region, Modal
+// ============================================================
+
+function setupTextToolDrag() {
+    var btn = _el('btn-add-text');
+    if (!btn || btn._textDragSetup) return;
+    btn._textDragSetup = true;
+    btn.addEventListener('dragstart', function(e) {
+        e.dataTransfer.setData('text/plain', 'textregion');
+        e.dataTransfer.effectAllowed = 'copy';
+    });
+}
+
+function handleTextToolDrop(e) {
+    if (!canvas || !pdfWidth || !pdfHeight) return;
+    var rect = canvas.getBoundingClientRect();
+    var x = (e.clientX - rect.left) / scale;
+    var y = (e.clientY - rect.top) / scale;
+
+    // Check if dropped inside a defined edge rectangle
+    var snapInfo = null;
+    if (state && state.edges.length > 0) {
+        for (var i = 0; i < state.edges.length; i++) {
+            var edge = state.edges[i];
+            if (x >= edge.x && x <= edge.x + edge.w && y >= edge.y && y <= edge.y + edge.h) {
+                snapInfo = { snappedEdgeId: edge.id, edge: edge };
+                break;
+            }
+        }
+    }
+
+    state.textDropPoint = snapInfo;
+    state.textRegionMode = true;
+    canvas.style.cursor = 'crosshair';
+    renderCanvas();
+}
+
+function snapToEdgeIndicator(x, y) {
+    if (!state || !state.edges.length) return null;
+    for (var i = 0; i < state.edges.length; i++) {
+        var edge = state.edges[i];
+        if (x >= edge.x && x <= edge.x + edge.w && y >= edge.y && y <= edge.y + edge.h) {
+            return edge;
+        }
+    }
+    return null;
+}
+
+function showTextSettingsModal() {
+    var modal = _el('text-settings-modal');
+    if (!modal) return;
+
+    // Populate font dropdown
+    var fontSelect = _el('text-font-select');
+    fontSelect.innerHTML = '<option value="">Select a font...</option>';
+
+    var url = '/font/list';
+    if (state && state.currentCustomerId) {
+        url = '/font/list/' + state.currentCustomerId;
+    }
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success && data.fonts) {
+                data.fonts.forEach(function(f) {
+                    var opt = document.createElement('option');
+                    opt.value = f.id;
+                    opt.textContent = f.font_name;
+                    opt.dataset.fontName = f.font_name;
+                    fontSelect.appendChild(opt);
+                });
+            }
+        });
+
+    // Reset form defaults
+    _el('text-font-size').value = 12;
+    _el('text-color').value = '#000000';
+    _el('text-letter-spacing').value = 0;
+    var boldBtn = _el('text-bold-btn');
+    var italicBtn = _el('text-italic-btn');
+    if (boldBtn) boldBtn.classList.remove('active');
+    if (italicBtn) italicBtn.classList.remove('active');
+
+    // Reset alignment
+    resetAlignmentButtons();
+
+    modal.classList.add('active');
+}
+
+function cancelTextSettings() {
+    var modal = _el('text-settings-modal');
+    if (modal) modal.classList.remove('active');
+    if (state) {
+        state.pendingTextRegion = null;
+        state.textDropPoint = null;
+    }
+}
+
+function applyTextSettings() {
+    if (!state || !state.pendingTextRegion) return;
+
+    var fontSelect = _el('text-font-select');
+    var selectedOpt = fontSelect.options[fontSelect.selectedIndex];
+    var fontId = fontSelect.value;
+    var fontName = selectedOpt ? selectedOpt.dataset.fontName || '' : '';
+    var fontSize = parseFloat(_el('text-font-size').value) || 12;
+    var bold = _el('text-bold-btn').classList.contains('active');
+    var italic = _el('text-italic-btn').classList.contains('active');
+    var color = _el('text-color').value || '#000000';
+    var letterSpacing = parseFloat(_el('text-letter-spacing').value) || 0;
+
+    var alignH = 'left';
+    var alignHBtns = _el('align-h-buttons');
+    if (alignHBtns) {
+        var activeH = alignHBtns.querySelector('.active');
+        if (activeH) alignH = activeH.dataset.val;
+    }
+    var alignV = 'top';
+    var alignVBtns = _el('align-v-buttons');
+    if (alignVBtns) {
+        var activeV = alignVBtns.querySelector('.active');
+        if (activeV) alignV = activeV.dataset.val;
+    }
+
+    var region = state.pendingTextRegion;
+    var comp = {
+        type: 'textregion',
+        x: region.x,
+        y: region.y,
+        w: region.w,
+        h: region.h,
+        snappedEdgeId: region.snappedEdgeId || null,
+        fontFamily: fontName,
+        fontId: fontId ? parseInt(fontId) : null,
+        fontSize: fontSize,
+        bold: bold,
+        italic: italic,
+        color: color,
+        letterSpacing: letterSpacing,
+        alignH: alignH,
+        alignV: alignV,
+        content: '',
+        visible: true,
+        locked: false,
+        groupId: null
+    };
+
+    components.push(comp);
+    captureState();
+
+    // Load font for rendering
+    if (fontId && fontName) {
+        loadFontForCanvas(parseInt(fontId), fontName);
+    }
+
+    state.pendingTextRegion = null;
+    state.textDropPoint = null;
+
+    var modal = _el('text-settings-modal');
+    if (modal) modal.classList.remove('active');
+
+    renderCanvas();
+    renderComponentList();
+    updateActionButtons();
+
+    // Select the new component
+    selectedSet = [components.length - 1];
+    selectedIdx = components.length - 1;
+    renderCanvas();
+    renderPropertiesPanel();
+}
+
+async function loadFontForCanvas(fontId, fontName) {
+    try {
+        var fontFace = new FontFace(fontName, 'url(/font/download/' + fontId + ')');
+        await fontFace.load();
+        document.fonts.add(fontFace);
+        renderCanvas();
+    } catch (err) {
+        console.error('Error loading font for canvas:', err);
+    }
+}
+
+function setupAlignmentButtons() {
+    var tabPane = canvas ? canvas.closest('.tab-pane') : document;
+    ['align-h-buttons', 'align-v-buttons'].forEach(function(id) {
+        var container = tabPane.querySelector('#' + id);
+        if (!container || container._alignSetup) return;
+        container._alignSetup = true;
+        container.addEventListener('click', function(e) {
+            var btn = e.target.closest('button');
+            if (!btn) return;
+            container.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+            btn.classList.add('active');
+        });
+    });
+}
+
+function resetAlignmentButtons() {
+    var tabPane = canvas ? canvas.closest('.tab-pane') : document;
+    ['align-h-buttons', 'align-v-buttons'].forEach(function(id) {
+        var container = tabPane.querySelector('#' + id);
+        if (!container) return;
+        container.querySelectorAll('button').forEach(function(b, i) {
+            if (i === 0) b.classList.add('active');
+            else b.classList.remove('active');
+        });
+    });
+}
+
+// ============================================================
+// Draw Text Region on Canvas
+// ============================================================
+
+function drawTextRegion(comp, idx) {
+    if (!comp.visible) {
+        ctx.globalAlpha = 0.15;
+    }
+
+    var x = comp.x * scale;
+    var y = comp.y * scale;
+    var w = comp.w * scale;
+    var h = comp.h * scale;
+
+    // Draw region rectangle
+    ctx.strokeStyle = '#0066ff';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+
+    // Draw text content if any
+    if (comp.content && comp.fontFamily) {
+        var fontStyle = '';
+        if (comp.italic) fontStyle += 'italic ';
+        if (comp.bold) fontStyle += 'bold ';
+        fontStyle += (comp.fontSize * scale / 2.835) + 'px '; // pt to px at scale
+        fontStyle += "'" + comp.fontFamily + "', sans-serif";
+        ctx.font = fontStyle;
+        ctx.fillStyle = comp.color || '#000000';
+
+        // Alignment
+        if (comp.alignH === 'center') ctx.textAlign = 'center';
+        else if (comp.alignH === 'right') ctx.textAlign = 'right';
+        else ctx.textAlign = 'left';
+
+        if (comp.alignV === 'center') ctx.textBaseline = 'middle';
+        else if (comp.alignV === 'bottom') ctx.textBaseline = 'bottom';
+        else ctx.textBaseline = 'top';
+
+        var tx = x;
+        if (comp.alignH === 'center') tx = x + w / 2;
+        else if (comp.alignH === 'right') tx = x + w;
+
+        var ty = y;
+        if (comp.alignV === 'center') ty = y + h / 2;
+        else if (comp.alignV === 'bottom') ty = y + h;
+
+        ctx.fillText(comp.content, tx, ty);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+    }
+
+    // Draw label
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#0066ff';
+    ctx.fillText('Text Region', x + 2, y - 3);
+
+    // Selection highlight
+    if (selectedSet.indexOf(idx) !== -1) {
+        ctx.strokeStyle = '#0066ff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
+    }
+
+    ctx.globalAlpha = 1;
+}

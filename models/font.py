@@ -131,6 +131,22 @@ class Font:
             return dict(row) if row else None
 
     @staticmethod
+    def get_by_customer(customer_id):
+        """Get fonts for a specific customer and public fonts"""
+        query = '''
+            SELECT f.*, c.company_name as customer_name
+            FROM fonts f
+            LEFT JOIN customers c ON f.customer_id = c.customer_id
+            WHERE f.customer_id = ? OR f.customer_id IS NULL
+            ORDER BY f.created_at DESC
+        '''
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, (customer_id,))
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    @staticmethod
     def rename(font_id, new_name):
         """Rename a font"""
         query = 'UPDATE fonts SET font_name = ? WHERE id = ?'

@@ -15,85 +15,100 @@
         </div>
 
         <div id="right-panel">
+            <div id="customer-display" class="panel-section customer-header">
+                <span id="customer-name-label">No customer selected</span>
+                <button id="btn-select-customer" onclick="showCustomerSelectModal()">Select</button>
+            </div>
+
             <div class="panel-section">
-                <h2>ACTIONS</h2>
-                <div class="action-buttons">
-                    <button id="undo-btn" onclick="undo()" disabled>← Undo</button>
-                    <button id="redo-btn" onclick="redo()" disabled>→ Redo</button>
-                    <button id="btn-save-layout" onclick="saveLayoutToDatabase()">Save Layout</button>
+                <h2 class="collapsible-header">ACTIONS <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div class="action-buttons">
+                        <button id="undo-btn" onclick="undo()" disabled>← Undo</button>
+                        <button id="redo-btn" onclick="redo()" disabled>→ Redo</button>
+                        <button id="btn-save-layout" onclick="saveLayoutToDatabase()">Save Layout</button>
+                    </div>
                 </div>
             </div>
 
             <div class="panel-section">
-                <h2>COMPONENTS <span id="component-count">(0 items)</span></h2>
-                <div id="component-list">
-                    <div class="empty-message">No PDF loaded</div>
+                <h2 class="collapsible-header">COMPONENTS <span id="component-count">(0 items)</span> <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div id="component-list">
+                        <div class="empty-message">No PDF loaded</div>
+                    </div>
                 </div>
             </div>
 
             <div class="panel-section">
-                <h2>COLORS <span id="color-count">(0 colors)</span></h2>
-                <div id="color-palette"></div>
+                <h2 class="collapsible-header">COLORS <span id="color-count">(0 colors)</span> <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div id="color-palette"></div>
+                </div>
             </div>
 
             <div class="panel-section" id="properties-section" style="display: none;">
-                <h2>SELECTED</h2>
-                <div id="properties-panel"></div>
-            </div>
-
-            <div class="panel-section">
-                <h2>SELECTION</h2>
-                <div class="action-buttons">
-                    <button id="btn-group" disabled>Group Selected</button>
-                    <button id="btn-ungroup" disabled>Ungroup</button>
-                    <button id="btn-delete" disabled>Delete Selected</button>
+                <h2 class="collapsible-header">SELECTED <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div id="properties-panel"></div>
                 </div>
             </div>
 
             <div class="panel-section">
-                <h2>EXPORT OPTIONS</h2>
-                <div class="export-buttons">
-                    <button id="btn-export-pdf" disabled>PDF</button>
-                    <button id="btn-export-ai-editable" disabled>AI E</button>
-                    <button id="btn-export-ai-outlined" disabled>AI O</button>
+                <h2 class="collapsible-header">SELECTION <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div class="action-buttons">
+                        <button id="btn-group" disabled>Group Selected</button>
+                        <button id="btn-ungroup" disabled>Ungroup</button>
+                        <button id="btn-delete" disabled>Delete Selected</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h2 class="collapsible-header">EXPORT OPTIONS <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div class="export-buttons">
+                        <button id="btn-export-pdf" disabled>PDF</button>
+                        <button id="btn-export-ai-editable" disabled>AI E</button>
+                        <button id="btn-export-ai-outlined" disabled>AI O</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h2 class="collapsible-header">BLOCK <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div class="block-buttons">
+                        <button id="btn-define-edge" onclick="toggleEdgeMode()">Define Edge</button>
+                        <button id="btn-add-text" draggable="true">Text</button>
+                    </div>
+                    <div id="edge-list">
+                        <div class="empty-message">No edges defined</div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        // Prevent default drag behavior on the entire document to stop PDF from opening in browser
-        document.addEventListener('dragover', function(e) {
-            e.preventDefault();
-        }, false);
+        document.addEventListener('dragover', function(e) { e.preventDefault(); }, false);
+        document.addEventListener('drop', function(e) { e.preventDefault(); }, false);
 
-        document.addEventListener('drop', function(e) {
-            e.preventDefault();
-        }, false);
-
-        // Initialize this tab pane
         (function() {
-            // Find the tab pane with the unique instance ID
             var allTabPanes = document.querySelectorAll('.tab-pane[data-tab-instance]');
-            var currentTabPane = allTabPanes[allTabPanes.length - 1]; // Get the most recently added one
+            var currentTabPane = allTabPanes[allTabPanes.length - 1];
 
-            // Check if PDF.js and pdf_manager.js are already loaded
             if (typeof pdfjsLib !== 'undefined' && typeof initWithTabPane === 'function') {
-                // Scripts already loaded, just initialize this tab
                 initWithTabPane(currentTabPane);
             } else {
-                // Load scripts for the first time
                 var pdfScript = document.createElement('script');
                 pdfScript.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
                 pdfScript.onload = function() {
-                    // Set PDF.js worker after library loads
                     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-
-                    // Then load the PDF manager script
                     var managerScript = document.createElement('script');
                     managerScript.src = "{{ url_for('static', filename='js/pdf_manager.js') }}";
                     managerScript.onload = function() {
-                        // Initialize PDF manager after script loads, passing the tab pane
                         if (currentTabPane && typeof initWithTabPane === 'function') {
                             initWithTabPane(currentTabPane);
                         }
@@ -108,7 +123,6 @@
     <!-- Save Layout Modal -->
     <div id="save-layout-modal" class="modal-overlay">
         <div class="modal-content">
-            <!-- Save form (default view) -->
             <div id="save-layout-form-view">
                 <h2>Save Layout</h2>
                 <form id="save-layout-form">
@@ -128,7 +142,6 @@
                     </div>
                 </form>
             </div>
-            <!-- Overwrite confirmation view -->
             <div id="save-layout-confirm-view" style="display:none;">
                 <h2>Overwrite Layout?</h2>
                 <p id="overwrite-message" style="margin:12px 0;line-height:1.5;"></p>
@@ -136,6 +149,75 @@
                     <button type="button" class="btn-secondary" onclick="cancelOverwrite()">Cancel</button>
                     <button type="button" class="btn-primary" onclick="confirmOverwrite()">Overwrite</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Customer Select Modal -->
+    <div id="customer-select-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Select Customer</h2>
+            <div class="modal-form-group">
+                <label for="customer-select-dropdown">Customer</label>
+                <select id="customer-select-dropdown">
+                    <option value="">Select a customer...</option>
+                </select>
+            </div>
+            <div class="modal-buttons">
+                <button type="button" class="btn-secondary" onclick="closeCustomerSelectModal()">Cancel</button>
+                <button type="button" class="btn-primary" onclick="confirmCustomerSelect()">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Text Settings Modal -->
+    <div id="text-settings-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Text Settings</h2>
+            <div class="modal-form-group">
+                <label>Font Family</label>
+                <select id="text-font-select">
+                    <option value="">Select a font...</option>
+                </select>
+            </div>
+            <div class="modal-form-group">
+                <label>Font Size (pt)</label>
+                <input type="number" id="text-font-size" value="12" min="1" max="200">
+            </div>
+            <div class="modal-form-group">
+                <label>Style</label>
+                <div class="style-toggles">
+                    <button type="button" id="text-bold-btn" onclick="this.classList.toggle('active')">B</button>
+                    <button type="button" id="text-italic-btn" onclick="this.classList.toggle('active')">I</button>
+                </div>
+            </div>
+            <div class="modal-form-group">
+                <label>Color</label>
+                <input type="color" id="text-color" value="#000000">
+            </div>
+            <div class="modal-form-group">
+                <label>Letter Spacing (mm)</label>
+                <input type="number" id="text-letter-spacing" value="0" step="0.1">
+            </div>
+            <div class="modal-form-group">
+                <label>Horizontal Alignment</label>
+                <div class="alignment-buttons" id="align-h-buttons">
+                    <button type="button" data-val="left" class="active">Left</button>
+                    <button type="button" data-val="center">Center</button>
+                    <button type="button" data-val="right">Right</button>
+                </div>
+            </div>
+            <div class="modal-form-group">
+                <label>Vertical Alignment</label>
+                <div class="alignment-buttons" id="align-v-buttons">
+                    <button type="button" data-val="top" class="active">Top</button>
+                    <button type="button" data-val="center">Center</button>
+                    <button type="button" data-val="bottom">Bottom</button>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button type="button" class="btn-secondary" onclick="cancelTextSettings()">Cancel</button>
+                <button type="button" class="btn-primary" onclick="applyTextSettings()">Apply</button>
             </div>
         </div>
     </div>

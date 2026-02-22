@@ -92,6 +92,7 @@ function displayFonts(fonts) {
             <td class="font-preview-cell" id="font-preview-${font.id}">Loading...</td>
             <td>
                 <div class="actions">
+                    <button class="btn-view" onclick="viewFont(${font.id}, '${escapeName(font.font_name)}'); event.stopPropagation();">View</button>
                     <button class="btn-rename" onclick="startRename(${font.id}, '${escapeName(font.font_name)}'); event.stopPropagation();">Rename</button>
                     <button class="btn-delete" onclick="deleteFont(${font.id}); event.stopPropagation();">Delete</button>
                 </div>
@@ -187,4 +188,41 @@ async function deleteFont(fontId) {
     } catch (error) {
         alert('Delete error: ' + error.message);
     }
+}
+
+function viewFont(fontId, fontName) {
+    const sections = [
+        { label: 'Lowercase (a-z)', chars: 'abcdefghijklmnopqrstuvwxyz' },
+        { label: 'Uppercase (A-Z)', chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' },
+        { label: 'Numbers (0-9)', chars: '0123456789' },
+        { label: 'Symbols', chars: '!@#$%^&*()_+-={}[]|\\:;"\'<>,.?/~`' }
+    ];
+
+    let html = '';
+    sections.forEach(s => {
+        html += `<div class="modal-preview-group">`;
+        html += `<div class="modal-preview-label">${s.label}</div>`;
+        html += `<div class="modal-preview-text" style="font-family: '${fontName}', sans-serif;">`;
+        html += s.chars;
+        html += `</div></div>`;
+    });
+
+    // Remove existing modal if any
+    const existing = document.getElementById('fontViewModal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'fontViewModal';
+    modal.className = 'font-modal-overlay';
+    modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+    modal.innerHTML = `
+        <div class="font-modal">
+            <div class="font-modal-header">
+                <h3>${fontName}</h3>
+                <button onclick="document.getElementById('fontViewModal').remove();">&times;</button>
+            </div>
+            <div class="font-modal-body">${html}</div>
+        </div>
+    `;
+    document.body.appendChild(modal);
 }

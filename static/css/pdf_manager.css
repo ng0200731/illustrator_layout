@@ -294,3 +294,175 @@
     border: 2px solid #0066ff;
     box-shadow: 0 0 4px rgba(0, 102, 255, 0.5);
 }
+
+/* Collapsible sections */
+.collapsible-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+}
+
+.collapse-icon {
+    font-size: 7px;
+    opacity: 0.4;
+    margin-left: auto;
+}
+
+.panel-section.collapsed .panel-section-body {
+    display: none;
+}
+
+.panel-section.collapsed .collapse-icon {
+    transform: rotate(-90deg);
+}
+
+/* Customer header */
+.customer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.customer-header #customer-name-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.25px;
+}
+
+.customer-header #btn-select-customer {
+    font-size: 9px;
+    padding: 3px 8px;
+}
+
+/* Block section */
+.block-buttons {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.block-buttons button {
+    flex: 1;
+}
+
+.btn-active {
+    background: #000 !important;
+    color: #fff !important;
+}
+
+#edge-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.edge-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px;
+    font-size: 9.3px;
+    border-bottom: 1px solid #eee;
+}
+
+.edge-item .edge-info {
+    flex: 1;
+}
+
+.edge-item .edge-dim {
+    font-weight: 500;
+}
+
+.edge-item button {
+    font-size: 8px;
+    padding: 2px 6px;
+    margin-left: 4px;
+}
+
+.edge-actions {
+    display: flex;
+    gap: 3px;
+}
+
+.edge-btn-confirm {
+    color: #00aa00 !important;
+    border-color: #00aa00 !important;
+}
+
+.edge-btn-confirm:hover {
+    background: #00aa00 !important;
+    color: #fff !important;
+}
+
+.edge-btn-edit {
+    color: #333 !important;
+    border-color: #333 !important;
+}
+
+.edge-btn-edit:hover {
+    background: #333 !important;
+    color: #fff !important;
+}
+
+.edge-btn-remove {
+    color: #d32f2f !important;
+    border-color: #d32f2f !important;
+}
+
+.edge-btn-remove:hover {
+    background: #d32f2f !important;
+    color: #fff !important;
+}
+
+.edge-item.confirmed .edge-dim {
+    color: #00aa00;
+}
+
+/* Style toggles (bold/italic) */
+.style-toggles {
+    display: flex;
+    gap: 4px;
+}
+
+.style-toggles button {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+    font-weight: 700;
+    border: 1.5px solid #ddd;
+    background: #fff;
+    cursor: pointer;
+}
+
+.style-toggles button.active {
+    background: #000;
+    color: #fff;
+    border-color: #000;
+}
+
+/* Alignment buttons */
+.alignment-buttons {
+    display: flex;
+    gap: 4px;
+}
+
+.alignment-buttons button {
+    flex: 1;
+    padding: 6px 0;
+    font-size: 11px;
+    border: 1.5px solid #ddd;
+    background: #fff;
+    cursor: pointer;
+}
+
+.alignment-buttons button.active {
+    background: #000;
+    color: #fff;
+    border-color: #000;
+}
+
+/* Text region on canvas */
+.text-region-cursor {
+    cursor: crosshair;
+}

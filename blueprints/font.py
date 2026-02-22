@@ -91,6 +91,15 @@ def list_fonts():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@font_bp.route('/list/<customer_id>', methods=['GET'])
+def list_fonts_by_customer(customer_id):
+    """Get fonts for a specific customer and public fonts"""
+    try:
+        fonts = Font.get_by_customer(customer_id)
+        return jsonify({'success': True, 'fonts': fonts}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @font_bp.route('/<int:font_id>/rename', methods=['PUT'])
 def rename_font(font_id):
     """Rename a font"""
