@@ -420,6 +420,53 @@
     color: #00aa00;
 }
 
+.block-expand-btn {
+    cursor: pointer;
+    margin-right: 4px;
+    font-size: 8px;
+}
+
+.block-region-item {
+    display: flex;
+    align-items: center;
+    padding: 3px 4px 3px 20px;
+    font-size: 9px;
+    border-bottom: 1px solid #f0f0f0;
+    gap: 3px;
+}
+
+.block-region-item:hover {
+    background: #f5f5f5;
+}
+
+.block-region-item .icon-btn {
+    font-size: 9px;
+    padding: 0 2px;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+
+.block-region-label {
+    flex: 1;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.block-region-arrows {
+    display: flex;
+    gap: 1px;
+}
+
+.block-region-arrow-btn {
+    font-size: 8px !important;
+    padding: 1px 3px !important;
+    min-width: 0;
+    line-height: 1;
+}
+
 /* Style toggles (bold/italic) */
 .style-toggles {
     display: flex;
@@ -508,13 +555,18 @@
 
 #content-type-panel .ts-row select,
 #content-type-panel .ts-row input[type="number"],
-#content-type-panel .ts-row input[type="text"] {
+#content-type-panel .ts-row input[type="text"],
+#content-type-panel .ts-row textarea {
     flex: 1;
     padding: 3px 4px;
     border: 1px solid #000;
     font-size: 9px;
     font-family: inherit;
     min-width: 0;
+}
+
+#content-type-panel .ts-row textarea {
+    resize: vertical;
 }
 
 #content-type-panel .ts-row input[type="color"] {

@@ -193,25 +193,35 @@ def _draw_text(c, comp, page_h):
     r, g, b = _hex_to_rgb(color)
     c.setFillColorRGB(r, g, b)
 
-    # Calculate vertical position based on alignV
-    if align_v == 'bottom':
-        y = page_h - (comp.get('y', 0) * mm) - h
-    elif align_v == 'center':
-        y = page_h - (comp.get('y', 0) * mm) - (h / 2) - (font_size * 0.35)
-    else:  # top
-        y = page_h - (comp.get('y', 0) * mm) - (font_size * 0.8)
+    # Split into lines for multi-line support
+    lines = content.split('\n')
+    line_height = font_size * 1.2  # match canvas lineHeight
 
-    # Draw with horizontal alignment
-    if letter_spacing and letter_spacing != 0:
-        # Draw character by character with spacing
-        _draw_text_with_spacing(c, content, x, y, w, font_size, letter_spacing, align_h, resolved_font)
-    else:
-        if align_h == 'center':
-            c.drawCentredString(x + w / 2, y, content)
-        elif align_h == 'right':
-            c.drawRightString(x + w, y, content)
+    # Calculate vertical start based on alignV
+    total_text_h = len(lines) * line_height
+    comp_y = comp.get('y', 0) * mm
+
+    if align_v == 'bottom':
+        first_line_y = page_h - comp_y - h + (total_text_h - line_height) + (font_size * 0.2)
+    elif align_v == 'center':
+        first_line_y = page_h - comp_y - (h / 2) - (total_text_h / 2) + (font_size * 0.2) + (total_text_h - line_height)
+    else:  # top
+        first_line_y = page_h - comp_y - (font_size * 0.8)
+
+    # Draw each line
+    for i, line in enumerate(lines):
+        y = first_line_y - (i * line_height)
+        if not line:
+            continue
+        if letter_spacing and letter_spacing != 0:
+            _draw_text_with_spacing(c, line, x, y, w, font_size, letter_spacing, align_h, resolved_font)
         else:
-            c.drawString(x, y, content)
+            if align_h == 'center':
+                c.drawCentredString(x + w / 2, y, line)
+            elif align_h == 'right':
+                c.drawRightString(x + w, y, line)
+            else:
+                c.drawString(x, y, line)
 
 def _draw_text_outlined(c, comp, page_h):
     """Draw text as outlined paths"""
@@ -233,46 +243,55 @@ def _draw_text_outlined(c, comp, page_h):
     align_h = comp.get('alignH', 'left')
     align_v = comp.get('alignV', 'top')
 
-    # Adjust X for horizontal alignment
-    if align_h == 'center':
-        text_w = get_text_width(content, font_family, font_size)
-        start_x = x + (w - text_w) / 2
-    elif align_h == 'right':
-        text_w = get_text_width(content, font_family, font_size)
-        start_x = x + w - text_w
-    else:
-        start_x = x
+    # Split into lines for multi-line support
+    lines = content.split('\n')
+    line_height_mm = font_size * 0.3528 * 1.2  # points to mm, match canvas lineHeight
+    total_text_h = len(lines) * line_height_mm
 
-    # Adjust Y for baseline (same logic as _draw_text)
+    # Calculate vertical start for first line baseline
     if align_v == 'bottom':
-        baseline_y = y + h
+        first_baseline_y = y + h - total_text_h + (font_size * 0.3528 * 0.8)
     elif align_v == 'center':
-        baseline_y = y + (h / 2) + (font_size * 0.3528 * 0.35)
+        first_baseline_y = y + (h - total_text_h) / 2 + (font_size * 0.3528 * 0.8)
     else:  # top
-        baseline_y = y + (font_size * 0.3528 * 0.8)
+        first_baseline_y = y + (font_size * 0.3528 * 0.8)
 
     try:
-        path_ops = text_to_path(content, font_family, font_size, start_x, baseline_y)
-
-        # Draw the path operations
         p = c.beginPath()
 
-        for op in path_ops:
-            o = op.get('o')
-            a = op.get('a', [])
+        for i, line in enumerate(lines):
+            if not line:
+                continue
+            baseline_y = first_baseline_y + i * line_height_mm
 
-            if o == 'M' and len(a) >= 2:
-                p.moveTo(a[0] * mm, page_h - (a[1] * mm))
-            elif o == 'L' and len(a) >= 2:
-                p.lineTo(a[0] * mm, page_h - (a[1] * mm))
-            elif o == 'C' and len(a) >= 6:
-                p.curveTo(
-                    a[0] * mm, page_h - (a[1] * mm),
-                    a[2] * mm, page_h - (a[3] * mm),
-                    a[4] * mm, page_h - (a[5] * mm)
-                )
-            elif o == 'Z':
-                p.close()
+            # Adjust X for horizontal alignment per line
+            if align_h == 'center':
+                text_w = get_text_width(line, font_family, font_size)
+                start_x = x + (w - text_w) / 2
+            elif align_h == 'right':
+                text_w = get_text_width(line, font_family, font_size)
+                start_x = x + w - text_w
+            else:
+                start_x = x
+
+            path_ops = text_to_path(line, font_family, font_size, start_x, baseline_y)
+
+            for op in path_ops:
+                o = op.get('o')
+                a = op.get('a', [])
+
+                if o == 'M' and len(a) >= 2:
+                    p.moveTo(a[0] * mm, page_h - (a[1] * mm))
+                elif o == 'L' and len(a) >= 2:
+                    p.lineTo(a[0] * mm, page_h - (a[1] * mm))
+                elif o == 'C' and len(a) >= 6:
+                    p.curveTo(
+                        a[0] * mm, page_h - (a[1] * mm),
+                        a[2] * mm, page_h - (a[3] * mm),
+                        a[4] * mm, page_h - (a[5] * mm)
+                    )
+                elif o == 'Z':
+                    p.close()
 
         r, g, b = _hex_to_rgb(color)
         c.setFillColorRGB(r, g, b)

@@ -36,7 +36,11 @@ function getCanvasState(canvas) {
             contentRegionDraw: null,
             contentRegionBlock: null,
             pendingContentRegion: null,
-            pendingContentType: null
+            pendingContentType: null,
+            previewDragState: { active: false, startX: 0, startY: 0 },
+            blockExpanded: {},
+            editingComponentIdx: -1,
+            regionResizing: null
         });
     }
     return canvasStates.get(canvas);
@@ -137,6 +141,7 @@ function initWithTabPane(tabPane) {
             btn.addEventListener('click', function() {
                 ctAlignH.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
                 btn.classList.add('active');
+                renderCanvas();
             });
         });
     }
@@ -146,9 +151,36 @@ function initWithTabPane(tabPane) {
             btn.addEventListener('click', function() {
                 ctAlignV.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
                 btn.classList.add('active');
+                renderCanvas();
             });
         });
     }
+
+    // Wire up live preview listeners for text content fields
+    ['ct-text-value', 'ct-font-size', 'ct-color', 'ct-letter-spacing'].forEach(function(id) {
+        var el = tabPane.querySelector('#' + id);
+        if (el) el.addEventListener('input', function() { renderCanvas(); });
+    });
+    var ctFontSelect = tabPane.querySelector('#ct-font-select');
+    if (ctFontSelect) {
+        ctFontSelect.addEventListener('change', function() {
+            var opt = ctFontSelect.options[ctFontSelect.selectedIndex];
+            if (ctFontSelect.value && opt && opt.dataset.fontName) {
+                loadFontForCanvas(parseInt(ctFontSelect.value), opt.dataset.fontName);
+            }
+            renderCanvas();
+        });
+    }
+    ['ct-bold-btn', 'ct-italic-btn'].forEach(function(id) {
+        var btn = tabPane.querySelector('#' + id);
+        if (btn) {
+            btn.removeAttribute('onclick');
+            btn.addEventListener('click', function() {
+                btn.classList.toggle('active');
+                renderCanvas();
+            });
+        }
+    });
 
     renderCanvas();
 
@@ -353,6 +385,7 @@ function setupCanvasInteraction() {
     // Add new listeners
     currentCanvas.addEventListener('mousedown', mouseDownHandler);
     currentCanvas.addEventListener('wheel', wheelHandler);
+    currentCanvas.addEventListener('dblclick', onCanvasDblClick);
 
     // Global listeners (only add once)
     if (!window._pdfManagerGlobalListenersAdded) {
@@ -791,6 +824,14 @@ function renderCanvas() {
             drawBarcodeRegion(comp, idx);
         }
     });
+
+    // Draw live text preview for pending content region
+    if (state && state.pendingContentRegion && state.pendingContentType === 'text') {
+        var previewComp = buildPreviewComponent();
+        if (previewComp) {
+            drawTextRegion(previewComp, -1);
+        }
+    }
 
     // Draw defined edges (green rectangles, only unconfirmed)
     if (state && state.edges) {
@@ -1517,6 +1558,47 @@ function updateActionButtons() {
     _el('btn-delete').disabled = !hasSelection;
 }
 
+function hitTestRegionHandle(x, y) {
+    if (!state || selectedSet.length !== 1) return null;
+    var idx = selectedSet[0];
+    var comp = components[idx];
+    if (!comp || !comp.snappedEdgeId) return null;
+
+    var hs = 4 / scale; // handle hit area in mm
+    var handles = [
+        { name: 'tl', hx: comp.x, hy: comp.y },
+        { name: 'tc', hx: comp.x + comp.w / 2, hy: comp.y },
+        { name: 'tr', hx: comp.x + comp.w, hy: comp.y },
+        { name: 'ml', hx: comp.x, hy: comp.y + comp.h / 2 },
+        { name: 'mr', hx: comp.x + comp.w, hy: comp.y + comp.h / 2 },
+        { name: 'bl', hx: comp.x, hy: comp.y + comp.h },
+        { name: 'bc', hx: comp.x + comp.w / 2, hy: comp.y + comp.h },
+        { name: 'br', hx: comp.x + comp.w, hy: comp.y + comp.h }
+    ];
+    for (var i = 0; i < handles.length; i++) {
+        if (Math.abs(x - handles[i].hx) < hs && Math.abs(y - handles[i].hy) < hs) {
+            return { compIdx: idx, handle: handles[i].name };
+        }
+    }
+    return null;
+}
+
+function onCanvasDblClick(e) {
+    if (!canvas || !state) return;
+    var rect = canvas.getBoundingClientRect();
+    var x = (e.clientX - rect.left) / scale;
+    var y = (e.clientY - rect.top) / scale;
+
+    // Check if double-clicking on a content region
+    for (var i = components.length - 1; i >= 0; i--) {
+        var comp = components[i];
+        if (comp.snappedEdgeId && x >= comp.x && x <= comp.x + comp.w && y >= comp.y && y <= comp.y + comp.h) {
+            editContentRegion(i);
+            return;
+        }
+    }
+}
+
 function onCanvasMouseDown(e) {
     var rect = canvas.getBoundingClientRect();
     var x = (e.clientX - rect.left) / scale;
@@ -1555,8 +1637,34 @@ function onCanvasMouseDown(e) {
 
     // Content mode — click confirmed block to select, or draw inside selected block
     if (state.contentMode) {
-        // If a block is selected, start drawing content region inside it
+        // Check if clicking on the pending content region to drag it
+        if (state.pendingContentRegion) {
+            var pr = state.pendingContentRegion;
+            if (x >= pr.x && x <= pr.x + pr.w && y >= pr.y && y <= pr.y + pr.h) {
+                state.previewDragState = { active: true, startX: x, startY: y };
+                canvas.style.cursor = 'move';
+                return;
+            }
+        }
+        // If a block is selected, check if clicking on existing content region first
         if (state.contentRegionMode && state.contentRegionBlock) {
+            // Hit test existing content regions in this block
+            for (var ci = components.length - 1; ci >= 0; ci--) {
+                var cr = components[ci];
+                if (cr.snappedEdgeId === state.contentRegionBlock.id && !cr.locked &&
+                    x >= cr.x && x <= cr.x + cr.w && y >= cr.y && y <= cr.y + cr.h) {
+                    selectComponent(ci);
+                    captureState();
+                    state.contentRegionMode = false;
+                    dragState.active = true;
+                    dragState.startX = x;
+                    dragState.startY = y;
+                    dragState.componentIdx = ci;
+                    canvas.style.cursor = 'move';
+                    return;
+                }
+            }
+            // Otherwise start drawing new content region
             var block = state.contentRegionBlock;
             var sx = x, sy = y;
             if (block) {
@@ -1591,6 +1699,13 @@ function onCanvasMouseDown(e) {
             canvas.style.cursor = 'crosshair';
             renderCanvas();
         }
+        return;
+    }
+
+    // Check if clicking on a resize handle of a selected content region
+    var regionHandle = hitTestRegionHandle(x, y);
+    if (regionHandle) {
+        state.regionResizing = { compIdx: regionHandle.compIdx, handle: regionHandle.handle, startX: x, startY: y };
         return;
     }
 
@@ -1666,6 +1781,32 @@ function onCanvasMouseMove(e) {
         return;
     }
 
+    // Drag pending content region within block
+    if (state && state.previewDragState && state.previewDragState.active && state.pendingContentRegion) {
+        var rect = canvas.getBoundingClientRect();
+        var x = (e.clientX - rect.left) / scale;
+        var y = (e.clientY - rect.top) / scale;
+        var dx = x - state.previewDragState.startX;
+        var dy = y - state.previewDragState.startY;
+        var pr = state.pendingContentRegion;
+        var block = getBlockForPendingRegion();
+        if (block) {
+            var newX = pr.x + dx;
+            var newY = pr.y + dy;
+            newX = Math.max(block.x, Math.min(block.x + block.w - pr.w, newX));
+            newY = Math.max(block.y, Math.min(block.y + block.h - pr.h, newY));
+            pr.x = newX;
+            pr.y = newY;
+        } else {
+            pr.x += dx;
+            pr.y += dy;
+        }
+        state.previewDragState.startX = x;
+        state.previewDragState.startY = y;
+        renderCanvas();
+        return;
+    }
+
     // Content region drawing — clamped to block boundaries with snap
     if (state && state.contentRegionMode && state.contentRegionDraw) {
         var rect = canvas.getBoundingClientRect();
@@ -1713,6 +1854,50 @@ function onCanvasMouseMove(e) {
         return;
     }
 
+    // Region resize dragging
+    if (state && state.regionResizing) {
+        var rect = canvas.getBoundingClientRect();
+        var x = (e.clientX - rect.left) / scale;
+        var y = (e.clientY - rect.top) / scale;
+        var rs = state.regionResizing;
+        var comp = components[rs.compIdx];
+        if (!comp) { state.regionResizing = null; return; }
+
+        var block = null;
+        if (comp.snappedEdgeId) {
+            for (var bi = 0; bi < state.edges.length; bi++) {
+                if (state.edges[bi].id === comp.snappedEdgeId) { block = state.edges[bi]; break; }
+            }
+        }
+
+        var dx = x - rs.startX;
+        var dy = y - rs.startY;
+        var nx = comp.x, ny = comp.y, nw = comp.w, nh = comp.h;
+        var h = rs.handle;
+
+        if (h === 'tl' || h === 'ml' || h === 'bl') { nx += dx; nw -= dx; }
+        if (h === 'tr' || h === 'mr' || h === 'br') { nw += dx; }
+        if (h === 'tl' || h === 'tc' || h === 'tr') { ny += dy; nh -= dy; }
+        if (h === 'bl' || h === 'bc' || h === 'br') { nh += dy; }
+
+        // Minimum size
+        if (nw < 2) { nw = 2; nx = comp.x; }
+        if (nh < 2) { nh = 2; ny = comp.y; }
+
+        // Clamp to block
+        if (block) {
+            if (nx < block.x) { nw -= (block.x - nx); nx = block.x; }
+            if (ny < block.y) { nh -= (block.y - ny); ny = block.y; }
+            if (nx + nw > block.x + block.w) nw = block.x + block.w - nx;
+            if (ny + nh > block.y + block.h) nh = block.y + block.h - ny;
+        }
+
+        comp.x = nx; comp.y = ny; comp.w = nw; comp.h = nh;
+        rs.startX = x; rs.startY = y;
+        renderCanvas();
+        return;
+    }
+
     if (!dragState.active) return;
 
     var rect = canvas.getBoundingClientRect();
@@ -1726,6 +1911,19 @@ function onCanvasMouseMove(e) {
     selectedSet.forEach(function(idx) {
         components[idx].x += dx;
         components[idx].y += dy;
+
+        // Clamp to parent block if content region
+        var comp = components[idx];
+        if (comp.snappedEdgeId && state) {
+            for (var bi = 0; bi < state.edges.length; bi++) {
+                if (state.edges[bi].id === comp.snappedEdgeId) {
+                    var blk = state.edges[bi];
+                    comp.x = Math.max(blk.x, Math.min(blk.x + blk.w - comp.w, comp.x));
+                    comp.y = Math.max(blk.y, Math.min(blk.y + blk.h - comp.h, comp.y));
+                    break;
+                }
+            }
+        }
     });
 
     dragState.startX = x;
@@ -1735,6 +1933,22 @@ function onCanvasMouseMove(e) {
 }
 
 function onCanvasMouseUp(e) {
+    // End pending region drag
+    if (state && state.previewDragState && state.previewDragState.active) {
+        state.previewDragState.active = false;
+        canvas.style.cursor = 'crosshair';
+        renderCanvas();
+        return;
+    }
+
+    // End region resize
+    if (state && state.regionResizing) {
+        state.regionResizing = null;
+        renderCanvas();
+        renderEdgeList();
+        return;
+    }
+
     // Edge resize handle release
     if (state && state.resizingEdge) {
         state.resizingEdge = null;
@@ -1833,7 +2047,10 @@ function onCanvasMouseUp(e) {
 
     dragState.active = false;
     pan.dragging = false;
-    if (pan.spaceDown) {
+    if (state && state.contentRegionBlock) {
+        state.contentRegionMode = true;
+        canvas.style.cursor = 'crosshair';
+    } else if (pan.spaceDown) {
         canvas.style.cursor = 'grab';
     } else {
         canvas.style.cursor = 'default';
@@ -1864,6 +2081,8 @@ function onKeyDown(e) {
             undo();
         }
     } else if (e.key === ' ') {
+        var tag = document.activeElement ? document.activeElement.tagName.toLowerCase() : '';
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
         e.preventDefault();
         pan.spaceDown = true;
         canvas.style.cursor = 'grab';
@@ -2781,6 +3000,21 @@ function renderEdgeList() {
     state.edges.forEach(function(edge, i) {
         var div = document.createElement('div');
         div.className = 'edge-item' + (edge.confirmed ? ' confirmed' : '');
+
+        // Find content regions belonging to this block
+        var regionIndices = [];
+        if (edge.confirmed) {
+            components.forEach(function(comp, idx) {
+                if (comp.snappedEdgeId === edge.id) regionIndices.push(idx);
+            });
+        }
+
+        var isExpanded = state.blockExpanded[edge.id] !== false;
+        var expandBtn = '';
+        if (edge.confirmed && regionIndices.length > 0) {
+            expandBtn = '<span class="block-expand-btn" data-edge-id="' + edge.id + '">' + (isExpanded ? '▼' : '▶') + '</span>';
+        }
+
         var actions = '';
         if (!edge.confirmed) {
             actions = '<button class="edge-btn-confirm" onclick="confirmEdge(\'' + edge.id + '\')" title="Confirm">✓</button>';
@@ -2789,12 +3023,123 @@ function renderEdgeList() {
         }
         actions += '<button class="edge-btn-remove" onclick="deleteEdge(\'' + edge.id + '\')" title="Remove">✕</button>';
         div.innerHTML = '<div class="edge-info">' +
+            expandBtn +
             '<span class="edge-dim">Block ' + (i + 1) + '</span> ' +
             '<span>W: ' + edge.w.toFixed(1) + 'mm  H: ' + edge.h.toFixed(1) + 'mm</span>' +
             '</div>' +
             '<div class="edge-actions">' + actions + '</div>';
+
+        // Wire expand/collapse click
+        var expEl = div.querySelector('.block-expand-btn');
+        if (expEl) {
+            expEl.addEventListener('click', function(e) {
+                e.stopPropagation();
+                state.blockExpanded[edge.id] = !isExpanded;
+                renderEdgeList();
+            });
+        }
+
         list.appendChild(div);
+
+        // Render nested content regions if expanded
+        if (edge.confirmed && isExpanded && regionIndices.length > 0) {
+            regionIndices.forEach(function(compIdx) {
+                var comp = components[compIdx];
+                var regionDiv = createBlockRegionItem(comp, compIdx, edge);
+                list.appendChild(regionDiv);
+            });
+        }
     });
+}
+
+function createBlockRegionItem(comp, compIdx, block) {
+    var div = document.createElement('div');
+    div.className = 'block-region-item';
+
+    var labelMap = {
+        'textregion': 'Text Region',
+        'imageregion': 'Image',
+        'qrcoderegion': 'QR Code',
+        'barcoderegion': 'Barcode'
+    };
+    var labelText = labelMap[comp.type] || comp.type;
+
+    var eyeBtn = document.createElement('button');
+    eyeBtn.className = 'icon-btn';
+    eyeBtn.textContent = comp.visible ? '👁' : '👁‍🗨';
+    eyeBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        toggleVisibility(compIdx);
+        renderEdgeList();
+    });
+
+    var lockBtn = document.createElement('button');
+    lockBtn.className = 'icon-btn';
+    lockBtn.textContent = comp.locked ? '🔒' : '🔓';
+    lockBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        toggleLock(compIdx);
+        renderEdgeList();
+    });
+
+    var label = document.createElement('span');
+    label.className = 'block-region-label';
+    label.textContent = labelText;
+    label.addEventListener('dblclick', function(e) {
+        e.stopPropagation();
+        editContentRegion(compIdx);
+    });
+
+    div.appendChild(eyeBtn);
+    div.appendChild(lockBtn);
+    div.appendChild(label);
+
+    // Arrow buttons for moving within block (only if not locked)
+    if (!comp.locked) {
+        var arrows = document.createElement('span');
+        arrows.className = 'block-region-arrows';
+        ['←', '→', '↑', '↓'].forEach(function(arrow) {
+            var dirMap = { '←': 'left', '→': 'right', '↑': 'up', '↓': 'down' };
+            var btn = document.createElement('button');
+            btn.className = 'block-region-arrow-btn';
+            btn.textContent = arrow;
+            btn.title = 'Move ' + dirMap[arrow];
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                moveRegionInBlock(compIdx, dirMap[arrow]);
+            });
+            arrows.appendChild(btn);
+        });
+        div.appendChild(arrows);
+    }
+
+    return div;
+}
+
+function moveRegionInBlock(compIdx, direction) {
+    if (!state) return;
+    var comp = components[compIdx];
+    if (!comp || !comp.snappedEdgeId) return;
+
+    var block = null;
+    for (var i = 0; i < state.edges.length; i++) {
+        if (state.edges[i].id === comp.snappedEdgeId) { block = state.edges[i]; break; }
+    }
+    if (!block) return;
+
+    var step = 1; // 1mm
+    var nx = comp.x, ny = comp.y;
+    if (direction === 'left') nx -= step;
+    else if (direction === 'right') nx += step;
+    else if (direction === 'up') ny -= step;
+    else if (direction === 'down') ny += step;
+
+    // Clamp to block boundaries
+    comp.x = Math.max(block.x, Math.min(block.x + block.w - comp.w, nx));
+    comp.y = Math.max(block.y, Math.min(block.y + block.h - comp.h, ny));
+
+    renderCanvas();
+    renderEdgeList();
 }
 
 function confirmEdge(edgeId) {
@@ -2920,6 +3265,95 @@ function toggleContentMode() {
     renderCanvas();
 }
 
+function editContentRegion(compIdx) {
+    if (!state) return;
+    var comp = components[compIdx];
+    if (!comp) return;
+
+    // Map component type to content type value
+    var typeMap = {
+        'textregion': 'text',
+        'imageregion': 'image',
+        'qrcoderegion': 'qrcode',
+        'barcoderegion': 'barcode'
+    };
+    var contentType = typeMap[comp.type];
+    if (!contentType) return;
+
+    // Set pending region from existing component
+    state.pendingContentRegion = {
+        x: comp.x, y: comp.y, w: comp.w, h: comp.h,
+        snappedEdgeId: comp.snappedEdgeId || null
+    };
+    state.pendingContentType = contentType;
+    state.editingComponentIdx = compIdx;
+
+    // Show content type panel and select the type
+    showContentTypePanel();
+    var typeSelect = _el('ct-type-select');
+    if (typeSelect) {
+        typeSelect.value = contentType;
+        onContentTypeChange();
+    }
+
+    // Pre-fill form fields based on type
+    if (contentType === 'text') {
+        var tv = _el('ct-text-value'); if (tv) tv.value = comp.content || '';
+        var fs = _el('ct-font-size'); if (fs) fs.value = comp.fontSize || 12;
+        var cc = _el('ct-color'); if (cc) cc.value = comp.color || '#000000';
+        var ls = _el('ct-letter-spacing'); if (ls) ls.value = comp.letterSpacing || 0;
+        var bb = _el('ct-bold-btn');
+        if (bb) { if (comp.bold) bb.classList.add('active'); else bb.classList.remove('active'); }
+        var ib = _el('ct-italic-btn');
+        if (ib) { if (comp.italic) ib.classList.add('active'); else ib.classList.remove('active'); }
+
+        // Set alignment buttons
+        var ah = _el('ct-align-h');
+        if (ah) {
+            ah.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+            var hBtn = ah.querySelector('[data-val="' + (comp.alignH || 'left') + '"]');
+            if (hBtn) hBtn.classList.add('active');
+        }
+        var av = _el('ct-align-v');
+        if (av) {
+            av.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+            var vBtn = av.querySelector('[data-val="' + (comp.alignV || 'top') + '"]');
+            if (vBtn) vBtn.classList.add('active');
+        }
+
+        // Pre-select font (after dropdown is populated)
+        if (comp.fontId) {
+            var fontSelect = _el('ct-font-select');
+            if (fontSelect) {
+                // Try to select immediately, or wait for populate
+                var trySelect = function() {
+                    for (var j = 0; j < fontSelect.options.length; j++) {
+                        if (fontSelect.options[j].value == comp.fontId) {
+                            fontSelect.selectedIndex = j;
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+                if (!trySelect()) {
+                    // Font dropdown may still be loading, retry after short delay
+                    setTimeout(trySelect, 300);
+                }
+            }
+        }
+    } else if (contentType === 'image') {
+        var iu = _el('ct-image-url'); if (iu) iu.value = comp.imageUrl || '';
+        var imf = _el('ct-image-fit'); if (imf) imf.value = comp.imageFit || 'contain';
+    } else if (contentType === 'qrcode') {
+        var qd = _el('ct-qr-data'); if (qd) qd.value = comp.qrData || '';
+    } else if (contentType === 'barcode') {
+        var bd = _el('ct-barcode-data'); if (bd) bd.value = comp.barcodeData || '';
+        var bf = _el('ct-barcode-format'); if (bf) bf.value = comp.barcodeFormat || 'code128';
+    }
+
+    renderCanvas();
+}
+
 function populateContentFontDropdown() {
     var fontSelect = _el('ct-font-select');
     if (!fontSelect) return;
@@ -2964,6 +3398,8 @@ function cancelContentSettings() {
     if (state) {
         state.pendingContentRegion = null;
         state.pendingContentType = null;
+        state.previewDragState = { active: false, startX: 0, startY: 0 };
+        state.editingComponentIdx = -1;
     }
     hideContentTypePanel();
     renderCanvas();
@@ -3007,6 +3443,46 @@ function onContentTypeChange() {
     }
 }
 
+function getBlockForPendingRegion() {
+    if (!state || !state.pendingContentRegion || !state.pendingContentRegion.snappedEdgeId) return null;
+    var id = state.pendingContentRegion.snappedEdgeId;
+    for (var i = 0; i < state.edges.length; i++) {
+        if (state.edges[i].id === id) return state.edges[i];
+    }
+    return null;
+}
+
+function buildPreviewComponent() {
+    if (!state || !state.pendingContentRegion || state.pendingContentType !== 'text') return null;
+    var region = state.pendingContentRegion;
+    var fontSelect = _el('ct-font-select');
+    var selectedOpt = fontSelect ? fontSelect.options[fontSelect.selectedIndex] : null;
+    var fontName = selectedOpt ? selectedOpt.dataset.fontName || '' : '';
+    var fontId = fontSelect ? fontSelect.value : '';
+    var fontSize = parseFloat((_el('ct-font-size') || {}).value) || 12;
+    var bold = _el('ct-bold-btn') ? _el('ct-bold-btn').classList.contains('active') : false;
+    var italic = _el('ct-italic-btn') ? _el('ct-italic-btn').classList.contains('active') : false;
+    var color = (_el('ct-color') || {}).value || '#000000';
+    var letterSpacing = parseFloat((_el('ct-letter-spacing') || {}).value) || 0;
+    var alignH = 'left';
+    var alignHBtns = _el('ct-align-h');
+    if (alignHBtns) { var a = alignHBtns.querySelector('.active'); if (a) alignH = a.dataset.val; }
+    var alignV = 'top';
+    var alignVBtns = _el('ct-align-v');
+    if (alignVBtns) { var a = alignVBtns.querySelector('.active'); if (a) alignV = a.dataset.val; }
+    return {
+        type: 'textregion',
+        x: region.x, y: region.y, w: region.w, h: region.h,
+        snappedEdgeId: region.snappedEdgeId || null,
+        fontFamily: fontName, fontId: fontId ? parseInt(fontId) : null,
+        fontSize: fontSize, bold: bold, italic: italic,
+        color: color, letterSpacing: letterSpacing,
+        alignH: alignH, alignV: alignV,
+        content: (_el('ct-text-value') || {}).value || '',
+        visible: true, locked: false, groupId: null
+    };
+}
+
 function applyContentSettings() {
     if (!state || !state.pendingContentRegion || !state.pendingContentType) return;
 
@@ -3015,40 +3491,9 @@ function applyContentSettings() {
     var comp = null;
 
     if (type === 'text') {
-        var fontSelect = _el('ct-font-select');
-        var selectedOpt = fontSelect ? fontSelect.options[fontSelect.selectedIndex] : null;
-        var fontId = fontSelect ? fontSelect.value : '';
-        var fontName = selectedOpt ? selectedOpt.dataset.fontName || '' : '';
-        var fontSize = parseFloat((_el('ct-font-size') || {}).value) || 12;
-        var bold = _el('ct-bold-btn') ? _el('ct-bold-btn').classList.contains('active') : false;
-        var italic = _el('ct-italic-btn') ? _el('ct-italic-btn').classList.contains('active') : false;
-        var color = (_el('ct-color') || {}).value || '#000000';
-        var letterSpacing = parseFloat((_el('ct-letter-spacing') || {}).value) || 0;
-        var alignH = 'left';
-        var alignHBtns = _el('ct-align-h');
-        if (alignHBtns) {
-            var activeH = alignHBtns.querySelector('.active');
-            if (activeH) alignH = activeH.dataset.val;
-        }
-        var alignV = 'top';
-        var alignVBtns = _el('ct-align-v');
-        if (alignVBtns) {
-            var activeV = alignVBtns.querySelector('.active');
-            if (activeV) alignV = activeV.dataset.val;
-        }
-        comp = {
-            type: 'textregion',
-            x: region.x, y: region.y, w: region.w, h: region.h,
-            snappedEdgeId: region.snappedEdgeId || null,
-            fontFamily: fontName,
-            fontId: fontId ? parseInt(fontId) : null,
-            fontSize: fontSize, bold: bold, italic: italic,
-            color: color, letterSpacing: letterSpacing,
-            alignH: alignH, alignV: alignV,
-            content: (_el('ct-text-value') || {}).value || '', visible: true, locked: false, groupId: null
-        };
-        if (fontId && fontName) {
-            loadFontForCanvas(parseInt(fontId), fontName);
+        comp = buildPreviewComponent();
+        if (comp && comp.fontId && comp.fontFamily) {
+            loadFontForCanvas(comp.fontId, comp.fontFamily);
         }
     } else if (type === 'image') {
         comp = {
@@ -3080,15 +3525,44 @@ function applyContentSettings() {
 
     if (!comp) return;
 
+    // Edit mode: update existing component instead of creating new
+    if (state.editingComponentIdx >= 0 && state.editingComponentIdx < components.length) {
+        var editIdx = state.editingComponentIdx;
+        // Preserve locked/visible/groupId from original
+        comp.locked = components[editIdx].locked;
+        comp.visible = components[editIdx].visible;
+        comp.groupId = components[editIdx].groupId;
+        components[editIdx] = comp;
+        captureState();
+
+        state.pendingContentRegion = null;
+        state.pendingContentType = null;
+        state.previewDragState = { active: false, startX: 0, startY: 0 };
+        state.editingComponentIdx = -1;
+        hideContentTypePanel();
+
+        selectedSet = [editIdx];
+        selectedIdx = editIdx;
+        renderCanvas();
+        renderComponentList();
+        renderEdgeList();
+        renderPropertiesPanel();
+        updateActionButtons();
+        return;
+    }
+
     components.push(comp);
     captureState();
 
     state.pendingContentRegion = null;
     state.pendingContentType = null;
+    state.previewDragState = { active: false, startX: 0, startY: 0 };
+    state.editingComponentIdx = -1;
     hideContentTypePanel();
 
     renderCanvas();
     renderComponentList();
+    renderEdgeList();
     updateActionButtons();
 
     selectedSet = [components.length - 1];
@@ -3160,10 +3634,11 @@ function drawTextRegion(comp, idx) {
 
     // Draw text content if any
     if (comp.content && comp.fontFamily) {
+        var fontSizePx = comp.fontSize * scale / 2.835;
         var fontStyle = '';
         if (comp.italic) fontStyle += 'italic ';
         if (comp.bold) fontStyle += 'bold ';
-        fontStyle += (comp.fontSize * scale / 2.835) + 'px ';
+        fontStyle += fontSizePx + 'px ';
         fontStyle += "'" + comp.fontFamily + "', sans-serif";
         ctx.font = fontStyle;
         ctx.fillStyle = comp.color || '#000000';
@@ -3172,19 +3647,31 @@ function drawTextRegion(comp, idx) {
         else if (comp.alignH === 'right') ctx.textAlign = 'right';
         else ctx.textAlign = 'left';
 
-        if (comp.alignV === 'center') ctx.textBaseline = 'middle';
-        else if (comp.alignV === 'bottom') ctx.textBaseline = 'bottom';
-        else ctx.textBaseline = 'top';
+        ctx.textBaseline = 'top';
 
         var tx = x;
         if (comp.alignH === 'center') tx = x + w / 2;
         else if (comp.alignH === 'right') tx = x + w;
 
-        var ty = y;
-        if (comp.alignV === 'center') ty = y + h / 2;
-        else if (comp.alignV === 'bottom') ty = y + h;
+        var lines = comp.content.split('\n');
+        var lineHeight = fontSizePx * 1.2;
+        var totalTextH = lines.length * lineHeight;
 
-        ctx.fillText(comp.content, tx, ty);
+        var startY = y;
+        if (comp.alignV === 'center') startY = y + (h - totalTextH) / 2;
+        else if (comp.alignV === 'bottom') startY = y + h - totalTextH;
+
+        // Clip text to region
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, w, h);
+        ctx.clip();
+
+        for (var li = 0; li < lines.length; li++) {
+            ctx.fillText(lines[li], tx, startY + li * lineHeight);
+        }
+        ctx.restore();
+
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
     }
@@ -3199,6 +3686,18 @@ function drawTextRegion(comp, idx) {
         ctx.strokeStyle = '#0066ff';
         ctx.lineWidth = 2;
         ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
+
+        // Draw resize handles (8 points)
+        var hs = 3;
+        var handles = [
+            { x: x, y: y }, { x: x + w / 2, y: y }, { x: x + w, y: y },
+            { x: x, y: y + h / 2 }, { x: x + w, y: y + h / 2 },
+            { x: x, y: y + h }, { x: x + w / 2, y: y + h }, { x: x + w, y: y + h }
+        ];
+        ctx.fillStyle = '#0066ff';
+        handles.forEach(function(hp) {
+            ctx.fillRect(hp.x - hs, hp.y - hs, hs * 2, hs * 2);
+        });
     }
 
     ctx.globalAlpha = 1;
