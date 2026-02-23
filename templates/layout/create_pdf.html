@@ -15,6 +15,109 @@
         </div>
 
         <div id="right-panel">
+            <div class="panel-section" id="content-type-panel" style="display: none;">
+                <h2 class="collapsible-header">CONTENT TYPE <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <p class="ts-hint" id="content-mode-hint">Click a confirmed block, then draw a region inside it.</p>
+                    <div id="content-type-picker" style="display: none;">
+                        <div class="ts-row">
+                            <label>Type</label>
+                            <select id="ct-type-select">
+                                <option value="">Select type...</option>
+                                <option value="text">Text</option>
+                                <option value="image">Image</option>
+                                <option value="qrcode">QR Code</option>
+                                <option value="barcode">Barcode</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="ct-form-text" class="ct-form" style="display: none;">
+                        <div class="ts-row">
+                            <label>Value</label>
+                            <input type="text" id="ct-text-value" placeholder="Enter text content">
+                        </div>
+                        <div class="ts-row">
+                            <label>Font</label>
+                            <select id="ct-font-select"><option value="">Select a font...</option></select>
+                        </div>
+                        <div class="ts-row">
+                            <label>Size (pt)</label>
+                            <input type="number" id="ct-font-size" value="12" min="1" max="200">
+                        </div>
+                        <div class="ts-row">
+                            <label>Style</label>
+                            <div class="style-toggles">
+                                <button type="button" id="ct-bold-btn" onclick="this.classList.toggle('active')">B</button>
+                                <button type="button" id="ct-italic-btn" onclick="this.classList.toggle('active')">I</button>
+                            </div>
+                        </div>
+                        <div class="ts-row">
+                            <label>Color</label>
+                            <input type="color" id="ct-color" value="#000000">
+                        </div>
+                        <div class="ts-row">
+                            <label>Spacing</label>
+                            <input type="number" id="ct-letter-spacing" value="0" step="0.1">
+                        </div>
+                        <div class="ts-row">
+                            <label>H-Align</label>
+                            <div class="alignment-buttons" id="ct-align-h">
+                                <button type="button" data-val="left" class="active">L</button>
+                                <button type="button" data-val="center">C</button>
+                                <button type="button" data-val="right">R</button>
+                            </div>
+                        </div>
+                        <div class="ts-row">
+                            <label>V-Align</label>
+                            <div class="alignment-buttons" id="ct-align-v">
+                                <button type="button" data-val="top" class="active">T</button>
+                                <button type="button" data-val="center">C</button>
+                                <button type="button" data-val="bottom">B</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="ct-form-image" class="ct-form" style="display: none;">
+                        <div class="ts-row">
+                            <label>Source</label>
+                            <input type="text" id="ct-image-url" placeholder="Image URL or path">
+                        </div>
+                        <div class="ts-row">
+                            <label>Fit</label>
+                            <select id="ct-image-fit">
+                                <option value="contain">Contain</option>
+                                <option value="cover">Cover</option>
+                                <option value="stretch">Stretch</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="ct-form-qrcode" class="ct-form" style="display: none;">
+                        <div class="ts-row">
+                            <label>Data</label>
+                            <input type="text" id="ct-qr-data" placeholder="URL or text to encode">
+                        </div>
+                    </div>
+                    <div id="ct-form-barcode" class="ct-form" style="display: none;">
+                        <div class="ts-row">
+                            <label>Data</label>
+                            <input type="text" id="ct-barcode-data" placeholder="Barcode value">
+                        </div>
+                        <div class="ts-row">
+                            <label>Format</label>
+                            <select id="ct-barcode-format">
+                                <option value="code128">Code 128</option>
+                                <option value="ean13">EAN-13</option>
+                                <option value="code39">Code 39</option>
+                                <option value="upc">UPC-A</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="ct-buttons" class="ts-buttons" style="display: none;">
+                        <button type="button" onclick="cancelContentSettings()">Cancel</button>
+                        <button type="button" class="btn-active" onclick="applyContentSettings()">Apply</button>
+                    </div>
+                </div>
+            </div>
+
             <div id="customer-display" class="panel-section customer-header">
                 <span id="customer-name-label">No customer selected</span>
                 <button id="btn-select-customer" onclick="showCustomerSelectModal()">Select</button>
@@ -81,7 +184,7 @@
                 <div class="panel-section-body">
                     <div class="block-buttons">
                         <button id="btn-define-edge" onclick="toggleEdgeMode()">Define Edge</button>
-                        <button id="btn-add-text" draggable="true">Text</button>
+                        <button id="btn-add-content" onclick="toggleContentMode()">Content</button>
                     </div>
                     <div id="edge-list">
                         <div class="empty-message">No edges defined</div>
@@ -170,55 +273,4 @@
         </div>
     </div>
 
-    <!-- Text Settings Modal -->
-    <div id="text-settings-modal" class="modal-overlay">
-        <div class="modal-content">
-            <h2>Text Settings</h2>
-            <div class="modal-form-group">
-                <label>Font Family</label>
-                <select id="text-font-select">
-                    <option value="">Select a font...</option>
-                </select>
-            </div>
-            <div class="modal-form-group">
-                <label>Font Size (pt)</label>
-                <input type="number" id="text-font-size" value="12" min="1" max="200">
-            </div>
-            <div class="modal-form-group">
-                <label>Style</label>
-                <div class="style-toggles">
-                    <button type="button" id="text-bold-btn" onclick="this.classList.toggle('active')">B</button>
-                    <button type="button" id="text-italic-btn" onclick="this.classList.toggle('active')">I</button>
-                </div>
-            </div>
-            <div class="modal-form-group">
-                <label>Color</label>
-                <input type="color" id="text-color" value="#000000">
-            </div>
-            <div class="modal-form-group">
-                <label>Letter Spacing (mm)</label>
-                <input type="number" id="text-letter-spacing" value="0" step="0.1">
-            </div>
-            <div class="modal-form-group">
-                <label>Horizontal Alignment</label>
-                <div class="alignment-buttons" id="align-h-buttons">
-                    <button type="button" data-val="left" class="active">Left</button>
-                    <button type="button" data-val="center">Center</button>
-                    <button type="button" data-val="right">Right</button>
-                </div>
-            </div>
-            <div class="modal-form-group">
-                <label>Vertical Alignment</label>
-                <div class="alignment-buttons" id="align-v-buttons">
-                    <button type="button" data-val="top" class="active">Top</button>
-                    <button type="button" data-val="center">Center</button>
-                    <button type="button" data-val="bottom">Bottom</button>
-                </div>
-            </div>
-            <div class="modal-buttons">
-                <button type="button" class="btn-secondary" onclick="cancelTextSettings()">Cancel</button>
-                <button type="button" class="btn-primary" onclick="applyTextSettings()">Apply</button>
-            </div>
-        </div>
-    </div>
 </div>

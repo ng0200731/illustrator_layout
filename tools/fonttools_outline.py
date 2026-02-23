@@ -1,10 +1,11 @@
 from fontTools.ttLib import TTFont
-from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.pens.recordingPen import RecordingPen
+from fontTools.pens.qu2cuPen import Qu2CuPen
 import os
 
 def text_to_path(text, font_family, font_size, x, y):
     """
-    Convert text to SVG path operations
+    Convert text to path operations using RecordingPen + Qu2CuPen
 
     Args:
         text: str, text content
@@ -16,73 +17,81 @@ def text_to_path(text, font_family, font_size, x, y):
     Returns:
         list: Array of path operations [{ o: 'M', a: [x, y] }, ...]
     """
-    # Map font family to system font file
     font_path = _get_font_path(font_family)
 
     if not font_path or not os.path.exists(font_path):
         raise Exception(f"Font file not found for {font_family}")
 
-    # Load font
     font = TTFont(font_path)
     glyph_set = font.getGlyphSet()
     cmap = font.getBestCmap()
 
-    # Calculate scale factor (font units to mm)
     units_per_em = font['head'].unitsPerEm
-    scale = font_size * 0.3528 / units_per_em  # Convert points to mm
+    scale = font_size * 0.3528 / units_per_em  # points to mm
 
     path_ops = []
     cursor_x = x
 
     for char in text:
-        # Get glyph name from character
         if ord(char) not in cmap:
             continue
 
         glyph_name = cmap[ord(char)]
-
         if glyph_name not in glyph_set:
             continue
 
-        # Get glyph outline
         glyph = glyph_set[glyph_name]
-        pen = SVGPathPen(glyph_set)
-        glyph.draw(pen)
+        raw_pen = RecordingPen()
+        glyph.draw(raw_pen)
+        rec_pen = RecordingPen()
+        cu_pen = Qu2CuPen(rec_pen, max_err=1.0, all_cubic=True)
+        raw_pen.replay(cu_pen)
 
-        # Parse SVG path
-        svg_path = pen.getCommands()
+        for op_type, args in rec_pen.value:
+            if op_type == 'moveTo':
+                px = cursor_x + args[0][0] * scale
+                py = y - args[0][1] * scale
+                path_ops.append({'o': 'M', 'a': [px, py]})
+            elif op_type == 'lineTo':
+                px = cursor_x + args[0][0] * scale
+                py = y - args[0][1] * scale
+                path_ops.append({'o': 'L', 'a': [px, py]})
+            elif op_type == 'curveTo':
+                points = []
+                for pt in args:
+                    points.append(cursor_x + pt[0] * scale)
+                    points.append(y - pt[1] * scale)
+                path_ops.append({'o': 'C', 'a': points})
+            elif op_type == 'closePath' or op_type == 'endPath':
+                path_ops.append({'o': 'Z', 'a': []})
 
-        # Convert SVG commands to our format
-        for cmd in svg_path.split():
-            if cmd.startswith('M'):
-                coords = cmd[1:].split(',')
-                if len(coords) >= 2:
-                    px = cursor_x + float(coords[0]) * scale
-                    py = y + float(coords[1]) * scale
-                    path_ops.append({ 'o': 'M', 'a': [px, py] })
-            elif cmd.startswith('L'):
-                coords = cmd[1:].split(',')
-                if len(coords) >= 2:
-                    px = cursor_x + float(coords[0]) * scale
-                    py = y + float(coords[1]) * scale
-                    path_ops.append({ 'o': 'L', 'a': [px, py] })
-            elif cmd.startswith('C'):
-                coords = cmd[1:].split(',')
-                if len(coords) >= 6:
-                    px1 = cursor_x + float(coords[0]) * scale
-                    py1 = y + float(coords[1]) * scale
-                    px2 = cursor_x + float(coords[2]) * scale
-                    py2 = y + float(coords[3]) * scale
-                    px3 = cursor_x + float(coords[4]) * scale
-                    py3 = y + float(coords[5]) * scale
-                    path_ops.append({ 'o': 'C', 'a': [px1, py1, px2, py2, px3, py3] })
-            elif cmd == 'Z':
-                path_ops.append({ 'o': 'Z', 'a': [] })
-
-        # Advance cursor by glyph width
         cursor_x += glyph.width * scale
 
+    font.close()
     return path_ops
+
+def get_text_width(text, font_family, font_size):
+    """Return total advance width of text in mm"""
+    font_path = _get_font_path(font_family)
+    if not font_path or not os.path.exists(font_path):
+        return 0
+
+    font = TTFont(font_path)
+    glyph_set = font.getGlyphSet()
+    cmap = font.getBestCmap()
+    units_per_em = font['head'].unitsPerEm
+    scale = font_size * 0.3528 / units_per_em
+
+    total = 0
+    for char in text:
+        if ord(char) not in cmap:
+            continue
+        glyph_name = cmap[ord(char)]
+        if glyph_name in glyph_set:
+            total += glyph_set[glyph_name].width * scale
+
+    font.close()
+    return total
 
 def _get_font_path(font_family):
     """
@@ -102,8 +111,14 @@ def _get_font_path(font_family):
 
     try:
         uploaded_font = Font.get_by_name(font_family)
-        if uploaded_font and os.path.exists(uploaded_font['file_path']):
-            return uploaded_font['file_path']
+        if uploaded_font:
+            file_path = uploaded_font['file_path']
+            if not os.path.isabs(file_path):
+                file_path = os.path.join(os.path.dirname(__file__), '..', file_path)
+            file_path = os.path.normpath(file_path)
+            file_path = file_path.replace('\\', '/')
+            if os.path.exists(file_path):
+                return file_path
     except Exception as e:
         print(f"Warning: Could not check uploaded fonts: {e}")
 

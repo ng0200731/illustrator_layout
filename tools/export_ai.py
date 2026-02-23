@@ -44,7 +44,7 @@ def export_ai(data, outlined=False):
                     visible_paths.append(comp)
                 else:
                     hidden_paths.append(comp)
-            elif comp_type == 'text':
+            elif comp_type in ('text', 'textregion'):
                 text_components.append(comp)
 
         # Debug: Print counts
@@ -86,13 +86,36 @@ def export_ai(data, outlined=False):
 
             if comp_type == 'pdfpath':
                 _draw_pdfpath(c, comp, page_h)
-            elif comp_type == 'text':
+            elif comp_type in ('text', 'textregion'):
                 if outlined:
                     _draw_text_outlined(c, comp, page_h)
                 else:
                     _draw_text(c, comp, page_h)
 
-    c.save()
+    # Embed full fonts (not subsetted) so Illustrator can match local fonts
+    # Only for fonts under 2MB to avoid huge file sizes
+    if not outlined:
+        from reportlab.pdfbase.ttfonts import TTFontFile
+        _orig_makeSubset = TTFontFile.makeSubset
+        _max_full_embed_size = 2 * 1024 * 1024  # 2MB limit
+        def _full_makeSubset(self, subset):
+            try:
+                fn = self.filename
+                if fn and os.path.exists(fn):
+                    fsize = os.path.getsize(fn)
+                    if fsize <= _max_full_embed_size:
+                        with open(fn, 'rb') as f:
+                            return f.read()
+            except Exception as e:
+                print(f"Warning: Full font embed failed, using subset: {e}")
+            return _orig_makeSubset(self, subset)
+        TTFontFile.makeSubset = _full_makeSubset
+        try:
+            c.save()
+        finally:
+            TTFontFile.makeSubset = _orig_makeSubset
+    else:
+        c.save()
     return filepath
 
 def _draw_pdfpath(c, comp, page_h):
@@ -145,32 +168,91 @@ def _draw_pdfpath(c, comp, page_h):
 def _draw_text(c, comp, page_h):
     """Draw text component (editable if font is embedded)"""
     content = comp.get('content', '')
+    if not content:
+        return
+
     x = comp.get('x', 0) * mm
-    y = page_h - (comp.get('y', 0) * mm) - (comp.get('height', 0) * mm * 0.8)
+    w = comp.get('width', 0) * mm
+    h = comp.get('height', 0) * mm
     font_family = comp.get('fontFamily', 'Helvetica')
     font_size = comp.get('fontSize', 12)
+    font_id = comp.get('fontId', None)
+    bold = comp.get('bold', False)
+    italic = comp.get('italic', False)
+    color = comp.get('color', '#000000')
+    letter_spacing = comp.get('letterSpacing', 0)
+    align_h = comp.get('alignH', 'left')
+    align_v = comp.get('alignV', 'top')
 
     # Try to register custom font
-    resolved_font, is_custom = _register_custom_font(c, font_family)
+    resolved_font, is_custom = _register_custom_font(c, font_family, font_id)
 
     c.setFont(resolved_font, font_size)
-    c.setFillColorRGB(0, 0, 0)
-    c.drawString(x, y, content)
+
+    # Parse hex color to RGB
+    r, g, b = _hex_to_rgb(color)
+    c.setFillColorRGB(r, g, b)
+
+    # Calculate vertical position based on alignV
+    if align_v == 'bottom':
+        y = page_h - (comp.get('y', 0) * mm) - h
+    elif align_v == 'center':
+        y = page_h - (comp.get('y', 0) * mm) - (h / 2) - (font_size * 0.35)
+    else:  # top
+        y = page_h - (comp.get('y', 0) * mm) - (font_size * 0.8)
+
+    # Draw with horizontal alignment
+    if letter_spacing and letter_spacing != 0:
+        # Draw character by character with spacing
+        _draw_text_with_spacing(c, content, x, y, w, font_size, letter_spacing, align_h, resolved_font)
+    else:
+        if align_h == 'center':
+            c.drawCentredString(x + w / 2, y, content)
+        elif align_h == 'right':
+            c.drawRightString(x + w, y, content)
+        else:
+            c.drawString(x, y, content)
 
 def _draw_text_outlined(c, comp, page_h):
     """Draw text as outlined paths"""
     # Import fonttools outline converter
     sys.path.insert(0, os.path.dirname(__file__))
-    from fonttools_outline import text_to_path
+    from fonttools_outline import text_to_path, get_text_width
 
     content = comp.get('content', '')
+    if not content:
+        return
+
     x = comp.get('x', 0)
     y = comp.get('y', 0)
+    w = comp.get('width', 0)
+    h = comp.get('height', 0)
     font_family = comp.get('fontFamily', 'Helvetica')
     font_size = comp.get('fontSize', 12)
+    color = comp.get('color', '#000000')
+    align_h = comp.get('alignH', 'left')
+    align_v = comp.get('alignV', 'top')
+
+    # Adjust X for horizontal alignment
+    if align_h == 'center':
+        text_w = get_text_width(content, font_family, font_size)
+        start_x = x + (w - text_w) / 2
+    elif align_h == 'right':
+        text_w = get_text_width(content, font_family, font_size)
+        start_x = x + w - text_w
+    else:
+        start_x = x
+
+    # Adjust Y for baseline (same logic as _draw_text)
+    if align_v == 'bottom':
+        baseline_y = y + h
+    elif align_v == 'center':
+        baseline_y = y + (h / 2) + (font_size * 0.3528 * 0.35)
+    else:  # top
+        baseline_y = y + (font_size * 0.3528 * 0.8)
 
     try:
-        path_ops = text_to_path(content, font_family, font_size, x, y)
+        path_ops = text_to_path(content, font_family, font_size, start_x, baseline_y)
 
         # Draw the path operations
         p = c.beginPath()
@@ -192,15 +274,16 @@ def _draw_text_outlined(c, comp, page_h):
             elif o == 'Z':
                 p.close()
 
-        c.setFillColorRGB(0, 0, 0)
-        c.drawPath(p, fill=1, stroke=0)
+        r, g, b = _hex_to_rgb(color)
+        c.setFillColorRGB(r, g, b)
+        c.drawPath(p, fill=1, stroke=0, fillMode=0)  # even-odd fill for correct winding
 
     except Exception as e:
         # Fallback to regular text if outlining fails
         print(f"Warning: Text outlining failed, using regular text: {e}")
         _draw_text(c, comp, page_h)
 
-def _register_custom_font(c, font_family):
+def _register_custom_font(c, font_family, font_id=None):
     """
     Register custom font with ReportLab if available
     Returns: (font_name, is_custom) tuple
@@ -213,21 +296,71 @@ def _register_custom_font(c, font_family):
     from models.font import Font
 
     try:
-        uploaded_font = Font.get_by_name(font_family)
-        if uploaded_font and os.path.exists(uploaded_font['file_path']):
-            # Check if already registered
-            try:
-                pdfmetrics.getFont(font_family)
-                return (font_family, True)
-            except:
-                pass
+        uploaded_font = None
 
-            # Register TTF with ReportLab
-            try:
-                pdfmetrics.registerFont(TTFont(font_family, uploaded_font['file_path']))
-                return (font_family, True)
-            except Exception as e:
-                print(f"Warning: Could not register font {font_family}: {e}")
+        # Try by ID first (more reliable)
+        if font_id:
+            uploaded_font = Font.get_by_id(int(font_id))
+
+        # Fallback to name lookup
+        if not uploaded_font and font_family:
+            uploaded_font = Font.get_by_name(font_family)
+
+        if uploaded_font:
+            file_path = uploaded_font['file_path']
+            # Ensure absolute path
+            if not os.path.isabs(file_path):
+                file_path = os.path.join(os.path.dirname(__file__), '..', file_path)
+            file_path = os.path.normpath(file_path)
+            # ReportLab needs forward slashes on Windows
+            file_path = file_path.replace('\\', '/')
+
+            if os.path.exists(file_path):
+                # Read font's full name from font file for Illustrator compatibility
+                reg_name = uploaded_font['font_name'] or font_family
+                try:
+                    from fontTools.ttLib import TTFont as FTFont
+                    ft_font = FTFont(file_path)
+                    full_name = None
+                    ps_name = None
+                    for record in ft_font['name'].names:
+                        if record.nameID == 4 and record.platformID == 3:  # Full name (Windows)
+                            try:
+                                full_name = record.toUnicode()
+                            except:
+                                pass
+                        elif record.nameID == 6 and record.platformID == 3:  # PostScript name
+                            try:
+                                ps_name = record.toUnicode()
+                            except:
+                                pass
+                    ft_font.close()
+                    # Prefer full name (matches local installed font), fallback to PostScript name
+                    if full_name:
+                        reg_name = full_name
+                    elif ps_name:
+                        reg_name = ps_name
+                except Exception as e:
+                    print(f"Warning: Could not read font name: {e}")
+
+                # Check if already registered
+                try:
+                    pdfmetrics.getFont(reg_name)
+                    return (reg_name, True)
+                except:
+                    pass
+
+                # Register TTF with ReportLab
+                try:
+                    font = TTFont(reg_name, file_path)
+                    font.substitutionFonts = []
+                    pdfmetrics.registerFont(font)
+                    print(f"Font registered: {reg_name} from {file_path}")
+                    return (reg_name, True)
+                except Exception as e:
+                    print(f"Warning: Could not register font {reg_name}: {e}")
+            else:
+                print(f"Warning: Font file not found: {file_path}")
     except Exception as e:
         print(f"Warning: Could not check uploaded fonts: {e}")
 
@@ -238,3 +371,35 @@ def _register_custom_font(c, font_family):
         'Courier New': 'Courier'
     }
     return (font_map.get(font_family, 'Helvetica'), False)
+
+def _hex_to_rgb(hex_color):
+    """Convert hex color string to RGB tuple (0-1 range)"""
+    hex_color = hex_color.lstrip('#')
+    if len(hex_color) != 6:
+        return (0, 0, 0)
+    r = int(hex_color[0:2], 16) / 255.0
+    g = int(hex_color[2:4], 16) / 255.0
+    b = int(hex_color[4:6], 16) / 255.0
+    return (r, g, b)
+
+def _draw_text_with_spacing(c, content, x, y, w, font_size, letter_spacing, align_h, font_name):
+    """Draw text character by character with letter spacing"""
+    # Calculate total width with spacing
+    chars = list(content)
+    char_widths = []
+    for ch in chars:
+        char_widths.append(c.stringWidth(ch, font_name, font_size))
+    total_w = sum(char_widths) + letter_spacing * mm * (len(chars) - 1) if chars else 0
+
+    # Calculate starting x based on alignment
+    if align_h == 'center':
+        cx = x + (w - total_w) / 2
+    elif align_h == 'right':
+        cx = x + w - total_w
+    else:
+        cx = x
+
+    # Draw each character
+    for i, ch in enumerate(chars):
+        c.drawString(cx, y, ch)
+        cx += char_widths[i] + letter_spacing * mm

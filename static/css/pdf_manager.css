@@ -93,6 +93,7 @@
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
+    position: relative;
 }
 
 @media (max-width: 1400px) {
@@ -465,4 +466,81 @@
 /* Text region on canvas */
 .text-region-cursor {
     cursor: crosshair;
+}
+
+/* Text settings panel (overlay on right panel) */
+#content-type-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: #fff;
+    border-bottom: 2px solid #000;
+}
+
+#content-type-panel .ts-hint {
+    font-size: 8.5px;
+    color: #666;
+    margin: 0 0 6px 0;
+    padding: 0;
+}
+
+#content-type-panel .ct-form {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#content-type-panel .ts-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+}
+
+#content-type-panel .ts-row label {
+    font-size: 9px;
+    font-weight: 500;
+    min-width: 48px;
+    flex-shrink: 0;
+}
+
+#content-type-panel .ts-row select,
+#content-type-panel .ts-row input[type="number"],
+#content-type-panel .ts-row input[type="text"] {
+    flex: 1;
+    padding: 3px 4px;
+    border: 1px solid #000;
+    font-size: 9px;
+    font-family: inherit;
+    min-width: 0;
+}
+
+#content-type-panel .ts-row input[type="color"] {
+    width: 32px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid #000;
+    cursor: pointer;
+}
+
+#content-type-panel .ts-buttons {
+    display: flex;
+    gap: 4px;
+    margin-top: 6px;
+}
+
+#content-type-panel .ts-buttons button {
+    flex: 1;
+    padding: 4px 8px;
+    font-size: 9px;
+    border: 1px solid #000;
+    cursor: pointer;
+    background: #fff;
+}
+
+#content-type-panel .ts-buttons button.btn-active {
+    background: #000;
+    color: #fff;
 }

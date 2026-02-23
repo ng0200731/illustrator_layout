@@ -29,10 +29,14 @@ function getCanvasState(canvas) {
             highlightedEdge: null,
             snapStart: null,
             snapEnd: null,
-            textRegionMode: false,
-            textRegionDraw: null,
-            pendingTextRegion: null,
-            textDropPoint: null
+            resizingEdge: null,
+            contentMode: false,
+            contentSelectedBlock: null,
+            contentRegionMode: false,
+            contentRegionDraw: null,
+            contentRegionBlock: null,
+            pendingContentRegion: null,
+            pendingContentType: null
         });
     }
     return canvasStates.get(canvas);
@@ -119,8 +123,32 @@ function initWithTabPane(tabPane) {
     setupButtons();
     setupCanvasInteraction();
     setupCollapsibleSections();
-    setupTextToolDrag();
     setupAlignmentButtons();
+
+    // Wire up content type dropdown
+    var typeSelect = tabPane.querySelector('#ct-type-select');
+    if (typeSelect) {
+        typeSelect.addEventListener('change', onContentTypeChange);
+    }
+    // Wire up alignment buttons for content type panel
+    var ctAlignH = tabPane.querySelector('#ct-align-h');
+    if (ctAlignH) {
+        ctAlignH.querySelectorAll('button').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                ctAlignH.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+            });
+        });
+    }
+    var ctAlignV = tabPane.querySelector('#ct-align-v');
+    if (ctAlignV) {
+        ctAlignV.querySelectorAll('button').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                ctAlignV.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+            });
+        });
+    }
 
     renderCanvas();
 
@@ -206,13 +234,6 @@ function setupDragDrop() {
         e.preventDefault();
         e.stopPropagation();
         container.classList.remove('drag-over');
-
-        // Check if this is a text tool drop
-        var toolType = e.dataTransfer.getData('text/plain');
-        if (toolType === 'textregion') {
-            handleTextToolDrop(e);
-            return;
-        }
 
         if (e.dataTransfer.files && e.dataTransfer.files.length) {
             var file = e.dataTransfer.files[0];
@@ -762,6 +783,12 @@ function renderCanvas() {
             drawText(comp, idx);
         } else if (comp.type === 'textregion') {
             drawTextRegion(comp, idx);
+        } else if (comp.type === 'imageregion') {
+            drawImageRegion(comp, idx);
+        } else if (comp.type === 'qrcoderegion') {
+            drawQrCodeRegion(comp, idx);
+        } else if (comp.type === 'barcoderegion') {
+            drawBarcodeRegion(comp, idx);
         }
     });
 
@@ -783,6 +810,18 @@ function renderCanvas() {
             ctx.fillStyle = '#00cc00';
             ctx.font = '10px sans-serif';
             ctx.fillText(edge.w.toFixed(1) + ' x ' + edge.h.toFixed(1) + ' mm', ex + 2, ey - 4);
+            // Draw 8 resize handles
+            var handles = getEdgeHandles(edge);
+            var hs = 3; // handle half-size in px
+            ctx.fillStyle = '#00cc00';
+            handles.forEach(function(h) {
+                var hx = h.x * scale;
+                var hy = h.y * scale;
+                ctx.fillRect(hx - hs, hy - hs, hs * 2, hs * 2);
+                ctx.strokeStyle = '#009900';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(hx - hs, hy - hs, hs * 2, hs * 2);
+            });
         });
         ctx.restore();
     }
@@ -837,10 +876,82 @@ function renderCanvas() {
         ctx.restore();
     }
 
-    // Draw text region being drawn
-    if (state && state.textRegionDraw) {
+    // Draw content region being drawn + block snap indicators
+    if (state && state.contentRegionMode && state.contentRegionBlock) {
         ctx.save();
-        var tr = state.textRegionDraw;
+        var block = state.contentRegionBlock;
+        var bx = block.x * scale, by = block.y * scale;
+        var bw = block.w * scale, bh = block.h * scale;
+
+        // Draw block outline (so user sees the boundary)
+        ctx.strokeStyle = 'rgba(0, 200, 0, 0.5)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.setLineDash([]);
+
+        // Draw snap points on block: 4 corners + 4 midpoints
+        var blockSnaps = [
+            { x: block.x, y: block.y },
+            { x: block.x + block.w, y: block.y },
+            { x: block.x, y: block.y + block.h },
+            { x: block.x + block.w, y: block.y + block.h },
+            { x: block.x + block.w / 2, y: block.y },
+            { x: block.x + block.w, y: block.y + block.h / 2 },
+            { x: block.x + block.w / 2, y: block.y + block.h },
+            { x: block.x, y: block.y + block.h / 2 }
+        ];
+        blockSnaps.forEach(function(sp) {
+            ctx.beginPath();
+            ctx.arc(sp.x * scale, sp.y * scale, 3, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(0, 200, 0, 0.4)';
+            ctx.fill();
+        });
+
+        // Draw the text region rectangle being drawn
+        if (state.contentRegionDraw) {
+            var tr = state.contentRegionDraw;
+            var rx = Math.min(tr.startX, tr.endX) * scale;
+            var ry = Math.min(tr.startY, tr.endY) * scale;
+            var rw = Math.abs(tr.endX - tr.startX) * scale;
+            var rh = Math.abs(tr.endY - tr.startY) * scale;
+            ctx.strokeStyle = '#00cc00';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.strokeRect(rx, ry, rw, rh);
+            ctx.setLineDash([]);
+
+            // Highlight snapped corners of the text region
+            var snapThresh = 2 / (pan.zoom || 1);
+            var corners = [
+                { x: tr.startX, y: tr.startY },
+                { x: tr.endX, y: tr.endY }
+            ];
+            corners.forEach(function(c) {
+                var snapped = false;
+                blockSnaps.forEach(function(sp) {
+                    if (Math.abs(c.x - sp.x) < snapThresh && Math.abs(c.y - sp.y) < snapThresh) snapped = true;
+                });
+                // Also check edge lines
+                if (Math.abs(c.x - block.x) < 0.01 || Math.abs(c.x - (block.x + block.w)) < 0.01 ||
+                    Math.abs(c.x - (block.x + block.w / 2)) < 0.01 ||
+                    Math.abs(c.y - block.y) < 0.01 || Math.abs(c.y - (block.y + block.h)) < 0.01 ||
+                    Math.abs(c.y - (block.y + block.h / 2)) < 0.01) {
+                    snapped = true;
+                }
+                if (snapped) {
+                    ctx.beginPath();
+                    ctx.arc(c.x * scale, c.y * scale, 5, 0, Math.PI * 2);
+                    ctx.fillStyle = '#00cc00';
+                    ctx.fill();
+                }
+            });
+        }
+        ctx.restore();
+    } else if (state && state.contentRegionDraw) {
+        // Fallback: draw without block (shouldn't happen but safe)
+        ctx.save();
+        var tr = state.contentRegionDraw;
         var rx = Math.min(tr.startX, tr.endX) * scale;
         var ry = Math.min(tr.startY, tr.endY) * scale;
         var rw = Math.abs(tr.endX - tr.startX) * scale;
@@ -850,6 +961,18 @@ function renderCanvas() {
         ctx.setLineDash([5, 5]);
         ctx.strokeRect(rx, ry, rw, rh);
         ctx.setLineDash([]);
+        ctx.restore();
+    }
+
+    // Draw selected block highlight in content mode
+    if (state && state.contentMode && state.contentSelectedBlock) {
+        var sb = state.contentSelectedBlock;
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 200, 0, 0.12)';
+        ctx.fillRect(sb.x * scale, sb.y * scale, sb.w * scale, sb.h * scale);
+        ctx.strokeStyle = '#00cc00';
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(sb.x * scale, sb.y * scale, sb.w * scale, sb.h * scale);
         ctx.restore();
     }
 
@@ -1232,7 +1355,15 @@ function createComponentItem(comp, idx, isGroupMember) {
 
     var label = document.createElement('span');
     label.className = 'component-label';
-    label.textContent = comp.type === 'text' ? 'Text: "' + comp.content.substring(0, 20) + '"' : 'Path ' + (idx + 1);
+    var labelMap = {
+        'text': 'Text: "' + (comp.content || '').substring(0, 20) + '"',
+        'textregion': 'Text Region',
+        'imageregion': 'Image: ' + (comp.imageUrl || '').substring(0, 15),
+        'qrcoderegion': 'QR: ' + (comp.qrData || '').substring(0, 15),
+        'barcoderegion': 'Barcode: ' + (comp.barcodeData || '').substring(0, 15),
+        'pdfpath': 'Path ' + (idx + 1)
+    };
+    label.textContent = labelMap[comp.type] || comp.type + ' ' + (idx + 1);
 
     item.appendChild(checkbox);
     item.appendChild(eyeBtn);
@@ -1345,6 +1476,30 @@ function renderPropertiesPanel() {
             html += '<div class="property-row"><label>Font:</label><span>' + comp.fontFamily + '</span></div>';
             html += '<div class="property-row"><label>Size:</label><span>' + comp.fontSize.toFixed(1) + ' pt</span></div>';
             html += '</div>';
+        } else if (comp.type === 'textregion') {
+            html += '<div class="property-group">';
+            html += '<div class="property-group-title">Text Region</div>';
+            html += '<div class="property-row"><label>Font:</label><span>' + (comp.fontFamily || '-') + '</span></div>';
+            html += '<div class="property-row"><label>Size:</label><span>' + (comp.fontSize || 12) + ' pt</span></div>';
+            html += '<div class="property-row"><label>Color:</label><span>' + (comp.color || '#000000') + '</span></div>';
+            html += '</div>';
+        } else if (comp.type === 'imageregion') {
+            html += '<div class="property-group">';
+            html += '<div class="property-group-title">Image</div>';
+            html += '<div class="property-row"><label>URL:</label><span>' + (comp.imageUrl || '-') + '</span></div>';
+            html += '<div class="property-row"><label>Fit:</label><span>' + (comp.imageFit || 'contain') + '</span></div>';
+            html += '</div>';
+        } else if (comp.type === 'qrcoderegion') {
+            html += '<div class="property-group">';
+            html += '<div class="property-group-title">QR Code</div>';
+            html += '<div class="property-row"><label>Data:</label><span>' + (comp.qrData || '-') + '</span></div>';
+            html += '</div>';
+        } else if (comp.type === 'barcoderegion') {
+            html += '<div class="property-group">';
+            html += '<div class="property-group-title">Barcode</div>';
+            html += '<div class="property-row"><label>Data:</label><span>' + (comp.barcodeData || '-') + '</span></div>';
+            html += '<div class="property-row"><label>Format:</label><span>' + (comp.barcodeFormat || 'code128') + '</span></div>';
+            html += '</div>';
         }
 
         panel.innerHTML = html;
@@ -1389,9 +1544,53 @@ function onCanvasMouseDown(e) {
         return;
     }
 
-    // Text region mode — start drawing region rectangle
-    if (state.textRegionMode) {
-        state.textRegionDraw = { startX: x, startY: y, endX: x, endY: y };
+    // Resize handle hit test for unconfirmed edges
+    if (!state.edgeMode) {
+        var handleHit = hitTestEdgeHandle(x, y);
+        if (handleHit) {
+            state.resizingEdge = { edgeId: handleHit.edgeId, handle: handleHit.handle, edgeIndex: handleHit.edgeIndex };
+            return;
+        }
+    }
+
+    // Content mode — click confirmed block to select, or draw inside selected block
+    if (state.contentMode) {
+        // If a block is selected, start drawing content region inside it
+        if (state.contentRegionMode && state.contentRegionBlock) {
+            var block = state.contentRegionBlock;
+            var sx = x, sy = y;
+            if (block) {
+                sx = Math.max(block.x, Math.min(block.x + block.w, sx));
+                sy = Math.max(block.y, Math.min(block.y + block.h, sy));
+                var snapThresh = 2 / (pan.zoom || 1);
+                if (Math.abs(sx - block.x) < snapThresh) sx = block.x;
+                else if (Math.abs(sx - (block.x + block.w)) < snapThresh) sx = block.x + block.w;
+                else if (Math.abs(sx - (block.x + block.w / 2)) < snapThresh) sx = block.x + block.w / 2;
+                if (Math.abs(sy - block.y) < snapThresh) sy = block.y;
+                else if (Math.abs(sy - (block.y + block.h)) < snapThresh) sy = block.y + block.h;
+                else if (Math.abs(sy - (block.y + block.h / 2)) < snapThresh) sy = block.y + block.h / 2;
+            }
+            state.contentRegionDraw = { startX: sx, startY: sy, endX: sx, endY: sy };
+            return;
+        }
+        // Otherwise check if clicking on a confirmed block to select it
+        var clickedBlock = null;
+        for (var i = 0; i < state.edges.length; i++) {
+            var edge = state.edges[i];
+            if (!edge.confirmed) continue;
+            if (x >= edge.x && x <= edge.x + edge.w && y >= edge.y && y <= edge.y + edge.h) {
+                clickedBlock = edge;
+                break;
+            }
+        }
+        if (clickedBlock) {
+            state.contentSelectedBlock = clickedBlock;
+            state.contentRegionBlock = clickedBlock;
+            state.contentRegionMode = true;
+            state.pendingContentRegion = null;
+            canvas.style.cursor = 'crosshair';
+            renderCanvas();
+        }
         return;
     }
 
@@ -1434,6 +1633,20 @@ function onCanvasMouseDown(e) {
 }
 
 function onCanvasMouseMove(e) {
+    // Edge resize handle dragging
+    if (state && state.resizingEdge) {
+        var rect = canvas.getBoundingClientRect();
+        var x = (e.clientX - rect.left) / scale;
+        var y = (e.clientY - rect.top) / scale;
+        var edge = state.edges[state.resizingEdge.edgeIndex];
+        if (edge) {
+            resizeEdgeByHandle(edge, state.resizingEdge.handle, x, y);
+            renderCanvas();
+            renderEdgeList();
+        }
+        return;
+    }
+
     // Edge mode drawing — snap end to nearest point
     if (state && state.edgeMode && state.edgeDrawing) {
         var rect = canvas.getBoundingClientRect();
@@ -1453,13 +1666,26 @@ function onCanvasMouseMove(e) {
         return;
     }
 
-    // Text region drawing
-    if (state && state.textRegionMode && state.textRegionDraw) {
+    // Content region drawing — clamped to block boundaries with snap
+    if (state && state.contentRegionMode && state.contentRegionDraw) {
         var rect = canvas.getBoundingClientRect();
         var x = (e.clientX - rect.left) / scale;
         var y = (e.clientY - rect.top) / scale;
-        state.textRegionDraw.endX = x;
-        state.textRegionDraw.endY = y;
+        var block = state.contentRegionBlock;
+        if (block) {
+            x = Math.max(block.x, Math.min(block.x + block.w, x));
+            y = Math.max(block.y, Math.min(block.y + block.h, y));
+            // Snap to block edges/corners (2mm threshold)
+            var snapThresh = 2 / (pan.zoom || 1);
+            if (Math.abs(x - block.x) < snapThresh) x = block.x;
+            else if (Math.abs(x - (block.x + block.w)) < snapThresh) x = block.x + block.w;
+            else if (Math.abs(x - (block.x + block.w / 2)) < snapThresh) x = block.x + block.w / 2;
+            if (Math.abs(y - block.y) < snapThresh) y = block.y;
+            else if (Math.abs(y - (block.y + block.h)) < snapThresh) y = block.y + block.h;
+            else if (Math.abs(y - (block.y + block.h / 2)) < snapThresh) y = block.y + block.h / 2;
+        }
+        state.contentRegionDraw.endX = x;
+        state.contentRegionDraw.endY = y;
         renderCanvas();
         return;
     }
@@ -1509,6 +1735,14 @@ function onCanvasMouseMove(e) {
 }
 
 function onCanvasMouseUp(e) {
+    // Edge resize handle release
+    if (state && state.resizingEdge) {
+        state.resizingEdge = null;
+        renderEdgeList();
+        renderCanvas();
+        return;
+    }
+
     // Edge mode — finalize edge rectangle from snap-to-snap
     if (state && state.edgeMode && state.edgeDrawing) {
         var ed = state.edgeDrawing;
@@ -1532,24 +1766,29 @@ function onCanvasMouseUp(e) {
         return;
     }
 
-    // Text region mode — finalize region and open modal
-    if (state && state.textRegionMode && state.textRegionDraw) {
-        var tr = state.textRegionDraw;
+    // Content region mode — finalize region, show content type picker
+    if (state && state.contentRegionMode && state.contentRegionDraw) {
+        var tr = state.contentRegionDraw;
         var rx = Math.min(tr.startX, tr.endX);
         var ry = Math.min(tr.startY, tr.endY);
         var rw = Math.abs(tr.endX - tr.startX);
         var rh = Math.abs(tr.endY - tr.startY);
-        if (rw > 1 && rh > 1) {
-            state.pendingTextRegion = { x: rx, y: ry, w: rw, h: rh, snappedEdgeId: null };
-            // Check if snapped to an edge
-            if (state.textDropPoint && state.textDropPoint.snappedEdgeId) {
-                state.pendingTextRegion.snappedEdgeId = state.textDropPoint.snappedEdgeId;
-            }
-            showTextSettingsModal();
+        var block = state.contentRegionBlock;
+        if (block) {
+            if (rx < block.x) { rw -= (block.x - rx); rx = block.x; }
+            if (ry < block.y) { rh -= (block.y - ry); ry = block.y; }
+            if (rx + rw > block.x + block.w) rw = block.x + block.w - rx;
+            if (ry + rh > block.y + block.h) rh = block.y + block.h - ry;
         }
-        state.textRegionDraw = null;
-        state.textRegionMode = false;
-        canvas.style.cursor = 'default';
+        if (rw > 1 && rh > 1) {
+            state.pendingContentRegion = {
+                x: rx, y: ry, w: rw, h: rh,
+                snappedEdgeId: block ? block.id : null
+            };
+            showContentTypePanel();
+        }
+        state.contentRegionDraw = null;
+        canvas.style.cursor = 'crosshair';
         renderCanvas();
         return;
     }
@@ -1638,6 +1877,12 @@ function onKeyDown(e) {
         var newZoom = pan.zoom * 0.8;
         pan.zoom = Math.max(0.1, newZoom);
         renderCanvas();
+    } else if (e.key === 'Escape') {
+        if (state && state.contentMode) {
+            toggleContentMode();
+        } else if (state && state.edgeMode) {
+            toggleEdgeMode();
+        }
     }
 }
 
@@ -1997,9 +2242,21 @@ function exportFile(type, outlined) {
                 height: c.h,
                 content: c.content,
                 fontFamily: c.fontFamily,
+                fontId: c.fontId || null,
                 fontSize: c.fontSize,
+                bold: c.bold || false,
+                italic: c.italic || false,
+                color: c.color || '#000000',
+                letterSpacing: c.letterSpacing || 0,
+                alignH: c.alignH || 'left',
+                alignV: c.alignV || 'top',
                 pathData: c.pathData,
                 visible: c.visible,
+                imageUrl: c.imageUrl,
+                imageFit: c.imageFit,
+                qrData: c.qrData,
+                barcodeData: c.barcodeData,
+                barcodeFormat: c.barcodeFormat,
                 page: 0
             };
         })
@@ -2488,6 +2745,9 @@ function findNearestSnapPoint(px, py, points, threshold) {
 
 function toggleEdgeMode() {
     if (!state) return;
+    if (state.contentMode) {
+        toggleContentMode();
+    }
     state.edgeMode = !state.edgeMode;
     var btn = _el('btn-define-edge');
     if (btn) {
@@ -2563,41 +2823,66 @@ function deleteEdge(edgeId) {
 }
 
 // ============================================================
-// Text Tool — Drag, Snap, Region, Modal
+// Edge Resize Handles
 // ============================================================
 
-function setupTextToolDrag() {
-    var btn = _el('btn-add-text');
-    if (!btn || btn._textDragSetup) return;
-    btn._textDragSetup = true;
-    btn.addEventListener('dragstart', function(e) {
-        e.dataTransfer.setData('text/plain', 'textregion');
-        e.dataTransfer.effectAllowed = 'copy';
-    });
+function getEdgeHandles(edge) {
+    return [
+        { x: edge.x,             y: edge.y,             type: 'tl' },
+        { x: edge.x + edge.w / 2, y: edge.y,             type: 't'  },
+        { x: edge.x + edge.w,    y: edge.y,             type: 'tr' },
+        { x: edge.x + edge.w,    y: edge.y + edge.h / 2, type: 'r'  },
+        { x: edge.x + edge.w,    y: edge.y + edge.h,    type: 'br' },
+        { x: edge.x + edge.w / 2, y: edge.y + edge.h,    type: 'b'  },
+        { x: edge.x,             y: edge.y + edge.h,    type: 'bl' },
+        { x: edge.x,             y: edge.y + edge.h / 2, type: 'l'  }
+    ];
 }
 
-function handleTextToolDrop(e) {
-    if (!canvas || !pdfWidth || !pdfHeight) return;
-    var rect = canvas.getBoundingClientRect();
-    var x = (e.clientX - rect.left) / scale;
-    var y = (e.clientY - rect.top) / scale;
-
-    // Check if dropped inside a defined edge rectangle
-    var snapInfo = null;
-    if (state && state.edges.length > 0) {
-        for (var i = 0; i < state.edges.length; i++) {
-            var edge = state.edges[i];
-            if (x >= edge.x && x <= edge.x + edge.w && y >= edge.y && y <= edge.y + edge.h) {
-                snapInfo = { snappedEdgeId: edge.id, edge: edge };
-                break;
+function hitTestEdgeHandle(x, y) {
+    if (!state) return null;
+    var hitSize = 2.5 / (pan.zoom || 1);
+    for (var i = 0; i < state.edges.length; i++) {
+        var edge = state.edges[i];
+        if (edge.confirmed) continue;
+        var handles = getEdgeHandles(edge);
+        for (var j = 0; j < handles.length; j++) {
+            var h = handles[j];
+            if (Math.abs(x - h.x) <= hitSize && Math.abs(y - h.y) <= hitSize) {
+                return { edgeId: edge.id, handle: h.type, edgeIndex: i };
             }
         }
     }
+    return null;
+}
 
-    state.textDropPoint = snapInfo;
-    state.textRegionMode = true;
-    canvas.style.cursor = 'crosshair';
-    renderCanvas();
+function resizeEdgeByHandle(edge, handle, x, y) {
+    var minSize = 2;
+    var nx = edge.x, ny = edge.y, nw = edge.w, nh = edge.h;
+
+    if (handle === 'tl') {
+        nw = edge.x + edge.w - x; nh = edge.y + edge.h - y;
+        nx = x; ny = y;
+    } else if (handle === 't') {
+        nh = edge.y + edge.h - y; ny = y;
+    } else if (handle === 'tr') {
+        nw = x - edge.x; nh = edge.y + edge.h - y; ny = y;
+    } else if (handle === 'r') {
+        nw = x - edge.x;
+    } else if (handle === 'br') {
+        nw = x - edge.x; nh = y - edge.y;
+    } else if (handle === 'b') {
+        nh = y - edge.y;
+    } else if (handle === 'bl') {
+        nw = edge.x + edge.w - x; nh = y - edge.y; nx = x;
+    } else if (handle === 'l') {
+        nw = edge.x + edge.w - x; nx = x;
+    }
+
+    if (nw < minSize) { nw = minSize; if (handle.indexOf('l') !== -1) nx = edge.x + edge.w - minSize; }
+    if (nh < minSize) { nh = minSize; if (handle.indexOf('t') !== -1) ny = edge.y + edge.h - minSize; }
+
+    edge.x = nx; edge.y = ny; edge.w = nw; edge.h = nh;
 }
 
 function snapToEdgeIndicator(x, y) {
@@ -2611,14 +2896,34 @@ function snapToEdgeIndicator(x, y) {
     return null;
 }
 
-function showTextSettingsModal() {
-    var modal = _el('text-settings-modal');
-    if (!modal) return;
+function toggleContentMode() {
+    if (!state) return;
+    if (state.edgeMode) {
+        toggleEdgeMode();
+    }
+    state.contentMode = !state.contentMode;
+    var btn = _el('btn-add-content');
+    var panel = _el('content-type-panel');
+    if (state.contentMode) {
+        if (btn) btn.classList.add('btn-active');
+    } else {
+        if (btn) btn.classList.remove('btn-active');
+        if (panel) panel.style.display = 'none';
+        state.contentSelectedBlock = null;
+        state.contentRegionMode = false;
+        state.contentRegionDraw = null;
+        state.contentRegionBlock = null;
+        state.pendingContentRegion = null;
+        state.pendingContentType = null;
+        canvas.style.cursor = 'default';
+    }
+    renderCanvas();
+}
 
-    // Populate font dropdown
-    var fontSelect = _el('text-font-select');
+function populateContentFontDropdown() {
+    var fontSelect = _el('ct-font-select');
+    if (!fontSelect) return;
     fontSelect.innerHTML = '<option value="">Select a font...</option>';
-
     var url = '/font/list';
     if (state && state.currentCustomerId) {
         url = '/font/list/' + state.currentCustomerId;
@@ -2636,99 +2941,156 @@ function showTextSettingsModal() {
                 });
             }
         });
+}
 
-    // Reset form defaults
-    _el('text-font-size').value = 12;
-    _el('text-color').value = '#000000';
-    _el('text-letter-spacing').value = 0;
-    var boldBtn = _el('text-bold-btn');
-    var italicBtn = _el('text-italic-btn');
-    if (boldBtn) boldBtn.classList.remove('active');
-    if (italicBtn) italicBtn.classList.remove('active');
-
-    // Reset alignment
+function resetContentForms() {
+    var el = function(id) { return _el(id); };
+    var fs = el('ct-font-size'); if (fs) fs.value = 12;
+    var tc = el('ct-color'); if (tc) tc.value = '#000000';
+    var ls = el('ct-letter-spacing'); if (ls) ls.value = 0;
+    var bb = el('ct-bold-btn'); if (bb) bb.classList.remove('active');
+    var ib = el('ct-italic-btn'); if (ib) ib.classList.remove('active');
+    var tv = el('ct-text-value'); if (tv) tv.value = '';
+    var iu = el('ct-image-url'); if (iu) iu.value = '';
+    var imf = el('ct-image-fit'); if (imf) imf.value = 'contain';
+    var qd = el('ct-qr-data'); if (qd) qd.value = '';
+    var bd = el('ct-barcode-data'); if (bd) bd.value = '';
+    var bf = el('ct-barcode-format'); if (bf) bf.value = 'code128';
+    var ts = el('ct-type-select'); if (ts) ts.value = '';
     resetAlignmentButtons();
-
-    modal.classList.add('active');
 }
 
-function cancelTextSettings() {
-    var modal = _el('text-settings-modal');
-    if (modal) modal.classList.remove('active');
+function cancelContentSettings() {
     if (state) {
-        state.pendingTextRegion = null;
-        state.textDropPoint = null;
+        state.pendingContentRegion = null;
+        state.pendingContentType = null;
+    }
+    hideContentTypePanel();
+    renderCanvas();
+}
+
+function showContentTypePanel() {
+    var panel = _el('content-type-panel');
+    if (panel) panel.style.display = '';
+    resetContentForms();
+    var picker = _el('content-type-picker');
+    if (picker) picker.style.display = '';
+    var forms = document.querySelectorAll('.ct-form');
+    forms.forEach(function(f) { f.style.display = 'none'; });
+    var buttons = _el('ct-buttons');
+    if (buttons) buttons.style.display = 'none';
+}
+
+function hideContentTypePanel() {
+    var panel = _el('content-type-panel');
+    if (panel) panel.style.display = 'none';
+}
+
+function onContentTypeChange() {
+    var typeSelect = _el('ct-type-select');
+    var selectedType = typeSelect ? typeSelect.value : '';
+    var forms = document.querySelectorAll('.ct-form');
+    forms.forEach(function(f) { f.style.display = 'none'; });
+    var buttons = _el('ct-buttons');
+    if (!selectedType) {
+        if (buttons) buttons.style.display = 'none';
+        if (state) state.pendingContentType = null;
+        return;
+    }
+    if (state) state.pendingContentType = selectedType;
+    var formId = 'ct-form-' + selectedType;
+    var form = _el(formId);
+    if (form) form.style.display = '';
+    if (buttons) buttons.style.display = '';
+    if (selectedType === 'text') {
+        populateContentFontDropdown();
     }
 }
 
-function applyTextSettings() {
-    if (!state || !state.pendingTextRegion) return;
+function applyContentSettings() {
+    if (!state || !state.pendingContentRegion || !state.pendingContentType) return;
 
-    var fontSelect = _el('text-font-select');
-    var selectedOpt = fontSelect.options[fontSelect.selectedIndex];
-    var fontId = fontSelect.value;
-    var fontName = selectedOpt ? selectedOpt.dataset.fontName || '' : '';
-    var fontSize = parseFloat(_el('text-font-size').value) || 12;
-    var bold = _el('text-bold-btn').classList.contains('active');
-    var italic = _el('text-italic-btn').classList.contains('active');
-    var color = _el('text-color').value || '#000000';
-    var letterSpacing = parseFloat(_el('text-letter-spacing').value) || 0;
+    var region = state.pendingContentRegion;
+    var type = state.pendingContentType;
+    var comp = null;
 
-    var alignH = 'left';
-    var alignHBtns = _el('align-h-buttons');
-    if (alignHBtns) {
-        var activeH = alignHBtns.querySelector('.active');
-        if (activeH) alignH = activeH.dataset.val;
+    if (type === 'text') {
+        var fontSelect = _el('ct-font-select');
+        var selectedOpt = fontSelect ? fontSelect.options[fontSelect.selectedIndex] : null;
+        var fontId = fontSelect ? fontSelect.value : '';
+        var fontName = selectedOpt ? selectedOpt.dataset.fontName || '' : '';
+        var fontSize = parseFloat((_el('ct-font-size') || {}).value) || 12;
+        var bold = _el('ct-bold-btn') ? _el('ct-bold-btn').classList.contains('active') : false;
+        var italic = _el('ct-italic-btn') ? _el('ct-italic-btn').classList.contains('active') : false;
+        var color = (_el('ct-color') || {}).value || '#000000';
+        var letterSpacing = parseFloat((_el('ct-letter-spacing') || {}).value) || 0;
+        var alignH = 'left';
+        var alignHBtns = _el('ct-align-h');
+        if (alignHBtns) {
+            var activeH = alignHBtns.querySelector('.active');
+            if (activeH) alignH = activeH.dataset.val;
+        }
+        var alignV = 'top';
+        var alignVBtns = _el('ct-align-v');
+        if (alignVBtns) {
+            var activeV = alignVBtns.querySelector('.active');
+            if (activeV) alignV = activeV.dataset.val;
+        }
+        comp = {
+            type: 'textregion',
+            x: region.x, y: region.y, w: region.w, h: region.h,
+            snappedEdgeId: region.snappedEdgeId || null,
+            fontFamily: fontName,
+            fontId: fontId ? parseInt(fontId) : null,
+            fontSize: fontSize, bold: bold, italic: italic,
+            color: color, letterSpacing: letterSpacing,
+            alignH: alignH, alignV: alignV,
+            content: (_el('ct-text-value') || {}).value || '', visible: true, locked: false, groupId: null
+        };
+        if (fontId && fontName) {
+            loadFontForCanvas(parseInt(fontId), fontName);
+        }
+    } else if (type === 'image') {
+        comp = {
+            type: 'imageregion',
+            x: region.x, y: region.y, w: region.w, h: region.h,
+            snappedEdgeId: region.snappedEdgeId || null,
+            imageUrl: (_el('ct-image-url') || {}).value || '',
+            imageFit: (_el('ct-image-fit') || {}).value || 'contain',
+            content: (_el('ct-image-url') || {}).value || '', visible: true, locked: false, groupId: null
+        };
+    } else if (type === 'qrcode') {
+        comp = {
+            type: 'qrcoderegion',
+            x: region.x, y: region.y, w: region.w, h: region.h,
+            snappedEdgeId: region.snappedEdgeId || null,
+            qrData: (_el('ct-qr-data') || {}).value || '',
+            content: (_el('ct-qr-data') || {}).value || '', visible: true, locked: false, groupId: null
+        };
+    } else if (type === 'barcode') {
+        comp = {
+            type: 'barcoderegion',
+            x: region.x, y: region.y, w: region.w, h: region.h,
+            snappedEdgeId: region.snappedEdgeId || null,
+            barcodeData: (_el('ct-barcode-data') || {}).value || '',
+            barcodeFormat: (_el('ct-barcode-format') || {}).value || 'code128',
+            content: (_el('ct-barcode-data') || {}).value || '', visible: true, locked: false, groupId: null
+        };
     }
-    var alignV = 'top';
-    var alignVBtns = _el('align-v-buttons');
-    if (alignVBtns) {
-        var activeV = alignVBtns.querySelector('.active');
-        if (activeV) alignV = activeV.dataset.val;
-    }
 
-    var region = state.pendingTextRegion;
-    var comp = {
-        type: 'textregion',
-        x: region.x,
-        y: region.y,
-        w: region.w,
-        h: region.h,
-        snappedEdgeId: region.snappedEdgeId || null,
-        fontFamily: fontName,
-        fontId: fontId ? parseInt(fontId) : null,
-        fontSize: fontSize,
-        bold: bold,
-        italic: italic,
-        color: color,
-        letterSpacing: letterSpacing,
-        alignH: alignH,
-        alignV: alignV,
-        content: '',
-        visible: true,
-        locked: false,
-        groupId: null
-    };
+    if (!comp) return;
 
     components.push(comp);
     captureState();
 
-    // Load font for rendering
-    if (fontId && fontName) {
-        loadFontForCanvas(parseInt(fontId), fontName);
-    }
-
-    state.pendingTextRegion = null;
-    state.textDropPoint = null;
-
-    var modal = _el('text-settings-modal');
-    if (modal) modal.classList.remove('active');
+    state.pendingContentRegion = null;
+    state.pendingContentType = null;
+    hideContentTypePanel();
 
     renderCanvas();
     renderComponentList();
     updateActionButtons();
 
-    // Select the new component
     selectedSet = [components.length - 1];
     selectedIdx = components.length - 1;
     renderCanvas();
@@ -2748,7 +3110,7 @@ async function loadFontForCanvas(fontId, fontName) {
 
 function setupAlignmentButtons() {
     var tabPane = canvas ? canvas.closest('.tab-pane') : document;
-    ['align-h-buttons', 'align-v-buttons'].forEach(function(id) {
+    ['ct-align-h', 'ct-align-v'].forEach(function(id) {
         var container = tabPane.querySelector('#' + id);
         if (!container || container._alignSetup) return;
         container._alignSetup = true;
@@ -2763,7 +3125,7 @@ function setupAlignmentButtons() {
 
 function resetAlignmentButtons() {
     var tabPane = canvas ? canvas.closest('.tab-pane') : document;
-    ['align-h-buttons', 'align-v-buttons'].forEach(function(id) {
+    ['ct-align-h', 'ct-align-v'].forEach(function(id) {
         var container = tabPane.querySelector('#' + id);
         if (!container) return;
         container.querySelectorAll('button').forEach(function(b, i) {
@@ -2787,8 +3149,10 @@ function drawTextRegion(comp, idx) {
     var w = comp.w * scale;
     var h = comp.h * scale;
 
-    // Draw region rectangle
-    ctx.strokeStyle = '#0066ff';
+    // Draw region rectangle — 2nd level green box
+    ctx.fillStyle = 'rgba(0, 200, 0, 0.05)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#00cc00';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.strokeRect(x, y, w, h);
@@ -2799,12 +3163,11 @@ function drawTextRegion(comp, idx) {
         var fontStyle = '';
         if (comp.italic) fontStyle += 'italic ';
         if (comp.bold) fontStyle += 'bold ';
-        fontStyle += (comp.fontSize * scale / 2.835) + 'px '; // pt to px at scale
+        fontStyle += (comp.fontSize * scale / 2.835) + 'px ';
         fontStyle += "'" + comp.fontFamily + "', sans-serif";
         ctx.font = fontStyle;
         ctx.fillStyle = comp.color || '#000000';
 
-        // Alignment
         if (comp.alignH === 'center') ctx.textAlign = 'center';
         else if (comp.alignH === 'right') ctx.textAlign = 'right';
         else ctx.textAlign = 'left';
@@ -2826,17 +3189,119 @@ function drawTextRegion(comp, idx) {
         ctx.textBaseline = 'top';
     }
 
-    // Draw label
+    // Draw label in green
     ctx.font = '9px sans-serif';
-    ctx.fillStyle = '#0066ff';
+    ctx.fillStyle = '#00cc00';
     ctx.fillText('Text Region', x + 2, y - 3);
 
-    // Selection highlight
+    // Selection highlight (stays blue for contrast)
     if (selectedSet.indexOf(idx) !== -1) {
         ctx.strokeStyle = '#0066ff';
         ctx.lineWidth = 2;
         ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
     }
 
+    ctx.globalAlpha = 1;
+}
+
+function drawImageRegion(comp, idx) {
+    if (!comp.visible) ctx.globalAlpha = 0.15;
+    var x = comp.x * scale, y = comp.y * scale;
+    var w = comp.w * scale, h = comp.h * scale;
+
+    ctx.fillStyle = 'rgba(0, 200, 0, 0.05)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#00cc00';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+
+    // Placeholder X-cross
+    ctx.strokeStyle = 'rgba(0, 200, 0, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x + w, y + h);
+    ctx.moveTo(x + w, y); ctx.lineTo(x, y + h);
+    ctx.stroke();
+
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#00cc00';
+    ctx.fillText('Image', x + 2, y - 3);
+
+    if (selectedSet.indexOf(idx) !== -1) {
+        ctx.strokeStyle = '#0066ff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
+    }
+    ctx.globalAlpha = 1;
+}
+
+function drawQrCodeRegion(comp, idx) {
+    if (!comp.visible) ctx.globalAlpha = 0.15;
+    var x = comp.x * scale, y = comp.y * scale;
+    var w = comp.w * scale, h = comp.h * scale;
+
+    ctx.fillStyle = 'rgba(0, 200, 0, 0.05)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#00cc00';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+
+    // Placeholder grid pattern
+    ctx.fillStyle = 'rgba(0, 200, 0, 0.2)';
+    var cellSize = Math.min(w, h) / 5;
+    for (var r = 0; r < 5; r++) {
+        for (var c = 0; c < 5; c++) {
+            if ((r + c) % 2 === 0) {
+                ctx.fillRect(x + c * cellSize, y + r * cellSize, cellSize, cellSize);
+            }
+        }
+    }
+
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#00cc00';
+    ctx.fillText('QR Code', x + 2, y - 3);
+
+    if (selectedSet.indexOf(idx) !== -1) {
+        ctx.strokeStyle = '#0066ff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
+    }
+    ctx.globalAlpha = 1;
+}
+
+function drawBarcodeRegion(comp, idx) {
+    if (!comp.visible) ctx.globalAlpha = 0.15;
+    var x = comp.x * scale, y = comp.y * scale;
+    var w = comp.w * scale, h = comp.h * scale;
+
+    ctx.fillStyle = 'rgba(0, 200, 0, 0.05)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#00cc00';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+
+    // Placeholder vertical bars
+    ctx.fillStyle = 'rgba(0, 200, 0, 0.25)';
+    var barW = Math.max(1, w / 20);
+    for (var i = 0; i < 10; i++) {
+        var bx = x + (i * 2) * barW;
+        ctx.fillRect(bx, y + 2, barW, h - 4);
+    }
+
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#00cc00';
+    ctx.fillText('Barcode', x + 2, y - 3);
+
+    if (selectedSet.indexOf(idx) !== -1) {
+        ctx.strokeStyle = '#0066ff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
+    }
     ctx.globalAlpha = 1;
 }

@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(py:*)",
-      "Bash(if not exist \".tmp\" mkdir .tmp)"
+      "Bash(if not exist \".tmp\" mkdir .tmp)",
+      "Bash(git checkout:*)"
     ]
   }
 }
