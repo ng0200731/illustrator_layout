@@ -810,6 +810,8 @@ function renderCanvas() {
 
     // Draw components
     components.forEach(function(comp, idx) {
+        // Skip component being edited (preview draws it instead)
+        if (state && state.editingComponentIdx === idx && state.pendingContentRegion) return;
         if (comp.type === 'pdfpath') {
             drawPdfPath(comp, idx);
         } else if (comp.type === 'text') {
@@ -1635,17 +1637,18 @@ function onCanvasMouseDown(e) {
         }
     }
 
+    // Check if clicking on the pending content region to drag it (works in edit mode too)
+    if (state && state.pendingContentRegion) {
+        var pr = state.pendingContentRegion;
+        if (x >= pr.x && x <= pr.x + pr.w && y >= pr.y && y <= pr.y + pr.h) {
+            state.previewDragState = { active: true, startX: x, startY: y };
+            canvas.style.cursor = 'move';
+            return;
+        }
+    }
+
     // Content mode — click confirmed block to select, or draw inside selected block
     if (state.contentMode) {
-        // Check if clicking on the pending content region to drag it
-        if (state.pendingContentRegion) {
-            var pr = state.pendingContentRegion;
-            if (x >= pr.x && x <= pr.x + pr.w && y >= pr.y && y <= pr.y + pr.h) {
-                state.previewDragState = { active: true, startX: x, startY: y };
-                canvas.style.cursor = 'move';
-                return;
-            }
-        }
         // If a block is selected, check if clicking on existing content region first
         if (state.contentRegionMode && state.contentRegionBlock) {
             // Hit test existing content regions in this block
@@ -3093,6 +3096,34 @@ function createBlockRegionItem(comp, compIdx, block) {
     div.appendChild(eyeBtn);
     div.appendChild(lockBtn);
     div.appendChild(label);
+
+    // Toggle buttons row (lock + variable)
+    var toggleRow = document.createElement('div');
+    toggleRow.className = 'block-region-toggles';
+
+    var lockToggle = document.createElement('button');
+    lockToggle.className = 'toggle-btn' + (comp.locked ? ' active' : '');
+    lockToggle.textContent = comp.locked ? '🔒 Locked' : '🔓 Lock';
+    lockToggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        toggleLock(compIdx);
+        renderEdgeList();
+    });
+
+    var varToggle = document.createElement('button');
+    varToggle.className = 'toggle-btn' + (comp.isVariable ? ' active' : '');
+    varToggle.textContent = comp.isVariable ? '⚡ Variable' : '○ Variable';
+    varToggle.addEventListener('click', function(e) {
+        e.stopPropagation();
+        comp.isVariable = !comp.isVariable;
+        captureState();
+        renderEdgeList();
+        renderCanvas();
+    });
+
+    toggleRow.appendChild(lockToggle);
+    toggleRow.appendChild(varToggle);
+    div.appendChild(toggleRow);
 
     // Arrow buttons for moving within block (only if not locked)
     if (!comp.locked) {

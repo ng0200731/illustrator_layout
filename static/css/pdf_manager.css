@@ -433,6 +433,7 @@
     font-size: 9px;
     border-bottom: 1px solid #f0f0f0;
     gap: 3px;
+    flex-wrap: wrap;
 }
 
 .block-region-item:hover {
@@ -465,6 +466,29 @@
     padding: 1px 3px !important;
     min-width: 0;
     line-height: 1;
+}
+
+.block-region-toggles {
+    width: 100%;
+    display: flex;
+    gap: 4px;
+    padding: 2px 0 1px 0;
+}
+
+.block-region-toggles .toggle-btn {
+    flex: 1;
+    font-size: 8px;
+    padding: 2px 4px;
+    border: 1px solid #ccc;
+    background: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.block-region-toggles .toggle-btn.active {
+    background: #000;
+    color: #fff;
+    border-color: #000;
 }
 
 /* Style toggles (bold/italic) */
