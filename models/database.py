@@ -55,6 +55,35 @@ def init_db():
         )
     ''')
 
+    # Create orders table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id TEXT UNIQUE NOT NULL,
+            customer_id TEXT NOT NULL,
+            po_number TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+        )
+    ''')
+
+    # Create order_lines table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS order_lines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id TEXT NOT NULL,
+            layout_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            variable_values TEXT,
+            generated_data TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (order_id) REFERENCES orders(order_id),
+            FOREIGN KEY (layout_id) REFERENCES layouts(id)
+        )
+    ''')
+
     conn.commit()
     conn.close()
     print(f"Database initialized at {DATABASE_PATH}")

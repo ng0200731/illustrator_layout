@@ -1,0 +1,47 @@
+<div class="tab-pane">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/order.css') }}">
+
+    <div class="order-view">
+        <h2>Orders</h2>
+        <table id="orders-table">
+            <thead>
+                <tr>
+                    <th>Order ID</th>
+                    <th>Customer</th>
+                    <th>PO #</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <div id="empty-orders" style="display:none;" class="empty-message">No orders found</div>
+    </div>
+
+    <script>
+    (function() {
+        fetch('/order/api/list')
+            .then(function(r) { return r.json(); })
+            .then(function(orders) {
+                var tbody = document.querySelector('#orders-table tbody');
+                if (orders.length === 0) {
+                    document.getElementById('orders-table').style.display = 'none';
+                    document.getElementById('empty-orders').style.display = 'block';
+                    return;
+                }
+                orders.forEach(function(o) {
+                    var tr = document.createElement('tr');
+                    tr.innerHTML =
+                        '<td>' + o.order_id + '</td>' +
+                        '<td>' + o.company_name + '</td>' +
+                        '<td>' + o.po_number + '</td>' +
+                        '<td>' + o.status + '</td>' +
+                        '<td>' + o.created_at + '</td>' +
+                        '<td><button onclick="openTab(\'Order (' + o.order_id + ')\', \'/order/detail/' + o.order_id + '\')">View</button></td>';
+                    tbody.appendChild(tr);
+                });
+            });
+    })();
+    </script>
+</div>

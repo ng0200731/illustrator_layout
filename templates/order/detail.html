@@ -1,0 +1,128 @@
+<div class="tab-pane">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/order.css') }}">
+
+    <div class="order-detail">
+        <h2>Order: {{ order_id }}</h2>
+        <div id="order-info"></div>
+
+        <h3>Lines</h3>
+        <table id="lines-table">
+            <thead>
+                <tr>
+                    <th>Layout</th>
+                    <th>Type</th>
+                    <th>Qty</th>
+                    <th>Variables</th>
+                    <th>Export</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <script>
+    var orderLines = [];
+
+    (function() {
+        fetch('/order/api/{{ order_id }}')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                var order = data.order;
+                orderLines = data.lines;
+
+                document.getElementById('order-info').innerHTML =
+                    '<div class="info-grid">' +
+                    '<div class="info-row"><label>Customer:</label><span>' + order.company_name + '</span></div>' +
+                    '<div class="info-row"><label>PO #:</label><span>' + order.po_number + '</span></div>' +
+                    '<div class="info-row"><label>Status:</label><span>' + order.status + '</span></div>' +
+                    '<div class="info-row"><label>Created:</label><span>' + order.created_at + '</span></div>' +
+                    '</div>';
+
+                var tbody = document.querySelector('#lines-table tbody');
+                orderLines.forEach(function(l, idx) {
+                    var vars = l.variable_values ? JSON.parse(l.variable_values) : {};
+                    var varParts = [];
+                    for (var k in vars) { varParts.push('#' + (parseInt(k) + 1) + ': ' + vars[k]); }
+                    var varDisplay = varParts.length ? varParts.join(', ') : '—';
+
+                    var tr = document.createElement('tr');
+                    tr.innerHTML =
+                        '<td>' + l.layout_name + '</td>' +
+                        '<td>' + l.layout_type + '</td>' +
+                        '<td>' + l.quantity + '</td>' +
+                        '<td>' + varDisplay + '</td>' +
+                        '<td class="export-cell">' +
+                            '<button onclick="exportLine(' + idx + ', false)">AI E</button>' +
+                            '<button onclick="exportLine(' + idx + ', true)">AI O</button>' +
+                        '</td>';
+                    tbody.appendChild(tr);
+                });
+            });
+    })();
+
+    function exportLine(lineIdx, outlined) {
+        var line = orderLines[lineIdx];
+        if (!line || !line.generated_data) {
+            alert('No generated data for this line.');
+            return;
+        }
+
+        var genData = typeof line.generated_data === 'string' ? JSON.parse(line.generated_data) : line.generated_data;
+        var comps = genData.components || [];
+
+        var payload = {
+            label: { width: genData.pdfWidth || genData.label_width || 0, height: genData.pdfHeight || genData.label_height || 0 },
+            components: comps.map(function(c) {
+                return {
+                    type: c.type,
+                    x: c.x,
+                    y: c.y,
+                    width: c.w,
+                    height: c.h,
+                    content: c.content,
+                    fontFamily: c.fontFamily,
+                    fontId: c.fontId || null,
+                    fontSize: c.fontSize,
+                    bold: c.bold || false,
+                    italic: c.italic || false,
+                    color: c.color || '#000000',
+                    letterSpacing: c.letterSpacing || 0,
+                    alignH: c.alignH || 'left',
+                    alignV: c.alignV || 'top',
+                    pathData: c.pathData,
+                    visible: c.visible,
+                    imageUrl: c.imageUrl,
+                    imageFit: c.imageFit,
+                    qrData: c.qrData,
+                    barcodeData: c.barcodeData,
+                    barcodeFormat: c.barcodeFormat,
+                    page: 0
+                };
+            }),
+            outlined: outlined,
+            separateInvisible: true
+        };
+
+        fetch('/export/ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(function(response) {
+            if (!response.ok) throw new Error('Export failed');
+            return response.blob();
+        })
+        .then(function(blob) {
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = line.layout_name + (outlined ? '_outlined' : '_editable') + '.ai';
+            a.click();
+            URL.revokeObjectURL(url);
+        })
+        .catch(function(err) {
+            alert('Export failed: ' + err.message);
+        });
+    }
+    </script>
+</div>
