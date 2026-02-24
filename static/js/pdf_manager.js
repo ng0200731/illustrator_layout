@@ -39,6 +39,7 @@ function getCanvasState(canvas) {
             pendingContentType: null,
             previewDragState: { active: false, startX: 0, startY: 0 },
             blockExpanded: {},
+            groupNames: {},
             editingComponentIdx: -1,
             regionResizing: null
         });
@@ -1244,6 +1245,34 @@ function renderColorPalette() {
     });
 }
 
+function expandAllGroups() {
+    if (!state) return;
+    state.components.forEach(function(comp) {
+        if (comp.groupId) state.groupExpanded[comp.groupId] = true;
+    });
+    renderComponentList();
+}
+
+function collapseAllGroups() {
+    if (!state) return;
+    state.components.forEach(function(comp) {
+        if (comp.groupId) state.groupExpanded[comp.groupId] = false;
+    });
+    renderComponentList();
+}
+
+function lockAllComponents() {
+    if (!state) return;
+    state.components.forEach(function(comp) { comp.locked = true; });
+    renderComponentList();
+}
+
+function unlockAllComponents() {
+    if (!state) return;
+    state.components.forEach(function(comp) { comp.locked = false; });
+    renderComponentList();
+}
+
 function renderComponentList() {
     var list = _el('component-list');
     list.innerHTML = '';
@@ -1299,7 +1328,7 @@ function renderComponentList() {
         var eyeBtn = document.createElement('button');
         eyeBtn.className = 'icon-btn';
         var allVisible = groupItems.every(function(item) { return item.comp.visible; });
-        eyeBtn.textContent = allVisible ? '👁' : '👁‍🗨';
+        eyeBtn.textContent = allVisible ? '👁' : '-';
         eyeBtn.addEventListener('click', function(e) {
             e.stopPropagation();
             groupItems.forEach(function(item) {
@@ -1323,7 +1352,18 @@ function renderComponentList() {
 
         var label = document.createElement('span');
         label.className = 'component-label';
-        label.textContent = 'Group (' + groupItems.length + ' items)';
+        var pathCount = groupItems.filter(function(item) { return item.comp.type === 'pdfpath'; }).length;
+        var groupName = (state.groupNames && state.groupNames[groupId]) || 'Group';
+        label.textContent = groupName + ' (' + pathCount + ' paths, ' + groupItems.length + ' items)';
+        label.addEventListener('dblclick', function(e) {
+            e.stopPropagation();
+            var newName = prompt('Rename group:', groupName);
+            if (newName !== null && newName.trim()) {
+                if (!state.groupNames) state.groupNames = {};
+                state.groupNames[groupId] = newName.trim();
+                renderComponentList();
+            }
+        });
 
         groupHeader.appendChild(expandBtn);
         groupHeader.appendChild(eyeBtn);
@@ -1385,7 +1425,7 @@ function createComponentItem(comp, idx, isGroupMember) {
 
     var eyeBtn = document.createElement('button');
     eyeBtn.className = 'icon-btn';
-    eyeBtn.textContent = comp.visible ? '👁' : '👁‍🗨';
+    eyeBtn.textContent = comp.visible ? '👁' : '-';
     eyeBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         toggleVisibility(idx);
@@ -2276,48 +2316,37 @@ function groupSelected() {
 
     captureState();
 
-    // Merge paths by color and proximity
-    var mergedPaths = mergePathsByColorAndProximity(selectedSet);
-
-    // Assign group ID to merged paths
+    // Assign same groupId to all selected components (no merging)
     var groupId = 'grp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-    mergedPaths.forEach(function(path) {
-        path.groupId = groupId;
+    selectedSet.forEach(function(idx) {
+        components[idx].groupId = groupId;
     });
-
-    // Remove original paths (in reverse order to maintain indices)
-    var sortedIndices = selectedSet.slice().sort(function(a, b) { return b - a; });
-    sortedIndices.forEach(function(idx) {
-        components.splice(idx, 1);
-    });
-
-    // Add merged paths
-    components = components.concat(mergedPaths);
-
-    // Update selection to point to new merged paths
-    selectedSet = [];
-    var startIdx = components.length - mergedPaths.length;
-    for (var i = 0; i < mergedPaths.length; i++) {
-        selectedSet.push(startIdx + i);
-    }
-    selectedIdx = selectedSet.length === 1 ? selectedSet[0] : -1;
 
     renderCanvas();
     renderComponentList();
     renderPropertiesPanel();
     renderColorPalette();
-
-    // Capture state after grouping is complete
-    captureState();
 }
 
 function ungroupSelected() {
     captureState();
+    // Collect all groupIds from selected components
+    var groupIds = {};
     selectedSet.forEach(function(idx) {
-        components[idx].groupId = null;
+        if (components[idx].groupId) {
+            groupIds[components[idx].groupId] = true;
+        }
+    });
+    // Remove groupId from ALL members of those groups
+    components.forEach(function(comp) {
+        if (comp.groupId && groupIds[comp.groupId]) {
+            comp.groupId = null;
+        }
     });
 
+    renderCanvas();
     renderComponentList();
+    renderPropertiesPanel();
 }
 
 function deleteSelected() {
@@ -3072,7 +3101,7 @@ function createBlockRegionItem(comp, compIdx, block) {
 
     var eyeBtn = document.createElement('button');
     eyeBtn.className = 'icon-btn';
-    eyeBtn.textContent = comp.visible ? '👁' : '👁‍🗨';
+    eyeBtn.textContent = comp.visible ? '👁' : '-';
     eyeBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         toggleVisibility(compIdx);

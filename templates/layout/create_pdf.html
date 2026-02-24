@@ -137,6 +137,12 @@
             <div class="panel-section">
                 <h2 class="collapsible-header">COMPONENTS <span id="component-count">(0 items)</span> <span class="collapse-icon">▼</span></h2>
                 <div class="panel-section-body">
+                    <div class="component-actions">
+                        <button onclick="expandAllGroups()">Expand All</button>
+                        <button onclick="collapseAllGroups()">Collapse All</button>
+                        <button onclick="lockAllComponents()">Lock All</button>
+                        <button onclick="unlockAllComponents()">Unlock All</button>
+                    </div>
                     <div id="component-list">
                         <div class="empty-message">No PDF loaded</div>
                     </div>
