@@ -181,11 +181,32 @@
         .then(function(res) {
             var el = document.getElementById('order-result');
             if (res.ok) {
-                el.innerHTML = '<p class="success">Order <strong>' + res.data.order_id + '</strong> created.</p>';
+                var oid = res.data.order_id;
+                el.innerHTML =
+                    '<div class="order-success">' +
+                        '<p>Order <strong>' + oid + '</strong> created.</p>' +
+                        '<div class="order-success-actions">' +
+                            '<button onclick="viewOrder(\'' + oid + '\')">View Order</button>' +
+                            '<button onclick="createNewOrder()">Create New Order</button>' +
+                        '</div>' +
+                    '</div>';
             } else {
                 el.innerHTML = '<p class="error">' + res.data.error + '</p>';
             }
         });
+    }
+
+    function viewOrder(orderId) {
+        openTab('Order (' + orderId + ')', '/order/detail/' + orderId);
+    }
+
+    function createNewOrder() {
+        document.getElementById('order-customer').value = '';
+        document.getElementById('order-po').value = '';
+        document.getElementById('order-lines').innerHTML = '';
+        document.getElementById('btn-add-line').disabled = true;
+        document.getElementById('order-result').innerHTML = '';
+        availableLayouts = [];
     }
     </script>
 </div>
