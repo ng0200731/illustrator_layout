@@ -115,10 +115,21 @@
             hasVars = true;
             var row = document.createElement('div');
             row.className = 'var-row';
-            var label = c.type === 'textregion' ? 'Text Variable' : 'Variable';
-            row.innerHTML =
-                '<label>' + label + ' #' + (ci + 1) + '</label>' +
-                '<input type="text" data-comp-idx="' + ci + '" placeholder="' + (c.content || '') + '">';
+
+            var lbl = document.createElement('label');
+            var displayLabel = c.content || c.type || 'Variable';
+            if (displayLabel.length > 40) displayLabel = displayLabel.substring(0, 40) + '...';
+            lbl.textContent = displayLabel;
+            lbl.title = c.content || '';
+
+            var ta = document.createElement('textarea');
+            ta.dataset.compIdx = ci;
+            ta.placeholder = 'Enter value';
+            ta.value = c.content || '';
+            ta.rows = 3;
+
+            row.appendChild(lbl);
+            row.appendChild(ta);
             varsContainer.appendChild(row);
         });
 
@@ -142,7 +153,7 @@
             var qty = parseInt(div.querySelector('.line-qty').value, 10);
             if (!layoutId) continue;
 
-            var varInputs = div.querySelectorAll('.var-row input');
+            var varInputs = div.querySelectorAll('.var-row textarea');
             var variableValues = {};
             var hasVals = false;
             varInputs.forEach(function(inp) {
