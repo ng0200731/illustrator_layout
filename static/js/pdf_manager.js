@@ -1248,10 +1248,11 @@ function renderComponentList() {
     var list = _el('component-list');
     list.innerHTML = '';
 
-    _el('component-count').textContent = '(' + components.length + ' items)';
+    var nonBlockCount = components.filter(function(c) { return !c.snappedEdgeId; }).length;
+    _el('component-count').textContent = '(' + nonBlockCount + ' items)';
 
-    if (components.length === 0) {
-        list.innerHTML = '<div class="empty-message">No PDF loaded</div>';
+    if (nonBlockCount === 0) {
+        list.innerHTML = '<div class="empty-message">No components</div>';
         return;
     }
 
@@ -1260,6 +1261,8 @@ function renderComponentList() {
     var ungrouped = [];
 
     components.forEach(function(comp, idx) {
+        // Skip block regions — they are shown under their block in the edge list
+        if (comp.snappedEdgeId) return;
         if (comp.groupId) {
             if (!groups[comp.groupId]) {
                 groups[comp.groupId] = [];
@@ -3096,6 +3099,38 @@ function createBlockRegionItem(comp, compIdx, block) {
     div.appendChild(eyeBtn);
     div.appendChild(lockBtn);
     div.appendChild(label);
+
+    // Delete button
+    var delBtn = document.createElement('button');
+    delBtn.className = 'icon-btn block-region-delete';
+    delBtn.textContent = '✕';
+    delBtn.title = 'Delete';
+    delBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (confirm('Delete this ' + labelText + '?')) {
+            components.splice(compIdx, 1);
+            captureState();
+            selectedSet = [];
+            selectedIdx = -1;
+            renderCanvas();
+            renderEdgeList();
+            renderComponentList();
+            renderPropertiesPanel();
+        }
+    });
+    div.appendChild(delBtn);
+
+    // Click to select/highlight on canvas
+    div.addEventListener('click', function() {
+        selectedSet = [compIdx];
+        selectedIdx = compIdx;
+        renderCanvas();
+        renderEdgeList();
+        renderPropertiesPanel();
+    });
+    if (selectedSet.indexOf(compIdx) !== -1) {
+        div.classList.add('selected');
+    }
 
     // Toggle buttons row (lock + variable)
     var toggleRow = document.createElement('div');

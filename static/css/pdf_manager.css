@@ -434,10 +434,22 @@
     border-bottom: 1px solid #f0f0f0;
     gap: 3px;
     flex-wrap: wrap;
+    cursor: pointer;
 }
 
 .block-region-item:hover {
     background: #f5f5f5;
+}
+
+.block-region-item.selected {
+    background: #e8e8e8;
+    border-left: 2px solid #000;
+}
+
+.block-region-delete {
+    color: #c00;
+    font-size: 10px !important;
+    margin-left: auto;
 }
 
 .block-region-item .icon-btn {
