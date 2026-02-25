@@ -83,11 +83,13 @@ def _draw_pdfpath(c, comp, page_h):
         c.setStrokeColorRGB(stroke[0], stroke[1], stroke[2])
         c.setLineWidth(lw * mm)
 
-    # Draw path
+    # Draw path (use even-odd fill for compound paths to preserve holes)
+    is_compound = comp.get('isCompound', False)
+    fill_mode = 0 if is_compound else None
     if fill and stroke:
-        c.drawPath(p, fill=1, stroke=1)
+        c.drawPath(p, fill=1, stroke=1, fillMode=fill_mode)
     elif fill:
-        c.drawPath(p, fill=1, stroke=0)
+        c.drawPath(p, fill=1, stroke=0, fillMode=fill_mode)
     elif stroke:
         c.drawPath(p, fill=0, stroke=1)
 

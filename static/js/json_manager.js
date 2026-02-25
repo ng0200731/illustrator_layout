@@ -2651,11 +2651,30 @@ function jFlattenForExport(nodes, out, parentOpacity) {
         } else if (node.type === 'path') {
             out.push(jPathToExportComponent(node, opacity));
         } else if (node.type === 'compoundPath') {
-            // Export each sub-path
-            if (node.paths) {
+            // Export all sub-paths as a single compound path (even-odd fill for holes)
+            if (node.paths && node.paths.length > 0) {
+                var allOps = [];
                 for (var p = 0; p < node.paths.length; p++) {
-                    out.push(jPathToExportComponent(node.paths[p], opacity, node));
+                    var subComp = jPathToExportComponent(node.paths[p], opacity, node);
+                    if (subComp && subComp.pathData && subComp.pathData.ops) {
+                        for (var oi = 0; oi < subComp.pathData.ops.length; oi++) {
+                            allOps.push(subComp.pathData.ops[oi]);
+                        }
+                    }
                 }
+                var fill = node.fill || (node.paths[0] && node.paths[0].fill);
+                var stroke = node.stroke || (node.paths[0] && node.paths[0].stroke);
+                var fillRGB = jColorToRGBArray(fill);
+                var strokeRGB = jColorToRGBArray(stroke);
+                var b = node.bounds || { x: 0, y: 0, width: 0, height: 0 };
+                out.push({
+                    type: 'pdfpath',
+                    x: b.x * PT_TO_MM, y: b.y * PT_TO_MM,
+                    width: b.width * PT_TO_MM, height: b.height * PT_TO_MM,
+                    visible: node.visible !== false,
+                    isCompound: true,
+                    pathData: { ops: allOps, fill: fillRGB, stroke: strokeRGB, lw: (node.strokeWidth || 0) * PT_TO_MM }
+                });
             }
         } else if (node.type === 'text') {
             out.push(jTextToExportComponent(node, opacity));
