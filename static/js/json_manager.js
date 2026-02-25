@@ -102,6 +102,9 @@ function jsonInitWithTabPane(tabPane) {
             btn.addEventListener('click', function() {
                 ctAlignH.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
                 btn.classList.add('active');
+                if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
+                    jState.overlays[jState.editingComponentIdx].alignH = btn.dataset.val;
+                }
                 if (jState && jState._editingTextNode) {
                     jUpdateTextNodeFromForm(jState._editingTextNode);
                 }
@@ -115,6 +118,9 @@ function jsonInitWithTabPane(tabPane) {
             btn.addEventListener('click', function() {
                 ctAlignV.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
                 btn.classList.add('active');
+                if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
+                    jState.overlays[jState.editingComponentIdx].alignV = btn.dataset.val;
+                }
                 if (jState && jState._editingTextNode) {
                     jUpdateTextNodeFromForm(jState._editingTextNode);
                 }
@@ -148,6 +154,11 @@ function jsonInitWithTabPane(tabPane) {
             if (ctFontSelect.value && opt && opt.dataset.fontName) {
                 jLoadFontForCanvas(parseInt(ctFontSelect.value), opt.dataset.fontName);
             }
+            if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
+                var comp = jState.overlays[jState.editingComponentIdx];
+                comp.fontFamily = opt ? (opt.dataset.fontName || '') : '';
+                comp.fontId = ctFontSelect.value ? parseInt(ctFontSelect.value) : null;
+            }
             // Live update text node font
             if (jState && jState._editingTextNode) {
                 jUpdateTextNodeFromForm(jState._editingTextNode);
@@ -162,6 +173,11 @@ function jsonInitWithTabPane(tabPane) {
             btn.removeAttribute('onclick');
             btn.addEventListener('click', function() {
                 btn.classList.toggle('active');
+                if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
+                    var comp = jState.overlays[jState.editingComponentIdx];
+                    if (id === 'ct-bold-btn') comp.bold = btn.classList.contains('active');
+                    else if (id === 'ct-italic-btn') comp.italic = btn.classList.contains('active');
+                }
                 if (jState && jState._editingTextNode) {
                     jUpdateTextNodeFromForm(jState._editingTextNode);
                 }
@@ -1499,26 +1515,59 @@ function jRenderLayerTree() {
         return;
     }
 
-    // Collect panel groups (groups containing __bounds__ rects)
-    var panelGroups = jCollectPanelGroups(jState.documentTree);
-
-    if (panelGroups.length > 0) {
+    var brs = jState.boundsRects;
+    if (brs && brs.length > 0) {
         var countEl = _jel('layer-count');
-        if (countEl) countEl.textContent = '(' + panelGroups.length + ' layers)';
-        for (var i = 0; i < panelGroups.length; i++) {
-            var pg = panelGroups[i];
-            // Render panel group as top-level layer
-            jRenderTreeNode(tree, pg, 0, true);
-            // Render overlays belonging to this panel
-            var brIdx = jFindBoundsRectIdxForGroup(pg);
-            if (brIdx >= 0) {
-                var isExpanded = jState.layerExpanded[pg._id] !== false;
-                if (isExpanded) {
-                    for (var oi = 0; oi < jState.overlays.length; oi++) {
-                        var ov = jState.overlays[oi];
-                        if (ov._boundsRectIdx === brIdx && ov.visible !== false) {
-                            jRenderOverlayTreeItem(tree, ov, oi, 1);
-                        }
+        if (countEl) countEl.textContent = '(' + brs.length + ' layers)';
+
+        // Collect all leaf nodes (paths, compoundPaths, texts, images) from document tree
+        var allNodes = [];
+        jCollectLeafNodes(jState.documentTree, allNodes);
+
+        // Group nodes by which bounds rect contains them
+        var buckets = [];
+        for (var bi = 0; bi < brs.length; bi++) buckets.push([]);
+
+        for (var ni = 0; ni < allNodes.length; ni++) {
+            var node = allNodes[ni];
+            if (node._isBoundsRect) continue;
+            var b = node.bounds;
+            if (!b) continue;
+            var cx = b.x * PT_TO_MM + (b.width * PT_TO_MM) / 2;
+            var cy = b.y * PT_TO_MM + (b.height * PT_TO_MM) / 2;
+            for (var bi2 = 0; bi2 < brs.length; bi2++) {
+                var br = brs[bi2];
+                if (cx >= br.x && cx <= br.x + br.w && cy >= br.y && cy <= br.y + br.h) {
+                    buckets[bi2].push(node);
+                    break;
+                }
+            }
+        }
+
+        // Render each bounds rect as a layer
+        for (var li = 0; li < brs.length; li++) {
+            var br = brs[li];
+            var layerId = '__br_' + li;
+            var isExpanded = jState.layerExpanded[layerId] !== false;
+            var childCount = buckets[li].length;
+
+            // Count overlays for this layer
+            for (var oi2 = 0; oi2 < jState.overlays.length; oi2++) {
+                if (jState.overlays[oi2]._boundsRectIdx === li) childCount++;
+            }
+
+            jRenderBoundsLayerItem(tree, br, layerId, isExpanded, childCount);
+
+            if (isExpanded) {
+                // Render contained nodes
+                for (var ci = 0; ci < buckets[li].length; ci++) {
+                    jRenderTreeNode(tree, buckets[li][ci], 1, false);
+                }
+                // Render overlays belonging to this layer
+                for (var oi = 0; oi < jState.overlays.length; oi++) {
+                    var ov = jState.overlays[oi];
+                    if (ov._boundsRectIdx === li) {
+                        jRenderOverlayTreeItem(tree, ov, oi, 1);
                     }
                 }
             }
@@ -1533,42 +1582,45 @@ function jRenderLayerTree() {
     }
 }
 
-function jCollectPanelGroups(nodes) {
-    var panels = [];
+function jCollectLeafNodes(nodes, out) {
+    if (!nodes) return;
     for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
+        if (node._isBoundsRect) continue;
         if (node.children) {
-            for (var j = 0; j < node.children.length; j++) {
-                var child = node.children[j];
-                if (child.type === 'group' && child.children) {
-                    var hasBounds = false;
-                    for (var k = 0; k < child.children.length; k++) {
-                        if (child.children[k]._isBoundsRect) { hasBounds = true; break; }
-                    }
-                    if (hasBounds) panels.push(child);
-                }
-            }
-            // Recurse deeper layers
-            var deeper = jCollectPanelGroups(node.children);
-            for (var d = 0; d < deeper.length; d++) {
-                if (panels.indexOf(deeper[d]) < 0) panels.push(deeper[d]);
-            }
+            jCollectLeafNodes(node.children, out);
+        } else if (node.type === 'path' || node.type === 'compoundPath' || node.type === 'text' || node.type === 'image') {
+            out.push(node);
         }
     }
-    return panels;
 }
 
-function jFindBoundsRectIdxForGroup(groupNode) {
-    if (!groupNode.children || !jState.boundsRects) return -1;
-    for (var i = 0; i < groupNode.children.length; i++) {
-        var child = groupNode.children[i];
-        if (child._isBoundsRect) {
-            for (var bi = 0; bi < jState.boundsRects.length; bi++) {
-                if (jState.boundsRects[bi].node === child) return bi;
-            }
-        }
-    }
-    return -1;
+function jRenderBoundsLayerItem(parent, br, layerId, isExpanded, childCount) {
+    var item = document.createElement('div');
+    item.className = 'layer-tree-item';
+    item.style.paddingLeft = '4px';
+
+    var toggle = document.createElement('span');
+    toggle.className = 'layer-toggle';
+    toggle.textContent = isExpanded ? '▼' : '▶';
+    toggle.style.cursor = 'pointer';
+    toggle.style.marginRight = '4px';
+    toggle.style.fontSize = '10px';
+    (function(lid) {
+        toggle.addEventListener('click', function(e) {
+            e.stopPropagation();
+            jState.layerExpanded[lid] = !isExpanded;
+            jRenderLayerTree();
+        });
+    })(layerId);
+
+    var label = document.createElement('span');
+    label.className = 'component-label';
+    label.textContent = '[L] ' + br.groupName + ' (' + childCount + ')';
+
+    item.appendChild(toggle);
+    item.appendChild(label);
+    parent.appendChild(item);
 }
 
 function jRenderOverlayTreeItem(parent, ov, ovIdx, depth) {
