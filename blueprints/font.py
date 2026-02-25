@@ -137,6 +137,18 @@ def delete_font(font_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@font_bp.route('/file/<int:font_id>', methods=['GET'])
+def serve_font(font_id):
+    """Serve a font file for browser use (no download)"""
+    try:
+        font = Font.get_by_id(font_id)
+        if not font:
+            return jsonify({'success': False, 'error': 'Font not found'}), 404
+
+        return send_file(font['file_path'], mimetype='font/' + font['filename'].rsplit('.', 1)[-1].lower())
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @font_bp.route('/download/<int:font_id>', methods=['GET'])
 def download_font(font_id):
     """Download a font file"""

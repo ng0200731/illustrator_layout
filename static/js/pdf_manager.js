@@ -160,7 +160,17 @@ function initWithTabPane(tabPane) {
     // Wire up live preview listeners for text content fields
     ['ct-text-value', 'ct-font-size', 'ct-color', 'ct-letter-spacing'].forEach(function(id) {
         var el = tabPane.querySelector('#' + id);
-        if (el) el.addEventListener('input', function() { renderCanvas(); });
+        if (el) el.addEventListener('input', function() {
+            // Sync live value to component for immediate feedback
+            if (state && state.editingComponentIdx >= 0 && state.editingComponentIdx < components.length) {
+                var comp = components[state.editingComponentIdx];
+                if (id === 'ct-letter-spacing') comp.letterSpacing = parseFloat(el.value) || 0;
+                else if (id === 'ct-font-size') comp.fontSize = parseFloat(el.value) || 12;
+                else if (id === 'ct-color') comp.color = el.value;
+                else if (id === 'ct-text-value') comp.content = el.value;
+            }
+            renderCanvas();
+        });
     });
     var ctFontSelect = tabPane.querySelector('#ct-font-select');
     if (ctFontSelect) {
@@ -644,15 +654,34 @@ function extractPdfObjects(page, pdfW, pdfH) {
                 currentPath = [];
             } else if (fn === OPS.fill || fn === OPS.eoFill || fn === OPS.stroke || fn === OPS.fillStroke || fn === OPS.eoFillStroke) {
                 if (currentPath.length > 0) {
-                    var bbox = calculateBBox(currentPath);
-                    var obj = {
-                        ops: currentPath.slice(),
-                        fill: (fn === OPS.fill || fn === OPS.eoFill || fn === OPS.fillStroke || fn === OPS.eoFillStroke) ? currentState.fill : null,
-                        stroke: (fn === OPS.stroke || fn === OPS.fillStroke || fn === OPS.eoFillStroke) ? currentState.stroke : null,
-                        lw: currentState.lineWidth / 72 * 25.4,
-                        bbox: bbox
-                    };
-                    objects.push(obj);
+                    var fillColor = (fn === OPS.fill || fn === OPS.eoFill || fn === OPS.fillStroke || fn === OPS.eoFillStroke) ? currentState.fill : null;
+                    var strokeColor = (fn === OPS.stroke || fn === OPS.fillStroke || fn === OPS.eoFillStroke) ? currentState.stroke : null;
+                    var lwMm = currentState.lineWidth / 72 * 25.4;
+
+                    // Split into separate sub-paths at each M that follows a Z
+                    var subPaths = [];
+                    var current = [];
+                    for (var sp = 0; sp < currentPath.length; sp++) {
+                        if (currentPath[sp].o === 'M' && current.length > 0) {
+                            subPaths.push(current);
+                            current = [];
+                        }
+                        current.push(currentPath[sp]);
+                    }
+                    if (current.length > 0) subPaths.push(current);
+
+                    // Each closed sub-path becomes its own object
+                    for (var si = 0; si < subPaths.length; si++) {
+                        var spOps = subPaths[si];
+                        var bbox = calculateBBox(spOps);
+                        objects.push({
+                            ops: spOps,
+                            fill: fillColor,
+                            stroke: strokeColor,
+                            lw: lwMm,
+                            bbox: bbox
+                        });
+                    }
                     currentPath = [];
                 }
             }
@@ -2622,6 +2651,11 @@ function saveLayoutToDatabase() {
             return;
         }
 
+        if (!/^[a-zA-Z0-9\-_]+$/.test(layoutName)) {
+            showLayoutMessage('Layout name can only contain letters, numbers, - and _', 'error');
+            return;
+        }
+
         const layoutData = {
             name: layoutName,
             type: 'pdf',
@@ -3749,7 +3783,8 @@ function drawTextRegion(comp, idx) {
         else if (comp.alignH === 'right') tx = x + w;
 
         var lines = comp.content.split('\n');
-        var lineHeight = fontSizePx * 1.2;
+        var lineSpacing = (comp.letterSpacing || 0) * scale / 2.835;
+        var lineHeight = fontSizePx * 1.2 + lineSpacing;
         var totalTextH = lines.length * lineHeight;
 
         var startY = y;

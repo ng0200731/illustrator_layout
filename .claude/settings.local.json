@@ -3,7 +3,9 @@
     "allow": [
       "Bash(py:*)",
       "Bash(if not exist \".tmp\" mkdir .tmp)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(find \"/d/project/illustrator-layout/static/js\" -name \"*.js\" -exec wc -l {} +)",
+      "Bash(claude mcp add context7 -- npx -y @upstash/context7-mcp@latest)"
     ]
   }
 }

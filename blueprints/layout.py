@@ -9,6 +9,12 @@ def create_draw_page():
     """Render draw tool page (placeholder)"""
     return render_template('layout/create_draw.html')
 
+@layout_bp.route('/create/json', methods=['GET'])
+def create_json_page():
+    """Render JSON layout editor page"""
+    layout_id = request.args.get('load', '')
+    return render_template('layout/create_json.html', layout_id=layout_id)
+
 @layout_bp.route('/create/pdf', methods=['GET'])
 def create_pdf_page():
     """Render PDF manager page"""

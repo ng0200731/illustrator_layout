@@ -55,7 +55,7 @@ function displayLayouts(layouts) {
                 <td>${createdDate}</td>
                 <td>${updatedDate}</td>
                 <td class="actions">
-                    <button onclick="openLayout(${layout.id})">Open</button>
+                    <button onclick="openLayout(${layout.id}, '${layout.type}')">Open</button>
                     <button onclick="deleteLayout(${layout.id})">Delete</button>
                 </td>
             </tr>
@@ -64,10 +64,10 @@ function displayLayouts(layouts) {
 }
 
 // Open a layout in a new tab
-function openLayout(layoutId) {
-    console.log('Opening layout with ID:', layoutId);
-    // Open PDF manager tab with layout ID in URL
-    openTab('Layout: ' + layoutId, '/layout/create/pdf?load=' + layoutId);
+function openLayout(layoutId, layoutType) {
+    console.log('Opening layout with ID:', layoutId, 'Type:', layoutType);
+    var route = layoutType === 'json' ? '/layout/create/json' : '/layout/create/pdf';
+    openTab('Layout: ' + layoutId, route + '?load=' + layoutId);
 }
 
 // Delete a layout
