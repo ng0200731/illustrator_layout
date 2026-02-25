@@ -90,10 +90,29 @@
         var panels = filterNonOverlapping(rects);
 
         if (panels.length >= 2) {
-            // Use detected rectangles directly as bounds
+            // Collect all direct layer items (excluding __bounds__ and hidden)
+            var layerItems = [];
+            for (var li2 = layer.pageItems.length - 1; li2 >= 0; li2--) {
+                var it = layer.pageItems[li2];
+                if (it.parent !== layer) continue;
+                if (it.hidden) continue;
+                if (it.name && it.name.indexOf("__bounds__") === 0) continue;
+                try {
+                    var itb = it.geometricBounds;
+                    var cx = (itb[0] + itb[2]) / 2;
+                    var cy = (itb[1] + itb[3]) / 2;
+                    layerItems.push({ item: it, cx: cx, cy: cy });
+                } catch(e) {}
+            }
+
+            // For each panel, create a group and move contained items into it
             for (var pi2 = 0; pi2 < panels.length; pi2++) {
                 var gb = panels[pi2];
-                var rect = layer.pathItems.rectangle(gb.top, gb.left, gb.right - gb.left, gb.top - gb.bottom);
+                var grp = layer.groupItems.add();
+                grp.name = "Panel" + (pi2 + 1);
+
+                // Create __bounds__ rect inside the group
+                var rect = grp.pathItems.rectangle(gb.top, gb.left, gb.right - gb.left, gb.top - gb.bottom);
                 rect.name = "__bounds__Panel" + (pi2 + 1);
                 rect.stroked = true;
                 rect.strokeWidth = 1;
@@ -106,6 +125,15 @@
                     var c = new CMYKColor();
                     c.cyan = 0; c.magenta = 0; c.yellow = 0; c.black = 100;
                     rect.strokeColor = c;
+                }
+
+                // Move items whose center falls within this panel into the group
+                for (var mi = layerItems.length - 1; mi >= 0; mi--) {
+                    var li3 = layerItems[mi];
+                    if (li3.cx >= gb.left && li3.cx <= gb.right && li3.cy <= gb.top && li3.cy >= gb.bottom) {
+                        li3.item.move(grp, ElementPlacement.PLACEATEND);
+                        layerItems.splice(mi, 1);
+                    }
                 }
             }
             return;
@@ -172,25 +200,18 @@
 
     function isLargeRect(path) {
         if (!path.closed) return false;
-        if (path.pathPoints.length !== 4) return false;
         var gb = path.geometricBounds;
         var w = gb[2] - gb[0];
         var h = gb[1] - gb[3];
         if (w < 30 || h < 30) return false; // min 30pt (~10mm)
-        // Check if it's roughly rectangular (all angles ~90deg)
-        var pts = [];
-        for (var i = 0; i < 4; i++) {
-            pts.push({ x: path.pathPoints[i].anchor[0], y: path.pathPoints[i].anchor[1] });
+        // Compare path area to bounding box area — rectangles fill ~100% of their bbox
+        try {
+            var pathArea = Math.abs(path.area);
+            var bboxArea = w * h;
+            return pathArea > bboxArea * 0.9;
+        } catch(e) {
+            return false;
         }
-        // Check that edges are axis-aligned (horizontal or vertical)
-        for (var i = 0; i < 4; i++) {
-            var a = pts[i];
-            var b = pts[(i + 1) % 4];
-            var dx = Math.abs(a.x - b.x);
-            var dy = Math.abs(a.y - b.y);
-            if (dx > 1 && dy > 1) return false; // edge is diagonal, not a rectangle
-        }
-        return true;
     }
 
     // Keep only non-overlapping rects (separate panels)

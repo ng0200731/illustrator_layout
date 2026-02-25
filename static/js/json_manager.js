@@ -696,6 +696,38 @@ function jPrefillContentForm(type, data) {
             if (vBtn) vBtn.classList.add('active');
         }
 
+        // Select matching font in dropdown
+        var fontSelect = _jel('ct-font-select');
+        if (fontSelect && (data.fontId || data.fontFamily)) {
+            var selectFont = function() {
+                if (!fontSelect) return;
+                // Try by fontId first
+                if (data.fontId) {
+                    for (var fi = 0; fi < fontSelect.options.length; fi++) {
+                        if (fontSelect.options[fi].value == data.fontId) {
+                            fontSelect.selectedIndex = fi;
+                            return;
+                        }
+                    }
+                }
+                // Fallback: match by fontFamily name
+                if (data.fontFamily) {
+                    var normalizedName = data.fontFamily.toLowerCase().replace(/[\s\-_]/g, '');
+                    for (var fi = 0; fi < fontSelect.options.length; fi++) {
+                        var optName = (fontSelect.options[fi].dataset.fontName || '').toLowerCase().replace(/[\s\-_]/g, '');
+                        if (optName && (optName === normalizedName || optName.indexOf(normalizedName) >= 0 || normalizedName.indexOf(optName) >= 0)) {
+                            fontSelect.selectedIndex = fi;
+                            return;
+                        }
+                    }
+                }
+            };
+            // Font list may still be loading, try now and retry after delays
+            selectFont();
+            setTimeout(selectFont, 500);
+            setTimeout(selectFont, 1500);
+        }
+
         // Show AI Font name from Illustrator
         var aiFontRow = _jel('ct-ai-font-row');
         var aiFontSpan = _jel('ct-ai-font-name');
@@ -1185,7 +1217,7 @@ function jRenderText(c, node, opacity) {
         c.translate(cx, cy);
         // Illustrator matrix: a=scaleX, b=shearY, c=shearX, d=scaleY
         // But d is negated because we flipped Y in export
-        c.transform(m.a, -m.b, -m.c, m.d, 0, 0);
+        c.transform(m.a, -m.b, -m.c, m.d, m.tx * PT_TO_MM, -m.ty * PT_TO_MM);
         c.translate(-cx, -cy);
     }
 
@@ -1234,7 +1266,7 @@ function jRenderText(c, node, opacity) {
         var cx = x + w / 2;
         var cy = y + h / 2;
         c.translate(cx, cy);
-        c.transform(m.a, -m.b, -m.c, m.d, 0, 0);
+        c.transform(m.a, -m.b, -m.c, m.d, m.tx * PT_TO_MM, -m.ty * PT_TO_MM);
         c.translate(-cx, -cy);
     }
     c.strokeStyle = '#00cc00';
@@ -1466,20 +1498,142 @@ function jRenderLayerTree() {
         tree.innerHTML = '<div class="empty-message">No JSON loaded</div>';
         return;
     }
-    var countEl = _jel('layer-count');
-    if (countEl) countEl.textContent = '(' + jState.documentTree.length + ' layers)';
 
-    for (var i = 0; i < jState.documentTree.length; i++) {
-        jRenderTreeNode(tree, jState.documentTree[i], 0);
+    // Collect panel groups (groups containing __bounds__ rects)
+    var panelGroups = jCollectPanelGroups(jState.documentTree);
+
+    if (panelGroups.length > 0) {
+        var countEl = _jel('layer-count');
+        if (countEl) countEl.textContent = '(' + panelGroups.length + ' layers)';
+        for (var i = 0; i < panelGroups.length; i++) {
+            var pg = panelGroups[i];
+            // Render panel group as top-level layer
+            jRenderTreeNode(tree, pg, 0, true);
+            // Render overlays belonging to this panel
+            var brIdx = jFindBoundsRectIdxForGroup(pg);
+            if (brIdx >= 0) {
+                var isExpanded = jState.layerExpanded[pg._id] !== false;
+                if (isExpanded) {
+                    for (var oi = 0; oi < jState.overlays.length; oi++) {
+                        var ov = jState.overlays[oi];
+                        if (ov._boundsRectIdx === brIdx && ov.visible !== false) {
+                            jRenderOverlayTreeItem(tree, ov, oi, 1);
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Fallback: render raw hierarchy
+        var countEl = _jel('layer-count');
+        if (countEl) countEl.textContent = '(' + jState.documentTree.length + ' layers)';
+        for (var i = 0; i < jState.documentTree.length; i++) {
+            jRenderTreeNode(tree, jState.documentTree[i], 0, false);
+        }
     }
 }
 
-function jRenderTreeNode(parent, node, depth) {
+function jCollectPanelGroups(nodes) {
+    var panels = [];
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (node.children) {
+            for (var j = 0; j < node.children.length; j++) {
+                var child = node.children[j];
+                if (child.type === 'group' && child.children) {
+                    var hasBounds = false;
+                    for (var k = 0; k < child.children.length; k++) {
+                        if (child.children[k]._isBoundsRect) { hasBounds = true; break; }
+                    }
+                    if (hasBounds) panels.push(child);
+                }
+            }
+            // Recurse deeper layers
+            var deeper = jCollectPanelGroups(node.children);
+            for (var d = 0; d < deeper.length; d++) {
+                if (panels.indexOf(deeper[d]) < 0) panels.push(deeper[d]);
+            }
+        }
+    }
+    return panels;
+}
+
+function jFindBoundsRectIdxForGroup(groupNode) {
+    if (!groupNode.children || !jState.boundsRects) return -1;
+    for (var i = 0; i < groupNode.children.length; i++) {
+        var child = groupNode.children[i];
+        if (child._isBoundsRect) {
+            for (var bi = 0; bi < jState.boundsRects.length; bi++) {
+                if (jState.boundsRects[bi].node === child) return bi;
+            }
+        }
+    }
+    return -1;
+}
+
+function jRenderOverlayTreeItem(parent, ov, ovIdx, depth) {
+    var item = document.createElement('div');
+    item.className = 'layer-tree-item';
+    item.style.paddingLeft = (depth * 12 + 4) + 'px';
+    if (ovIdx === jState.selectedOverlayIdx) item.style.background = '#e0e0e0';
+
+    var icon = document.createElement('span');
+    icon.style.marginRight = '4px';
+    icon.style.fontSize = '10px';
+    icon.textContent = '  ';
+
+    var eyeBtn = document.createElement('button');
+    eyeBtn.className = 'icon-btn';
+    eyeBtn.textContent = ov.visible ? '👁' : '-';
+    eyeBtn.style.marginRight = '2px';
+    (function(idx) {
+        eyeBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            jState.overlays[idx].visible = !jState.overlays[idx].visible;
+            jRenderCanvas();
+            jRenderLayerTree();
+        });
+    })(ovIdx);
+
+    var label = document.createElement('span');
+    label.className = 'component-label';
+    label.style.color = '#00aa00';
+    var labelMap = { 'textregion': 'Text', 'imageregion': 'Image', 'qrcoderegion': 'QR', 'barcoderegion': 'Barcode' };
+    var txt = labelMap[ov.type] || ov.type;
+    if (ov.type === 'textregion' && ov.content) txt += ': "' + ov.content.substring(0, 15) + '"';
+    label.textContent = '[OV] ' + txt;
+
+    item.appendChild(icon);
+    item.appendChild(eyeBtn);
+    item.appendChild(label);
+    (function(idx) {
+        item.addEventListener('click', function() {
+            jState.selectedOverlayIdx = idx;
+            jState.selectedTreePath = null;
+            jRenderCanvas();
+            jRenderLayerTree();
+            jRenderOverlayList();
+        });
+    })(ovIdx);
+    parent.appendChild(item);
+}
+
+function jRenderTreeNode(parent, node, depth, isPanel) {
+    // Skip __bounds__ rect nodes from the tree
+    if (node._isBoundsRect) return;
+
     var item = document.createElement('div');
     item.className = 'layer-tree-item';
     item.style.paddingLeft = (depth * 12 + 4) + 'px';
 
-    var hasChildren = (node.children && node.children.length > 0) || (node.paths && node.paths.length > 0);
+    // Count visible children (excluding __bounds__ rects)
+    var visibleChildren = [];
+    if (node.children) {
+        for (var ci = 0; ci < node.children.length; ci++) {
+            if (!node.children[ci]._isBoundsRect) visibleChildren.push(node.children[ci]);
+        }
+    }
+    var hasChildren = visibleChildren.length > 0 || (node.paths && node.paths.length > 0);
     var isExpanded = jState.layerExpanded[node._id] !== false;
 
     // Expand/collapse toggle
@@ -1526,11 +1680,12 @@ function jRenderTreeNode(parent, node, depth) {
         });
     })(node);
 
-    // Label
+    // Label — show panel groups as [L] layer icon
     var label = document.createElement('span');
     label.className = 'component-label';
     var typeIcon = '';
-    if (node.children) typeIcon = node.type === 'group' ? '[G] ' : '[L] ';
+    if (isPanel) typeIcon = '[L] ';
+    else if (node.children) typeIcon = node.type === 'group' ? '[G] ' : '[L] ';
     else if (node.type === 'path') typeIcon = '[P] ';
     else if (node.type === 'compoundPath') typeIcon = '[CP] ';
     else if (node.type === 'text') typeIcon = '[T] ';
@@ -1560,16 +1715,14 @@ function jRenderTreeNode(parent, node, depth) {
 
     parent.appendChild(item);
 
-    // Render children if expanded
+    // Render children if expanded (skip __bounds__ rects)
     if (hasChildren && isExpanded) {
-        if (node.children) {
-            for (var i = 0; i < node.children.length; i++) {
-                jRenderTreeNode(parent, node.children[i], depth + 1);
-            }
+        for (var i = 0; i < visibleChildren.length; i++) {
+            jRenderTreeNode(parent, visibleChildren[i], depth + 1, false);
         }
         if (node.paths) {
             for (var i = 0; i < node.paths.length; i++) {
-                jRenderTreeNode(parent, node.paths[i], depth + 1);
+                jRenderTreeNode(parent, node.paths[i], depth + 1, false);
             }
         }
     }
@@ -1578,8 +1731,9 @@ function jRenderTreeNode(parent, node, depth) {
 function jCountDescendants(node) {
     var count = 0;
     if (node.children) {
-        count += node.children.length;
         for (var i = 0; i < node.children.length; i++) {
+            if (node.children[i]._isBoundsRect) continue;
+            count++;
             count += jCountDescendants(node.children[i]);
         }
     }
@@ -1752,15 +1906,19 @@ function applyContentSettings() {
         jCaptureState();
         // Editing existing overlay (double-click)
         if (jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
-            // Preserve position from existing overlay
+            // Preserve position and bounds constraint from existing overlay
             var existing = jState.overlays[jState.editingComponentIdx];
             comp.x = existing.x; comp.y = existing.y;
             comp.w = existing.w; comp.h = existing.h;
+            comp._boundsRectIdx = existing._boundsRectIdx;
             jState.overlays[jState.editingComponentIdx] = comp;
-            jState.selectedOverlayIdx = jState.editingComponentIdx;
+            jState.selectedOverlayIdx = -1;
         } else {
+            // Find containing bounds rect for new overlay
+            var br = jFindContainingBoundsRect(comp);
+            comp._boundsRectIdx = br ? jState.boundsRects.indexOf(br) : -1;
             jState.overlays.push(comp);
-            jState.selectedOverlayIdx = jState.overlays.length - 1;
+            jState.selectedOverlayIdx = -1;
         }
     }
 
