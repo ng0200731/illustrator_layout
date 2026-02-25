@@ -487,22 +487,72 @@ function jSetupCanvasInteraction() {
 function jOnCanvasDblClick(e) {
     if (!jCanvas || !jState || !jState.documentTree) return;
 
-    // First check overlays (content regions) — same as PDF manager
     var pos = jScreenToDoc(e.clientX, e.clientY);
+
+    // First check overlays (content regions) — account for panel rotation
     for (var i = jState.overlays.length - 1; i >= 0; i--) {
         var ov = jState.overlays[i];
-        if (ov.visible !== false && pos.x >= ov.x && pos.x <= ov.x + ov.w && pos.y >= ov.y && pos.y <= ov.y + ov.h) {
+        if (ov.visible === false) continue;
+        var testPos = jUnrotatePoint(pos.x, pos.y, ov._boundsRectIdx);
+        if (testPos.x >= ov.x && testPos.x <= ov.x + ov.w && testPos.y >= ov.y && testPos.y <= ov.y + ov.h) {
             jEditOverlayRegion(i);
             return;
         }
     }
 
-    // Then check document tree text nodes (non-outline)
-    var hitNode = jHitTestTextNode(jState.documentTree, pos.x, pos.y);
+    // Then check document tree text nodes — account for panel rotation
+    var hitNode = jHitTestTextNodeRotated(pos.x, pos.y);
     if (hitNode) {
         jEditTextNode(hitNode);
         return;
     }
+}
+
+function jUnrotatePoint(x, y, boundsRectIdx) {
+    var brs = jState.boundsRects;
+    if (!brs || boundsRectIdx < 0 || boundsRectIdx >= brs.length) return { x: x, y: y };
+    var br = brs[boundsRectIdx];
+    var rot = br._rotation || 0;
+    if (rot === 0) return { x: x, y: y };
+    var cx = br.x + br.w / 2;
+    var cy = br.y + br.h / 2;
+    var rad = -rot * Math.PI / 180;
+    var dx = x - cx, dy = y - cy;
+    return {
+        x: cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+        y: cy + dx * Math.sin(rad) + dy * Math.cos(rad)
+    };
+}
+
+function jHitTestTextNodeRotated(x, y) {
+    if (!jState.documentTree) return null;
+    var brs = jState.boundsRects;
+    var allNodes = [];
+    jCollectLeafNodes(jState.documentTree, allNodes);
+    for (var i = allNodes.length - 1; i >= 0; i--) {
+        var node = allNodes[i];
+        if (node.visible === false) continue;
+        if (node.type !== 'text' || !node.bounds) continue;
+        var b = node.bounds;
+        var bx = b.x * PT_TO_MM, by = b.y * PT_TO_MM;
+        var bw = b.width * PT_TO_MM, bh = b.height * PT_TO_MM;
+        // Find which bounds rect this node belongs to
+        var ncx = bx + bw / 2, ncy = by + bh / 2;
+        var brIdx = -1;
+        if (brs) {
+            for (var bi = 0; bi < brs.length; bi++) {
+                var tbr = brs[bi];
+                if (ncx >= tbr.x && ncx <= tbr.x + tbr.w && ncy >= tbr.y && ncy <= tbr.y + tbr.h) {
+                    brIdx = bi; break;
+                }
+            }
+        }
+        var testPos = jUnrotatePoint(x, y, brIdx);
+        if (testPos.x >= bx && testPos.x <= bx + bw && testPos.y >= by && testPos.y <= by + bh) {
+            return node;
+        }
+    }
+    return null;
 }
 
 function jHitTestTextNode(nodes, x, y) {
@@ -924,7 +974,9 @@ function jScreenToDoc(clientX, clientY) {
 function jHitTestOverlay(x, y) {
     for (var i = jState.overlays.length - 1; i >= 0; i--) {
         var o = jState.overlays[i];
-        if (x >= o.x && x <= o.x + o.w && y >= o.y && y <= o.y + o.h) return i;
+        if (o.visible === false) continue;
+        var tp = jUnrotatePoint(x, y, o._boundsRectIdx);
+        if (tp.x >= o.x && tp.x <= o.x + o.w && tp.y >= o.y && tp.y <= o.y + o.h) return i;
     }
     return -1;
 }
@@ -1047,12 +1099,92 @@ function jRenderCanvas() {
     c.rect(0, 0, jState.docWidth, jState.docHeight);
     c.clip();
 
-    // Render document tree
-    jRenderNodes(c, jState.documentTree, 1.0);
+    // Render document tree with per-panel rotation
+    var brs = jState.boundsRects;
+    if (brs && brs.length > 0) {
+        // Render nodes grouped by bounds rect, applying rotation per panel
+        var allLeaves = [];
+        jCollectLeafNodes(jState.documentTree, allLeaves);
+
+        // Bucket nodes by bounds rect
+        var buckets = [];
+        var unassigned = [];
+        for (var bi = 0; bi < brs.length; bi++) buckets.push([]);
+        for (var ni = 0; ni < allLeaves.length; ni++) {
+            var nd = allLeaves[ni];
+            if (nd._isBoundsRect) continue;
+            var nb = nd.bounds;
+            if (!nb) { unassigned.push(nd); continue; }
+            var ncx = nb.x * PT_TO_MM + (nb.width * PT_TO_MM) / 2;
+            var ncy = nb.y * PT_TO_MM + (nb.height * PT_TO_MM) / 2;
+            var assigned = false;
+            for (var bi2 = 0; bi2 < brs.length; bi2++) {
+                var tbr = brs[bi2];
+                if (ncx >= tbr.x && ncx <= tbr.x + tbr.w && ncy >= tbr.y && ncy <= tbr.y + tbr.h) {
+                    buckets[bi2].push(nd);
+                    assigned = true;
+                    break;
+                }
+            }
+            if (!assigned) unassigned.push(nd);
+        }
+
+        // Render each panel with rotation
+        for (var pi = 0; pi < brs.length; pi++) {
+            var pbr = brs[pi];
+            var rot = pbr._rotation || 0;
+
+            // Draw bounds rect border (always unrotated for reference)
+            c.save();
+            c.strokeStyle = '#000';
+            c.lineWidth = 0.3;
+            c.setLineDash([1.5, 1]);
+            c.strokeRect(pbr.x, pbr.y, pbr.w, pbr.h);
+            c.setLineDash([]);
+            c.restore();
+
+            if (rot !== 0) {
+                var cx = pbr.x + pbr.w / 2;
+                var cy = pbr.y + pbr.h / 2;
+                c.save();
+                c.translate(cx, cy);
+                c.rotate(rot * Math.PI / 180);
+                c.translate(-cx, -cy);
+            }
+
+            for (var bni = 0; bni < buckets[pi].length; bni++) {
+                var bnode = buckets[pi][bni];
+                if (bnode.visible === false) continue;
+                if (bnode._isDoubledText) continue;
+                var bop = (bnode.opacity || 100) / 100;
+                if (bnode.type === 'path') jRenderPath(c, bnode, bop);
+                else if (bnode.type === 'compoundPath') jRenderCompoundPath(c, bnode, bop);
+                else if (bnode.type === 'text') jRenderText(c, bnode, bop);
+                else if (bnode.type === 'image') jRenderImagePlaceholder(c, bnode, bop);
+            }
+
+            if (rot !== 0) c.restore();
+        }
+
+        // Render unassigned nodes without rotation
+        for (var ui = 0; ui < unassigned.length; ui++) {
+            var unode = unassigned[ui];
+            if (unode.visible === false) continue;
+            if (unode._isDoubledText) continue;
+            var uop = (unode.opacity || 100) / 100;
+            if (unode.type === 'path') jRenderPath(c, unode, uop);
+            else if (unode.type === 'compoundPath') jRenderCompoundPath(c, unode, uop);
+            else if (unode.type === 'text') jRenderText(c, unode, uop);
+            else if (unode.type === 'image') jRenderImagePlaceholder(c, unode, uop);
+        }
+    } else {
+        // No bounds rects — render normally
+        jRenderNodes(c, jState.documentTree, 1.0);
+    }
 
     c.restore();
 
-    // Render overlays on top
+    // Render overlays on top (with per-panel rotation)
     jRenderOverlays(c);
 
     // Render edges
@@ -1334,10 +1466,25 @@ function jRenderImagePlaceholder(c, node, opacity) {
 
 function jRenderOverlays(c) {
     if (!jState.overlays) return;
+    var brs = jState.boundsRects;
     for (var i = 0; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
         if (!ov.visible) continue;
+        var rot = 0;
+        if (brs && ov._boundsRectIdx >= 0 && ov._boundsRectIdx < brs.length) {
+            rot = brs[ov._boundsRectIdx]._rotation || 0;
+        }
+        if (rot !== 0) {
+            var pbr = brs[ov._boundsRectIdx];
+            var cx = pbr.x + pbr.w / 2;
+            var cy = pbr.y + pbr.h / 2;
+            c.save();
+            c.translate(cx, cy);
+            c.rotate(rot * Math.PI / 180);
+            c.translate(-cx, -cy);
+        }
         jRenderOverlayItem(c, ov, i);
+        if (rot !== 0) c.restore();
     }
 }
 
@@ -1614,13 +1761,116 @@ function jRenderBoundsLayerItem(parent, br, layerId, isExpanded, childCount) {
         });
     })(layerId);
 
+    // Visibility toggle — hides/shows all nodes within this bounds rect
+    var eyeBtn = document.createElement('button');
+    eyeBtn.className = 'icon-btn';
+    var isVisible = br._visible !== false;
+    eyeBtn.textContent = isVisible ? '👁' : '-';
+    eyeBtn.style.marginRight = '2px';
+    (function(b) {
+        eyeBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            b._visible = !(b._visible !== false);
+            jSetChildVisibility(b);
+            jRenderCanvas();
+            jRenderLayerTree();
+        });
+    })(br);
+
+    // Lock toggle — locks/unlocks all nodes within this bounds rect
+    var lockBtn = document.createElement('button');
+    lockBtn.className = 'icon-btn';
+    var isLocked = br._locked === true;
+    lockBtn.textContent = isLocked ? '🔒' : '🔓';
+    lockBtn.style.marginRight = '2px';
+    (function(b) {
+        lockBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            b._locked = !b._locked;
+            jSetChildLocked(b);
+            jRenderLayerTree();
+        });
+    })(br);
+
     var label = document.createElement('span');
     label.className = 'component-label';
-    label.textContent = '[L] ' + br.groupName + ' (' + childCount + ')';
+    var rotDeg = br._rotation || 0;
+    var rotLabel = rotDeg ? ' [' + rotDeg + '°]' : '';
+    label.textContent = '[L] ' + br.groupName + ' (' + childCount + ')' + rotLabel;
+
+    // Rotate buttons
+    var rotCW = document.createElement('button');
+    rotCW.className = 'icon-btn';
+    rotCW.textContent = '↻';
+    rotCW.title = 'Rotate +90°';
+    rotCW.style.marginLeft = '4px';
+    rotCW.style.fontSize = '12px';
+    (function(b) {
+        rotCW.addEventListener('click', function(e) {
+            e.stopPropagation();
+            b._rotation = ((b._rotation || 0) + 90) % 360;
+            jRenderCanvas();
+            jRenderLayerTree();
+        });
+    })(br);
+
+    var rotCCW = document.createElement('button');
+    rotCCW.className = 'icon-btn';
+    rotCCW.textContent = '↺';
+    rotCCW.title = 'Rotate -90°';
+    rotCCW.style.fontSize = '12px';
+    (function(b) {
+        rotCCW.addEventListener('click', function(e) {
+            e.stopPropagation();
+            b._rotation = ((b._rotation || 0) - 90 + 360) % 360;
+            jRenderCanvas();
+            jRenderLayerTree();
+        });
+    })(br);
 
     item.appendChild(toggle);
+    item.appendChild(eyeBtn);
+    item.appendChild(lockBtn);
     item.appendChild(label);
+    item.appendChild(rotCW);
+    item.appendChild(rotCCW);
     parent.appendChild(item);
+}
+
+function jSetChildVisibility(br) {
+    if (!jState.documentTree) return;
+    var visible = br._visible !== false;
+    var allNodes = [];
+    jCollectLeafNodes(jState.documentTree, allNodes);
+    for (var i = 0; i < allNodes.length; i++) {
+        var node = allNodes[i];
+        if (node._isBoundsRect) continue;
+        var b = node.bounds;
+        if (!b) continue;
+        var cx = b.x * PT_TO_MM + (b.width * PT_TO_MM) / 2;
+        var cy = b.y * PT_TO_MM + (b.height * PT_TO_MM) / 2;
+        if (cx >= br.x && cx <= br.x + br.w && cy >= br.y && cy <= br.y + br.h) {
+            node.visible = visible;
+        }
+    }
+}
+
+function jSetChildLocked(br) {
+    if (!jState.documentTree) return;
+    var locked = br._locked === true;
+    var allNodes = [];
+    jCollectLeafNodes(jState.documentTree, allNodes);
+    for (var i = 0; i < allNodes.length; i++) {
+        var node = allNodes[i];
+        if (node._isBoundsRect) continue;
+        var b = node.bounds;
+        if (!b) continue;
+        var cx = b.x * PT_TO_MM + (b.width * PT_TO_MM) / 2;
+        var cy = b.y * PT_TO_MM + (b.height * PT_TO_MM) / 2;
+        if (cx >= br.x && cx <= br.x + br.w && cy >= br.y && cy <= br.y + br.h) {
+            node.locked = locked;
+        }
+    }
 }
 
 function jRenderOverlayTreeItem(parent, ov, ovIdx, depth) {
@@ -1796,11 +2046,22 @@ function jCountDescendants(node) {
 function expandAllLayers() {
     if (!jState || !jState.documentTree) return;
     jExpandAll(jState.documentTree, true);
+    // Also expand bounds rect layers
+    if (jState.boundsRects) {
+        for (var i = 0; i < jState.boundsRects.length; i++) {
+            jState.layerExpanded['__br_' + i] = true;
+        }
+    }
     jRenderLayerTree();
 }
 function collapseAllLayers() {
     if (!jState || !jState.documentTree) return;
     jExpandAll(jState.documentTree, false);
+    if (jState.boundsRects) {
+        for (var i = 0; i < jState.boundsRects.length; i++) {
+            jState.layerExpanded['__br_' + i] = false;
+        }
+    }
     jRenderLayerTree();
 }
 function jExpandAll(nodes, val) {
@@ -1818,11 +2079,21 @@ function jExpandAll(nodes, val) {
 function lockAllLayers() {
     if (!jState || !jState.documentTree) return;
     jSetLockAll(jState.documentTree, true);
+    if (jState.boundsRects) {
+        for (var i = 0; i < jState.boundsRects.length; i++) {
+            jState.boundsRects[i]._locked = true;
+        }
+    }
     jRenderLayerTree();
 }
 function unlockAllLayers() {
     if (!jState || !jState.documentTree) return;
     jSetLockAll(jState.documentTree, false);
+    if (jState.boundsRects) {
+        for (var i = 0; i < jState.boundsRects.length; i++) {
+            jState.boundsRects[i]._locked = false;
+        }
+    }
     jRenderLayerTree();
 }
 function jSetLockAll(nodes, val) {
