@@ -1005,8 +1005,9 @@ function jSnapOverlayToPoints(x, y, w, h, snaps) {
 }
 
 function jStartOverlayDrag(e, idx) {
-    var pos = jScreenToDoc(e.clientX, e.clientY);
     var ov = jState.overlays[idx];
+    var rawPos = jScreenToDoc(e.clientX, e.clientY);
+    var pos = jUnrotatePoint(rawPos.x, rawPos.y, ov._boundsRectIdx);
     var offX = pos.x - ov.x;
     var offY = pos.y - ov.y;
     var constraint = null;
@@ -1015,8 +1016,10 @@ function jStartOverlayDrag(e, idx) {
         constraint = jState.boundsRects[ov._boundsRectIdx];
         snaps = jGetBoundsSnapPoints(constraint);
     }
+    var brIdx = ov._boundsRectIdx;
     var onMove = function(ev) {
-        var p = jScreenToDoc(ev.clientX, ev.clientY);
+        var rawP = jScreenToDoc(ev.clientX, ev.clientY);
+        var p = jUnrotatePoint(rawP.x, rawP.y, brIdx);
         var newX = p.x - offX;
         var newY = p.y - offY;
         if (constraint) {
@@ -1584,11 +1587,12 @@ function jHitTestOverlayHandle(pos) {
     if (!jState || jState.selectedOverlayIdx < 0) return null;
     var ov = jState.overlays[jState.selectedOverlayIdx];
     if (!ov || ov._boundsRectIdx < 0) return null;
+    var tp = jUnrotatePoint(pos.x, pos.y, ov._boundsRectIdx);
     var handles = jGetOverlayHandles(ov.x, ov.y, ov.w, ov.h);
     var hs = HANDLE_SIZE_MM;
     for (var i = 0; i < handles.length; i++) {
-        if (pos.x >= handles[i].x && pos.x <= handles[i].x + hs &&
-            pos.y >= handles[i].y && pos.y <= handles[i].y + hs) {
+        if (tp.x >= handles[i].x && tp.x <= handles[i].x + hs &&
+            tp.y >= handles[i].y && tp.y <= handles[i].y + hs) {
             return handles[i].id;
         }
     }
@@ -1599,13 +1603,16 @@ function jStartOverlayResize(e, idx, handleId) {
     var ov = jState.overlays[idx];
     if (!ov) return;
     var origX = ov.x, origY = ov.y, origW = ov.w, origH = ov.h;
-    var startPos = jScreenToDoc(e.clientX, e.clientY);
+    var brIdx = ov._boundsRectIdx;
+    var rawStart = jScreenToDoc(e.clientX, e.clientY);
+    var startPos = jUnrotatePoint(rawStart.x, rawStart.y, brIdx);
     var constraint = null;
     if (ov._boundsRectIdx >= 0 && jState.boundsRects) {
         constraint = jState.boundsRects[ov._boundsRectIdx];
     }
     var onMove = function(ev) {
-        var p = jScreenToDoc(ev.clientX, ev.clientY);
+        var rawP = jScreenToDoc(ev.clientX, ev.clientY);
+        var p = jUnrotatePoint(rawP.x, rawP.y, brIdx);
         var dx = p.x - startPos.x;
         var dy = p.y - startPos.y;
         if (handleId === 'tl') { ov.x = origX + dx; ov.y = origY + dy; ov.w = origW - dx; ov.h = origH - dy; }
