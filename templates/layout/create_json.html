@@ -146,10 +146,9 @@
                 <h2 class="collapsible-header">LAYERS <span id="layer-count">(0 layers)</span> <span class="collapse-icon">▼</span></h2>
                 <div class="panel-section-body">
                     <div class="component-actions">
-                        <button onclick="expandAllLayers()">Expand All</button>
-                        <button onclick="collapseAllLayers()">Collapse All</button>
-                        <button onclick="lockAllLayers()">Lock All</button>
-                        <button onclick="unlockAllLayers()">Unlock All</button>
+                        <button class="icon-btn" id="layer-toggle-expand" onclick="jToggleAllLayerExpand()" title="Toggle expand/collapse">▶</button>
+                        <button class="icon-btn" id="layer-toggle-visible" onclick="jToggleAllLayerVisible()" title="Toggle all visibility">👁</button>
+                        <button class="icon-btn" id="layer-toggle-lock" onclick="jToggleAllLayerLock()" title="Toggle all lock">🔓</button>
                     </div>
                     <div id="layer-tree">
                         <div class="empty-message">No JSON loaded</div>
@@ -160,6 +159,10 @@
             <div class="panel-section">
                 <h2 class="collapsible-header">OVERLAYS <span id="overlay-count">(0 items)</span> <span class="collapse-icon">▼</span></h2>
                 <div class="panel-section-body">
+                    <div style="display:flex;gap:4px;margin-bottom:4px;">
+                        <button class="icon-btn" id="overlay-toggle-visible" onclick="jToggleAllOverlayVisible()" title="Toggle all visibility">👁</button>
+                        <button class="icon-btn" id="overlay-toggle-lock" onclick="jToggleAllOverlayLock()" title="Toggle all lock">🔓</button>
+                    </div>
                     <div id="overlay-list">
                         <div class="empty-message">No overlays added</div>
                     </div>
@@ -199,6 +202,7 @@
                 <h2 class="collapsible-header">EXPORT OPTIONS <span class="collapse-icon">▼</span></h2>
                 <div class="panel-section-body">
                     <div class="export-buttons">
+                        <button id="btn-export-json" disabled>JSON</button>
                         <button id="btn-export-pdf" disabled>PDF</button>
                         <button id="btn-export-ai-editable" disabled>AI E</button>
                         <button id="btn-export-ai-outlined" disabled>AI O</button>

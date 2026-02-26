@@ -245,6 +245,7 @@ function jSetupButtons() {
     var exportPdfBtn = _jel('btn-export-pdf');
     var exportAiEditableBtn = _jel('btn-export-ai-editable');
     var exportAiOutlinedBtn = _jel('btn-export-ai-outlined');
+    var exportJsonBtn = _jel('btn-export-json');
 
     if (deleteBtn && !deleteBtn._listenerAdded) {
         deleteBtn.addEventListener('click', jDeleteSelected);
@@ -261,6 +262,10 @@ function jSetupButtons() {
     if (exportAiOutlinedBtn && !exportAiOutlinedBtn._listenerAdded) {
         exportAiOutlinedBtn.addEventListener('click', function() { jExportFile('ai-separate', true); });
         exportAiOutlinedBtn._listenerAdded = true;
+    }
+    if (exportJsonBtn && !exportJsonBtn._listenerAdded) {
+        exportJsonBtn.addEventListener('click', jExportJson);
+        exportJsonBtn._listenerAdded = true;
     }
 }
 
@@ -307,6 +312,13 @@ function jParseJsonFile(file) {
     reader.onload = function(e) {
         try {
             var data = JSON.parse(e.target.result);
+
+            // Detect re-imported layout state
+            if (data._exportType === 'layout-state') {
+                jLoadLayoutFromExport(data);
+                return;
+            }
+
             if (!data.version || !data.layers) {
                 alert('Invalid JSON: missing version or layers');
                 return;
@@ -342,9 +354,11 @@ function jParseJsonFile(file) {
             var exportPdf = _jel('btn-export-pdf');
             var exportAiE = _jel('btn-export-ai-editable');
             var exportAiO = _jel('btn-export-ai-outlined');
+            var exportJson = _jel('btn-export-json');
             if (exportPdf) exportPdf.disabled = false;
             if (exportAiE) exportAiE.disabled = false;
             if (exportAiO) exportAiO.disabled = false;
+            if (exportJson) exportJson.disabled = false;
 
             jState.historyStack = [];
             jState.historyIndex = -1;
@@ -603,6 +617,7 @@ function jEditOverlayRegion(ovIdx) {
     if (!jState) return;
     var ov = jState.overlays[ovIdx];
     if (!ov) return;
+    if (ov.locked) return;
     var typeMap = { 'textregion': 'text', 'imageregion': 'image', 'qrcoderegion': 'qrcode', 'barcoderegion': 'barcode' };
     var contentType = typeMap[ov.type];
     if (!contentType) return;
@@ -1032,6 +1047,7 @@ function jSnapOverlayToPoints(x, y, w, h, snaps) {
 
 function jStartOverlayDrag(e, idx) {
     var ov = jState.overlays[idx];
+    if (ov.locked) return;
     var rawPos = jScreenToDoc(e.clientX, e.clientY);
     var pos = jUnrotatePoint(rawPos.x, rawPos.y, ov._boundsRectIdx);
     var offX = pos.x - ov.x;
@@ -1644,6 +1660,7 @@ function jHitTestOverlayHandle(pos) {
 function jStartOverlayResize(e, idx, handleId) {
     var ov = jState.overlays[idx];
     if (!ov) return;
+    if (ov.locked) return;
     var origX = ov.x, origY = ov.y, origW = ov.w, origH = ov.h;
     var brIdx = ov._boundsRectIdx;
     var rawStart = jScreenToDoc(e.clientX, e.clientY);
@@ -1744,7 +1761,7 @@ function jRenderLayerTree() {
         for (var li = 0; li < brs.length; li++) {
             var br = brs[li];
             var layerId = '__br_' + li;
-            var isExpanded = jState.layerExpanded[layerId] !== false;
+            var isExpanded = jState.layerExpanded[layerId] === true;
             var childCount = buckets[li].length;
 
             // Count overlays for this layer
@@ -2021,7 +2038,7 @@ function jRenderTreeNode(parent, node, depth, isPanel) {
         }
     }
     var hasChildren = visibleChildren.length > 0 || (node.paths && node.paths.length > 0);
-    var isExpanded = jState.layerExpanded[node._id] !== false;
+    var isExpanded = jState.layerExpanded[node._id] === true;
 
     // Expand/collapse toggle
     var toggle = document.createElement('span');
@@ -2149,6 +2166,21 @@ function collapseAllLayers() {
     }
     jRenderLayerTree();
 }
+
+function jToggleAllLayerExpand() {
+    if (!jState || !jState.documentTree) return;
+    var anyExpanded = false;
+    for (var key in jState.layerExpanded) {
+        if (jState.layerExpanded[key] === true) { anyExpanded = true; break; }
+    }
+    if (anyExpanded) {
+        collapseAllLayers();
+    } else {
+        expandAllLayers();
+    }
+    var btn = _jel('layer-toggle-expand');
+    if (btn) btn.textContent = anyExpanded ? '▶' : '▼';
+}
 function jExpandAll(nodes, val) {
     for (var i = 0; i < nodes.length; i++) {
         var n = nodes[i];
@@ -2180,6 +2212,61 @@ function unlockAllLayers() {
         }
     }
     jRenderLayerTree();
+}
+
+function jToggleAllLayerVisible() {
+    if (!jState || !jState.documentTree) return;
+    var allVisible = jCheckAllVisible(jState.documentTree);
+    jSetVisibleAll(jState.documentTree, !allVisible);
+    if (jState.boundsRects) {
+        for (var i = 0; i < jState.boundsRects.length; i++) {
+            jState.boundsRects[i]._visible = !allVisible;
+            jSetChildVisibility(jState.boundsRects[i]);
+        }
+    }
+    var btn = _jel('layer-toggle-visible');
+    if (btn) btn.textContent = allVisible ? '-' : '👁';
+    jRenderCanvas();
+    jRenderLayerTree();
+}
+
+function jToggleAllLayerLock() {
+    if (!jState || !jState.documentTree) return;
+    var allLocked = jCheckAllLocked(jState.documentTree);
+    jSetLockAll(jState.documentTree, !allLocked);
+    if (jState.boundsRects) {
+        for (var i = 0; i < jState.boundsRects.length; i++) {
+            jState.boundsRects[i]._locked = !allLocked;
+        }
+    }
+    var btn = _jel('layer-toggle-lock');
+    if (btn) btn.textContent = allLocked ? '🔓' : '🔒';
+    jRenderCanvas();
+    jRenderLayerTree();
+}
+
+function jCheckAllVisible(nodes) {
+    for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].visible === false) return false;
+        if (nodes[i].children && !jCheckAllVisible(nodes[i].children)) return false;
+    }
+    return true;
+}
+
+function jCheckAllLocked(nodes) {
+    for (var i = 0; i < nodes.length; i++) {
+        if (!nodes[i].locked) return false;
+        if (nodes[i].children && !jCheckAllLocked(nodes[i].children)) return false;
+    }
+    return true;
+}
+
+function jSetVisibleAll(nodes, val) {
+    for (var i = 0; i < nodes.length; i++) {
+        nodes[i].visible = val;
+        if (nodes[i].children) jSetVisibleAll(nodes[i].children, val);
+        if (nodes[i].paths) jSetVisibleAll(nodes[i].paths, val);
+    }
 }
 function jSetLockAll(nodes, val) {
     for (var i = 0; i < nodes.length; i++) {
@@ -2217,6 +2304,19 @@ function jRenderOverlayList() {
             eyeBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
                 jState.overlays[idx].visible = !jState.overlays[idx].visible;
+                jRenderCanvas();
+                jRenderOverlayList();
+            });
+        })(i);
+
+        var lockBtn = document.createElement('button');
+        lockBtn.className = 'icon-btn';
+        lockBtn.textContent = ov.locked ? '🔒' : '🔓';
+        lockBtn.title = ov.locked ? 'Unlock' : 'Lock';
+        (function(idx) {
+            lockBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                jState.overlays[idx].locked = !jState.overlays[idx].locked;
                 jRenderCanvas();
                 jRenderOverlayList();
             });
@@ -2268,6 +2368,7 @@ function jRenderOverlayList() {
         })(i);
 
         item.appendChild(eyeBtn);
+        item.appendChild(lockBtn);
         item.appendChild(label);
         item.appendChild(rotCW);
         item.appendChild(rotCCW);
@@ -2282,6 +2383,30 @@ function jRenderOverlayList() {
         })(i);
         list.appendChild(item);
     }
+}
+
+function jToggleAllOverlayVisible() {
+    if (!jState || jState.overlays.length === 0) return;
+    var allVisible = jState.overlays.every(function(ov) { return ov.visible !== false; });
+    for (var i = 0; i < jState.overlays.length; i++) {
+        jState.overlays[i].visible = !allVisible;
+    }
+    var btn = _jel('overlay-toggle-visible');
+    if (btn) btn.textContent = allVisible ? '-' : '👁';
+    jRenderCanvas();
+    jRenderOverlayList();
+}
+
+function jToggleAllOverlayLock() {
+    if (!jState || jState.overlays.length === 0) return;
+    var allLocked = jState.overlays.every(function(ov) { return ov.locked === true; });
+    for (var i = 0; i < jState.overlays.length; i++) {
+        jState.overlays[i].locked = !allLocked;
+    }
+    var btn = _jel('overlay-toggle-lock');
+    if (btn) btn.textContent = allLocked ? '🔓' : '🔒';
+    jRenderCanvas();
+    jRenderOverlayList();
 }
 
 function jUpdateActionButtons() {
@@ -2980,9 +3105,11 @@ function jLoadLayoutFromDatabase(layoutId) {
         var exportPdf = _jel('btn-export-pdf');
         var exportAiE = _jel('btn-export-ai-editable');
         var exportAiO = _jel('btn-export-ai-outlined');
+        var exportJson = _jel('btn-export-json');
         if (exportPdf) exportPdf.disabled = false;
         if (exportAiE) exportAiE.disabled = false;
         if (exportAiO) exportAiO.disabled = false;
+        if (exportJson) exportJson.disabled = false;
 
         jState.historyStack = [];
         jState.historyIndex = -1;
@@ -3051,6 +3178,87 @@ function confirmCustomerSelect() {
 
 // __CONTINUE_HERE_14__
 
+// ─── Export JSON ───
+
+function jExportJson() {
+    if (!jState || !jState.documentTree) return;
+
+    var exportData = {
+        _exportType: 'layout-state',
+        documentTree: jState.documentTree,
+        docMetadata: jState.docMetadata,
+        docSwatches: jState.docSwatches,
+        overlays: jState.overlays,
+        docWidth: jState.docWidth,
+        docHeight: jState.docHeight,
+        scale: jState.scale,
+        edges: jState.edges,
+        boundsRectRotations: (jState.boundsRects || []).map(function(br) { return br._rotation || 0; })
+    };
+
+    var jsonStr = JSON.stringify(exportData, null, 2);
+    var blob = new Blob([jsonStr], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = (jState.currentLayoutName || 'layout') + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function jLoadLayoutFromExport(data) {
+    jState.documentTree = data.documentTree || null;
+    jState.docMetadata = data.docMetadata || null;
+    jState.docSwatches = data.docSwatches || [];
+    jState.overlays = data.overlays || [];
+    jState.docWidth = data.docWidth || 0;
+    jState.docHeight = data.docHeight || 0;
+    jState.scale = data.scale || 1;
+    jState.edges = data.edges || [];
+    jState.selectedOverlayIdx = -1;
+    jState.selectedTreePath = null;
+    jState.currentLayoutId = null;
+    jState.currentLayoutName = null;
+    jState.currentCustomerId = null;
+
+    if (jState.documentTree) {
+        jAssignNodeIds(jState.documentTree, '');
+        jState.boundsRects = [];
+        jCollectBoundsRects(jState.documentTree);
+        var savedRotations = data.boundsRectRotations || [];
+        for (var bi = 0; bi < jState.boundsRects.length && bi < savedRotations.length; bi++) {
+            jState.boundsRects[bi]._rotation = savedRotations[bi] || 0;
+        }
+        for (var oi = 0; oi < jState.overlays.length; oi++) {
+            var ov = jState.overlays[oi];
+            var br = jFindContainingBoundsRect(ov);
+            ov._boundsRectIdx = br ? jState.boundsRects.indexOf(br) : -1;
+        }
+        jMarkDoubledTextNodes(jState.documentTree);
+    }
+
+    var emptyState = _jel('empty-state');
+    if (emptyState) emptyState.style.display = 'none';
+    var exportJson = _jel('btn-export-json');
+    var exportPdf = _jel('btn-export-pdf');
+    var exportAiE = _jel('btn-export-ai-editable');
+    var exportAiO = _jel('btn-export-ai-outlined');
+    if (exportJson) exportJson.disabled = false;
+    if (exportPdf) exportPdf.disabled = false;
+    if (exportAiE) exportAiE.disabled = false;
+    if (exportAiO) exportAiO.disabled = false;
+
+    jState.historyStack = [];
+    jState.historyIndex = -1;
+    jCaptureState();
+    jRenderCanvas();
+    jRenderLayerTree();
+    jRenderOverlayList();
+    jRenderEdgeList();
+}
+
 // ─── Export ───
 
 function jExportFile(type, outlined) {
@@ -3077,6 +3285,23 @@ function jExportFile(type, outlined) {
             }
         }
     }
+
+    // Remove pdfpath components that fall inside an overlay region
+    // (handles cases where original AI text was already outlined as paths)
+    var overlays = jState.overlays || [];
+    components = components.filter(function(comp) {
+        if (comp.type !== 'pdfpath') return true;
+        var cx = comp.x + comp.width / 2;
+        var cy = comp.y + comp.height / 2;
+        for (var oi = 0; oi < overlays.length; oi++) {
+            var ov = overlays[oi];
+            if (ov.type !== 'textregion') continue;
+            if (cx >= ov.x && cx <= ov.x + ov.w && cy >= ov.y && cy <= ov.y + ov.h) {
+                return false;
+            }
+        }
+        return true;
+    });
 
     // Add overlay components
     for (var i = 0; i < jState.overlays.length; i++) {
