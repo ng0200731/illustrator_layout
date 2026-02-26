@@ -460,6 +460,28 @@ function jAutoCreateTextOverlays(nodes) {
     }
 }
 
+function jMarkDoubledTextNodes(nodes) {
+    if (!nodes) return;
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (node.children) jMarkDoubledTextNodes(node.children);
+        if (node.type !== 'text' || !node.bounds) continue;
+        var b = node.bounds;
+        var nx = b.x * PT_TO_MM, ny = b.y * PT_TO_MM;
+        var nw = b.width * PT_TO_MM, nh = b.height * PT_TO_MM;
+        // Check if any overlay covers this text node's region
+        for (var oi = 0; oi < jState.overlays.length; oi++) {
+            var ov = jState.overlays[oi];
+            if (ov.type !== 'textregion') continue;
+            // Match if overlay origin is close to the text node origin
+            if (Math.abs(ov.x - nx) < 1 && Math.abs(ov.y - ny) < 1) {
+                node._isDoubledText = true;
+                break;
+            }
+        }
+    }
+}
+
 // __CONTINUE_HERE_4__
 
 // ─── Canvas Interaction ───
@@ -2949,6 +2971,8 @@ function jLoadLayoutFromDatabase(layoutId) {
                 var br = jFindContainingBoundsRect(ov);
                 ov._boundsRectIdx = br ? jState.boundsRects.indexOf(br) : -1;
             }
+            // Mark document tree text nodes that have overlay replacements
+            jMarkDoubledTextNodes(jState.documentTree);
         }
 
         var emptyState = _jel('empty-state');
@@ -3031,6 +3055,7 @@ function confirmCustomerSelect() {
 
 function jExportFile(type, outlined) {
     if (!jState || !jState.documentTree) return;
+    console.log('jExportFile start:', type, outlined);
 
     // Flatten document tree into components array for export
     var components = [];
@@ -3108,11 +3133,13 @@ function jExportFile(type, outlined) {
     else if (outlined) filename += '_outlined.ai';
     else filename += '_editable.ai';
 
+    console.log('jExportFile: sending fetch to', endpoint, 'components:', components.length);
     fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
     }).then(function(r) {
+        console.log('jExportFile: response status', r.status);
         if (!r.ok) throw new Error('Export failed');
         return r.blob();
     }).then(function(blob) {
@@ -3132,6 +3159,7 @@ function jFlattenForExport(nodes, out, parentOpacity) {
     for (var i = nodes.length - 1; i >= 0; i--) {
         var node = nodes[i];
         if (node._isBoundsRect) continue;
+        if (node._isDoubledText) continue;
         var opacity = parentOpacity * ((node.opacity || 100) / 100);
 
         if (node.children) {

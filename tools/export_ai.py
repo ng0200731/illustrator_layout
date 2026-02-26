@@ -21,9 +21,6 @@ def export_ai(data, outlined=False):
     bounds_rects = data.get('boundsRects', [])
     separate_invisible = data.get('separateInvisible', False)
 
-    print(f"DEBUG export_ai: bounds_rects={bounds_rects}")
-    print(f"DEBUG export_ai: num_components={len(components)}")
-
     page_w = label.get('width', 100) * mm
     page_h = label.get('height', 100) * mm
 
@@ -143,8 +140,6 @@ def _apply_rotation(c, comp, bounds_rects, page_h):
         br_rot = bounds_rects[br_idx].get('rotation', 0)
     ov_rot = comp.get('rotation', 0)
 
-    print(f"DEBUG _apply_rotation: type={comp.get('type')} br_idx={br_idx} br_rot={br_rot} ov_rot={ov_rot}")
-
     if br_rot != 0:
         br = bounds_rects[br_idx]
         # Rotate around bounds rect center (in PDF coords)
@@ -152,7 +147,7 @@ def _apply_rotation(c, comp, bounds_rects, page_h):
         cy = page_h - (br['y'] + br['h'] / 2) * mm
         c.saveState()
         c.translate(cx, cy)
-        c.rotate(-br_rot)  # negative because PDF Y is flipped vs canvas
+        c.rotate(br_rot)  # PDF CCW positive matches canvas CW positive (Y flipped)
         c.translate(-cx, -cy)
 
     if ov_rot != 0:
@@ -161,7 +156,7 @@ def _apply_rotation(c, comp, bounds_rects, page_h):
         oy = page_h - (comp.get('y', 0) + comp.get('height', 0) / 2) * mm
         c.saveState()
         c.translate(ox, oy)
-        c.rotate(-ov_rot)  # negative because PDF Y is flipped vs canvas
+        c.rotate(ov_rot)  # PDF CCW positive matches canvas CW positive (Y flipped)
         c.translate(-ox, -oy)
 
 def _restore_rotation(c, comp, bounds_rects):
@@ -290,15 +285,12 @@ def _draw_text(c, comp, page_h):
         y = first_line_y - (i * line_height)
         if not line:
             continue
-        if letter_spacing and letter_spacing != 0:
-            _draw_text_with_spacing(c, line, x, y, w, font_size, letter_spacing, align_h, resolved_font)
+        if align_h == 'center':
+            c.drawCentredString(x + w / 2, y, line)
+        elif align_h == 'right':
+            c.drawRightString(x + w, y, line)
         else:
-            if align_h == 'center':
-                c.drawCentredString(x + w / 2, y, line)
-            elif align_h == 'right':
-                c.drawRightString(x + w, y, line)
-            else:
-                c.drawString(x, y, line)
+            c.drawString(x, y, line)
 
 def _draw_text_outlined(c, comp, page_h):
     """Draw text as outlined paths"""

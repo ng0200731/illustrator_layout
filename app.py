@@ -51,18 +51,20 @@ def export_ai():
         data = request.get_json()
         outlined = data.get('outlined', False)
 
-        # Debug: Print what we received
-        print(f"DEBUG Flask: outlined={outlined}, separateInvisible={data.get('separateInvisible', False)}")
-
-        # Import export tool
+        # Import export tool (reload to pick up changes)
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tools'))
-        from export_ai import export_ai as generate_ai
+        import importlib
+        import export_ai as _export_ai_mod
+        importlib.reload(_export_ai_mod)
+        generate_ai = _export_ai_mod.export_ai
 
         # Generate AI file (data already contains separateInvisible)
         filepath = generate_ai(data, outlined)
 
         return send_file(filepath, as_attachment=True, download_name='export.ai')
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
