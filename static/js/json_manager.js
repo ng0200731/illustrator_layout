@@ -148,6 +148,15 @@ function jsonInitWithTabPane(tabPane) {
     });
 
     var ctFontSelect = tabPane.querySelector('#ct-font-select');
+
+    // Live preview for QR/barcode inputs
+    ['ct-qr-data', 'ct-barcode-data'].forEach(function(id) {
+        var el = tabPane.querySelector('#' + id);
+        if (el) el.addEventListener('input', function() { jRenderCanvas(); });
+    });
+    var bcFmtSelect = tabPane.querySelector('#ct-barcode-format');
+    if (bcFmtSelect) bcFmtSelect.addEventListener('change', function() { jRenderCanvas(); });
+
     if (ctFontSelect) {
         ctFontSelect.addEventListener('change', function() {
             var opt = ctFontSelect.options[ctFontSelect.selectedIndex];
@@ -467,7 +476,7 @@ function jAutoCreateTextOverlays(nodes) {
             bold: bold, italic: italic, color: color,
             letterSpacing: tracking / 1000 * fontSize,
             alignH: alignment, alignV: 'top',
-            content: content, visible: true, locked: false,
+            content: content, visible: true, locked: false, isVariable: false,
             _boundsRectIdx: boundsRect ? jState.boundsRects.indexOf(boundsRect) : -1
         });
         node._isDoubledText = true;
@@ -486,7 +495,6 @@ function jMarkDoubledTextNodes(nodes) {
         // Check if any overlay covers this text node's region
         for (var oi = 0; oi < jState.overlays.length; oi++) {
             var ov = jState.overlays[oi];
-            if (ov.type !== 'textregion') continue;
             // Match if overlay origin is close to the text node origin
             if (Math.abs(ov.x - nx) < 1 && Math.abs(ov.y - ny) < 1) {
                 node._isDoubledText = true;
@@ -1232,6 +1240,87 @@ function jRenderCanvas() {
     // Render overlays on top (with per-panel rotation)
     jRenderOverlays(c);
 
+    // Live preview for pending content region (image/QR/barcode)
+    if (jState.pendingContentRegion && jState.pendingContentType) {
+        var pr = jState.pendingContentRegion;
+        var pt = jState.pendingContentType;
+        if (pt === 'image') {
+            c.save();
+            c.strokeStyle = '#00aa00';
+            c.lineWidth = 0.5;
+            c.setLineDash([1, 1]);
+            c.strokeRect(pr.x, pr.y, pr.w, pr.h);
+            c.setLineDash([]);
+            c.fillStyle = 'rgba(0, 200, 0, 0.05)';
+            c.fillRect(pr.x, pr.y, pr.w, pr.h);
+            c.beginPath();
+            c.moveTo(pr.x, pr.y); c.lineTo(pr.x + pr.w, pr.y + pr.h);
+            c.moveTo(pr.x + pr.w, pr.y); c.lineTo(pr.x, pr.y + pr.h);
+            c.lineWidth = 0.3;
+            c.stroke();
+            c.restore();
+        } else if (pt === 'qrcode') {
+            c.save();
+            c.strokeStyle = '#00aa00';
+            c.lineWidth = 0.5;
+            c.setLineDash([1, 1]);
+            c.strokeRect(pr.x, pr.y, pr.w, pr.h);
+            c.setLineDash([]);
+            var qrVal = (_jel('ct-qr-data') || {}).value || '';
+            if (qrVal && typeof qrcode === 'function') {
+                try {
+                    var qrPrev = qrcode(0, 'M');
+                    qrPrev.addData(qrVal);
+                    qrPrev.make();
+                    var mc = qrPrev.getModuleCount();
+                    var cw = pr.w / mc, ch = pr.h / mc;
+                    c.fillStyle = '#ffffff';
+                    c.fillRect(pr.x, pr.y, pr.w, pr.h);
+                    c.fillStyle = '#000000';
+                    for (var qri = 0; qri < mc; qri++) {
+                        for (var qci = 0; qci < mc; qci++) {
+                            if (qrPrev.isDark(qri, qci)) {
+                                c.fillRect(pr.x + qci * cw, pr.y + qri * ch, cw, ch);
+                            }
+                        }
+                    }
+                } catch(e) {}
+            } else {
+                c.fillStyle = '#999';
+                c.font = '3px sans-serif';
+                c.textAlign = 'center';
+                c.fillText('QR', pr.x + pr.w / 2, pr.y + pr.h / 2);
+                c.textAlign = 'left';
+            }
+            c.restore();
+        } else if (pt === 'barcode') {
+            c.save();
+            c.strokeStyle = '#00aa00';
+            c.lineWidth = 0.5;
+            c.setLineDash([1, 1]);
+            c.strokeRect(pr.x, pr.y, pr.w, pr.h);
+            c.setLineDash([]);
+            var bcVal = (_jel('ct-barcode-data') || {}).value || '';
+            var bcFmt = (_jel('ct-barcode-format') || {}).value || 'CODE128';
+            if (bcVal && typeof JsBarcode === 'function') {
+                try {
+                    var bcCanvas = document.createElement('canvas');
+                    JsBarcode(bcCanvas, bcVal, {
+                        format: bcFmt, displayValue: false, margin: 0, width: 2, height: 100
+                    });
+                    c.drawImage(bcCanvas, pr.x, pr.y, pr.w, pr.h);
+                } catch(e) {}
+            } else {
+                c.fillStyle = '#999';
+                c.font = '3px sans-serif';
+                c.textAlign = 'center';
+                c.fillText('Barcode', pr.x + pr.w / 2, pr.y + pr.h / 2);
+                c.textAlign = 'left';
+            }
+            c.restore();
+        }
+    }
+
     // Render edges
     jRenderEdges(c);
 
@@ -1590,6 +1679,65 @@ function jRenderOverlayItem(c, ov, idx) {
             c.fillText(lines[li], tx, startY + li * lineHeight);
         }
         c.restore();
+        c.textAlign = 'left';
+    } else if (ov.type === 'imageregion') {
+        // X-cross placeholder
+        c.fillStyle = 'rgba(0, 200, 0, 0.05)';
+        c.fillRect(x, y, w, h);
+        c.beginPath();
+        c.moveTo(x, y); c.lineTo(x + w, y + h);
+        c.moveTo(x + w, y); c.lineTo(x, y + h);
+        c.strokeStyle = isSelected ? '#0066ff' : '#00aa00';
+        c.lineWidth = 0.3;
+        c.stroke();
+    } else if (ov.type === 'qrcoderegion' && ov.qrData) {
+        // Real QR code
+        try {
+            var qr = qrcode(0, 'M');
+            qr.addData(ov.qrData);
+            qr.make();
+            var mCount = qr.getModuleCount();
+            var cellW = w / mCount, cellH = h / mCount;
+            c.fillStyle = '#ffffff';
+            c.fillRect(x, y, w, h);
+            c.fillStyle = '#000000';
+            for (var qr_r = 0; qr_r < mCount; qr_r++) {
+                for (var qr_c = 0; qr_c < mCount; qr_c++) {
+                    if (qr.isDark(qr_r, qr_c)) {
+                        c.fillRect(x + qr_c * cellW, y + qr_r * cellH, cellW, cellH);
+                    }
+                }
+            }
+        } catch(e) {
+            c.fillStyle = '#cc0000';
+            c.font = '3px sans-serif';
+            c.fillText('QR Error', x + 1, y + h / 2);
+        }
+    } else if (ov.type === 'qrcoderegion') {
+        c.fillStyle = '#999';
+        c.font = '3px sans-serif';
+        c.textAlign = 'center';
+        c.fillText('QR', x + w / 2, y + h / 2);
+        c.textAlign = 'left';
+    } else if (ov.type === 'barcoderegion' && ov.barcodeData) {
+        // Real barcode
+        try {
+            var bcCanvas = document.createElement('canvas');
+            JsBarcode(bcCanvas, ov.barcodeData, {
+                format: ov.barcodeFormat || 'CODE128',
+                displayValue: false, margin: 0, width: 2, height: 100
+            });
+            c.drawImage(bcCanvas, x, y, w, h);
+        } catch(e) {
+            c.fillStyle = '#cc0000';
+            c.font = '3px sans-serif';
+            c.fillText('Barcode Error', x + 1, y + h / 2);
+        }
+    } else if (ov.type === 'barcoderegion') {
+        c.fillStyle = '#999';
+        c.font = '3px sans-serif';
+        c.textAlign = 'center';
+        c.fillText('Barcode', x + w / 2, y + h / 2);
         c.textAlign = 'left';
     }
 
@@ -2322,6 +2470,21 @@ function jRenderOverlayList() {
             });
         })(i);
 
+        var varBtn = document.createElement('button');
+        varBtn.className = 'icon-btn' + (ov.isVariable ? ' var-active' : '');
+        varBtn.textContent = ov.isVariable ? '⚡' : '○';
+        varBtn.title = ov.isVariable ? 'Variable (on)' : 'Variable (off)';
+        varBtn.style.fontSize = '10px';
+        (function(idx) {
+            varBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                jState.overlays[idx].isVariable = !jState.overlays[idx].isVariable;
+                jCaptureState();
+                jRenderCanvas();
+                jRenderOverlayList();
+            });
+        })(i);
+
         var label = document.createElement('span');
         label.className = 'component-label';
         var labelMap = {
@@ -2369,6 +2532,7 @@ function jRenderOverlayList() {
 
         item.appendChild(eyeBtn);
         item.appendChild(lockBtn);
+        item.appendChild(varBtn);
         item.appendChild(label);
         item.appendChild(rotCW);
         item.appendChild(rotCCW);
@@ -2452,6 +2616,11 @@ function jOnContentTypeChange() {
     else if (val === 'qrcode') { var f = _jel('ct-form-qrcode'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; if (rotBtns) rotBtns.style.display = ''; }
     else if (val === 'barcode') { var f = _jel('ct-form-barcode'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; if (rotBtns) rotBtns.style.display = ''; }
     else { if (btns) btns.style.display = 'none'; if (rotBtns) rotBtns.style.display = 'none'; }
+
+    if (jState && jState.pendingContentRegion) {
+        jState.pendingContentType = val;
+        jRenderCanvas();
+    }
 }
 
 function applyContentSettings() {
@@ -2467,20 +2636,20 @@ function applyContentSettings() {
             type: 'imageregion', x: region.x, y: region.y, w: region.w, h: region.h,
             imageUrl: (_jel('ct-image-url') || {}).value || '',
             imageFit: (_jel('ct-image-fit') || {}).value || 'contain',
-            visible: true, locked: false
+            visible: true, locked: false, isVariable: false
         };
     } else if (type === 'qrcode') {
         comp = {
             type: 'qrcoderegion', x: region.x, y: region.y, w: region.w, h: region.h,
             qrData: (_jel('ct-qr-data') || {}).value || '',
-            visible: true, locked: false
+            visible: true, locked: false, isVariable: false
         };
     } else if (type === 'barcode') {
         comp = {
             type: 'barcoderegion', x: region.x, y: region.y, w: region.w, h: region.h,
             barcodeData: (_jel('ct-barcode-data') || {}).value || '',
             barcodeFormat: (_jel('ct-barcode-format') || {}).value || 'code128',
-            visible: true, locked: false
+            visible: true, locked: false, isVariable: false
         };
     }
 
@@ -2502,6 +2671,16 @@ function applyContentSettings() {
             comp._boundsRectIdx = br ? jState.boundsRects.indexOf(br) : -1;
             jState.overlays.push(comp);
             jState.selectedOverlayIdx = -1;
+        }
+        // Flash feedback on apply button
+        var applyBtn = _jel('ct-apply');
+        if (applyBtn) {
+            applyBtn.style.background = '#000';
+            applyBtn.style.color = '#fff';
+            setTimeout(function() {
+                applyBtn.style.background = '';
+                applyBtn.style.color = '';
+            }, 300);
         }
     }
 
@@ -2572,7 +2751,7 @@ function jCollectTextData(region) {
         color: color, letterSpacing: letterSpacing,
         alignH: alignH, alignV: alignV,
         content: (_jel('ct-text-value') || {}).value || '',
-        visible: true, locked: false
+        visible: true, locked: false, isVariable: false
     };
 }
 
@@ -2989,7 +3168,34 @@ function saveLayoutToDatabase() {
                     docHeight: jState.docHeight,
                     scale: jState.scale,
                     edges: jState.edges,
-                    boundsRectRotations: (jState.boundsRects || []).map(function(br) { return br._rotation || 0; })
+                    boundsRectRotations: (jState.boundsRects || []).map(function(br) { return br._rotation || 0; }),
+                    components: jState.overlays.map(function(ov) {
+                        return {
+                            type: ov.type,
+                            x: ov.x, y: ov.y, w: ov.w, h: ov.h,
+                            content: ov.content || '',
+                            fontFamily: ov.fontFamily || '',
+                            fontId: ov.fontId || null,
+                            fontSize: ov.fontSize || 12,
+                            bold: ov.bold || false,
+                            italic: ov.italic || false,
+                            color: ov.color || '#000000',
+                            letterSpacing: ov.letterSpacing || 0,
+                            alignH: ov.alignH || 'left',
+                            alignV: ov.alignV || 'top',
+                            visible: ov.visible !== false,
+                            imageUrl: ov.imageUrl || '',
+                            imageFit: ov.imageFit || 'contain',
+                            qrData: ov.qrData || '',
+                            barcodeData: ov.barcodeData || '',
+                            barcodeFormat: ov.barcodeFormat || 'code128',
+                            isVariable: ov.isVariable || false,
+                            rotation: ov._rotation || 0,
+                            boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1
+                        };
+                    }),
+                    label_width: jState.docWidth,
+                    label_height: jState.docHeight
                 },
                 customer_id: customerId
             };
@@ -3183,6 +3389,9 @@ function confirmCustomerSelect() {
 function jExportJson() {
     if (!jState || !jState.documentTree) return;
 
+    var btn = _jel('btn-export-json');
+    if (btn) btn.classList.add('exporting');
+
     var exportData = {
         _exportType: 'layout-state',
         documentTree: jState.documentTree,
@@ -3206,6 +3415,7 @@ function jExportJson() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+    if (btn) btn.classList.remove('exporting');
 }
 
 function jLoadLayoutFromExport(data) {
@@ -3263,6 +3473,11 @@ function jLoadLayoutFromExport(data) {
 
 function jExportFile(type, outlined) {
     if (!jState || !jState.documentTree) return;
+
+    // Show spinner on the clicked button
+    var btnId = type === 'pdf' ? 'btn-export-pdf' : (outlined ? 'btn-export-ai-outlined' : 'btn-export-ai-editable');
+    var btn = _jel(btnId);
+    if (btn) btn.classList.add('exporting');
     console.log('jExportFile start:', type, outlined);
 
     // Flatten document tree into components array for export
@@ -3295,7 +3510,6 @@ function jExportFile(type, outlined) {
         var cy = comp.y + comp.height / 2;
         for (var oi = 0; oi < overlays.length; oi++) {
             var ov = overlays[oi];
-            if (ov.type !== 'textregion') continue;
             if (cx >= ov.x && cx <= ov.x + ov.w && cy >= ov.y && cy <= ov.y + ov.h) {
                 return false;
             }
@@ -3327,7 +3541,8 @@ function jExportFile(type, outlined) {
             barcodeData: ov.barcodeData || '',
             barcodeFormat: ov.barcodeFormat || 'code128',
             rotation: ov._rotation || 0,
-            boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1
+            boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1,
+            isVariable: ov.isVariable || false
         });
     }
 
@@ -3374,7 +3589,9 @@ function jExportFile(type, outlined) {
         a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
+        if (btn) btn.classList.remove('exporting');
     }).catch(function(err) {
+        if (btn) btn.classList.remove('exporting');
         alert('Export error: ' + err.message);
     });
 }

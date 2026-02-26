@@ -43,6 +43,8 @@ def export_pdf(data):
             _draw_pdfpath(c, comp, page_h)
         elif comp_type in ('text', 'textregion'):
             _draw_text(c, comp, page_h)
+        elif comp_type in ('barcoderegion', 'qrcoderegion'):
+            _draw_barcode_or_qr(c, comp, page_h)
 
     c.save()
     return filepath
@@ -145,6 +147,73 @@ def _draw_text(c, comp, page_h):
             c.drawRightString(x + w, y, line)
         else:
             c.drawString(x, y, line)
+
+
+def _draw_barcode_or_qr(c, comp, page_h):
+    """Draw barcode or QR code as vector paths"""
+    comp_type = comp.get('type')
+    x = comp.get('x', 0) * mm
+    w = comp.get('width', 0) * mm
+    h = comp.get('height', 0) * mm
+    comp_y = comp.get('y', 0) * mm
+    y = page_h - comp_y - h
+
+    if comp_type == 'qrcoderegion':
+        qr_data = comp.get('qrData', '')
+        if not qr_data:
+            return
+        try:
+            import qrcode
+            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=1, border=0)
+            qr.add_data(qr_data)
+            qr.make(fit=True)
+            mc = qr.modules_count
+            cw = w / mc
+            ch = h / mc
+            c.setFillColorRGB(1, 1, 1)
+            c.rect(x, y, w, h, fill=1, stroke=0)
+            c.setFillColorRGB(0, 0, 0)
+            for row in range(mc):
+                for col in range(mc):
+                    if qr.modules[row][col]:
+                        rx = x + col * cw
+                        ry = y + h - (row + 1) * ch
+                        c.rect(rx, ry, cw, ch, fill=1, stroke=0)
+        except Exception as e:
+            print(f"Warning: Could not render QR code: {e}")
+
+    elif comp_type == 'barcoderegion':
+        barcode_data = comp.get('barcodeData', '')
+        barcode_format = comp.get('barcodeFormat', 'code128')
+        if not barcode_data:
+            return
+        try:
+            import barcode as python_barcode
+            fmt_map = {
+                'code128': 'code128',
+                'ean13': 'ean13',
+                'code39': 'code39',
+                'upc': 'upca'
+            }
+            fmt = fmt_map.get(barcode_format, 'code128')
+            bc_class = python_barcode.get_barcode_class(fmt)
+            bc = bc_class(barcode_data)
+            encoded = bc.build()
+            if not encoded:
+                return
+            bars = ''.join(encoded)
+            num_modules = len(bars)
+            if num_modules == 0:
+                return
+            bar_w = w / num_modules
+            c.setFillColorRGB(1, 1, 1)
+            c.rect(x, y, w, h, fill=1, stroke=0)
+            c.setFillColorRGB(0, 0, 0)
+            for i, bit in enumerate(bars):
+                if bit == '1':
+                    c.rect(x + i * bar_w, y, bar_w, h, fill=1, stroke=0)
+        except Exception as e:
+            print(f"Warning: Could not render barcode: {e}")
 
 
 def _register_custom_font(font_family, font_id=None):

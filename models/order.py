@@ -2,6 +2,11 @@
 from models.database import execute_query, get_db
 import json
 import copy
+import sys
+import os
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from tools.flatten_tree import flatten_layout_for_export
 
 
 class Order:
@@ -76,14 +81,22 @@ class Order:
         if not row:
             return None
         layout_data = json.loads(dict(row)['data'])
-        if not variable_values:
-            return layout_data
         data = copy.deepcopy(layout_data)
-        for comp in data.get('components', []):
-            if comp.get('isVariable'):
-                idx_key = str(data['components'].index(comp))
-                if idx_key in variable_values:
-                    comp['content'] = variable_values[idx_key]
+        if variable_values:
+            # Apply variable values to components (overlay-only, for variable indexing)
+            for idx, comp in enumerate(data.get('components', [])):
+                if comp.get('isVariable'):
+                    idx_key = str(idx)
+                    if idx_key in variable_values:
+                        comp['content'] = variable_values[idx_key]
+            # Apply to overlays (source of truth for export flattening)
+            for idx, ov in enumerate(data.get('overlays', [])):
+                if ov.get('isVariable'):
+                    idx_key = str(idx)
+                    if idx_key in variable_values:
+                        ov['content'] = variable_values[idx_key]
+        # Build full export-ready payload (flattened tree + overlays with variables applied)
+        data['exportPayload'] = flatten_layout_for_export(data)
         return data
 
     @staticmethod

@@ -68,40 +68,52 @@
         }
 
         var genData = typeof line.generated_data === 'string' ? JSON.parse(line.generated_data) : line.generated_data;
-        var comps = genData.components || [];
 
-        var payload = {
-            label: { width: genData.pdfWidth || genData.label_width || 0, height: genData.pdfHeight || genData.label_height || 0 },
-            components: comps.map(function(c) {
-                return {
-                    type: c.type,
-                    x: c.x,
-                    y: c.y,
-                    width: c.w,
-                    height: c.h,
-                    content: c.content,
-                    fontFamily: c.fontFamily,
-                    fontId: c.fontId || null,
-                    fontSize: c.fontSize,
-                    bold: c.bold || false,
-                    italic: c.italic || false,
-                    color: c.color || '#000000',
-                    letterSpacing: c.letterSpacing || 0,
-                    alignH: c.alignH || 'left',
-                    alignV: c.alignV || 'top',
-                    pathData: c.pathData,
-                    visible: c.visible,
-                    imageUrl: c.imageUrl,
-                    imageFit: c.imageFit,
-                    qrData: c.qrData,
-                    barcodeData: c.barcodeData,
-                    barcodeFormat: c.barcodeFormat,
-                    page: 0
-                };
-            }),
-            outlined: outlined,
-            separateInvisible: true
-        };
+        var payload;
+        if (genData.exportPayload) {
+            // Use pre-built export payload (includes flattened document tree + overlays)
+            payload = genData.exportPayload;
+            payload.outlined = !!outlined;
+            payload.separateInvisible = true;
+        } else {
+            // Fallback for older orders without exportPayload
+            var comps = genData.components || [];
+            payload = {
+                label: { width: genData.pdfWidth || genData.label_width || 0, height: genData.pdfHeight || genData.label_height || 0 },
+                components: comps.map(function(c) {
+                    return {
+                        type: c.type,
+                        x: c.x,
+                        y: c.y,
+                        width: c.w || c.width || 0,
+                        height: c.h || c.height || 0,
+                        content: c.content,
+                        fontFamily: c.fontFamily,
+                        fontId: c.fontId || null,
+                        fontSize: c.fontSize,
+                        bold: c.bold || false,
+                        italic: c.italic || false,
+                        color: c.color || '#000000',
+                        letterSpacing: c.letterSpacing || 0,
+                        alignH: c.alignH || 'left',
+                        alignV: c.alignV || 'top',
+                        pathData: c.pathData,
+                        visible: c.visible,
+                        imageUrl: c.imageUrl,
+                        imageFit: c.imageFit,
+                        qrData: c.qrData,
+                        barcodeData: c.barcodeData,
+                        barcodeFormat: c.barcodeFormat,
+                        rotation: c.rotation || 0,
+                        boundsRectIdx: c.boundsRectIdx != null ? c.boundsRectIdx : -1,
+                        page: 0
+                    };
+                }),
+                boundsRects: [],
+                outlined: !!outlined,
+                separateInvisible: true
+            };
+        }
 
         fetch('/export/ai', {
             method: 'POST',

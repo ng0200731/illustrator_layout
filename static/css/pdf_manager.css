@@ -253,6 +253,35 @@
 
 .pdf-manager-container .export-buttons button {
     flex: 1;
+    position: relative;
+}
+
+.pdf-manager-container .export-buttons button.exporting {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+.pdf-manager-container .export-buttons button.exporting::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border: 2px solid #000;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: export-spin 0.6s linear infinite;
+}
+
+@keyframes export-spin {
+    to { transform: rotate(360deg); }
+}
+
+.pdf-manager-container .icon-btn.var-active {
+    background: #000;
+    color: #fff;
 }
 
 .canvas-controls {

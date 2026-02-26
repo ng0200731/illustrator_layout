@@ -4,6 +4,8 @@ import os
 import tempfile
 import sys
 import math
+import subprocess
+import json
 
 def export_ai(data, outlined=False):
     """
@@ -48,6 +50,8 @@ def export_ai(data, outlined=False):
                     hidden_paths.append(comp)
             elif comp_type in ('text', 'textregion'):
                 text_components.append(comp)
+            elif comp_type in ('barcoderegion', 'qrcoderegion'):
+                text_components.append(comp)
 
         # Debug: Print counts
         print(f"DEBUG: hidden_paths={len(hidden_paths)}, visible_paths={len(visible_paths)}")
@@ -79,10 +83,13 @@ def export_ai(data, outlined=False):
             _draw_pdfpath(c, comp, page_h)
             _restore_rotation(c, comp, bounds_rects)
 
-        # Draw text components
+        # Draw text/barcode/qr components
         for comp in text_components:
             _apply_rotation(c, comp, bounds_rects, page_h)
-            if outlined:
+            comp_type = comp.get('type')
+            if comp_type in ('barcoderegion', 'qrcoderegion'):
+                _draw_barcode_or_qr(c, comp, page_h)
+            elif outlined:
                 _draw_text_outlined(c, comp, page_h)
             else:
                 _draw_text(c, comp, page_h)
@@ -100,6 +107,8 @@ def export_ai(data, outlined=False):
                     _draw_text_outlined(c, comp, page_h)
                 else:
                     _draw_text(c, comp, page_h)
+            elif comp_type in ('barcoderegion', 'qrcoderegion'):
+                _draw_barcode_or_qr(c, comp, page_h)
 
             _restore_rotation(c, comp, bounds_rects)
 
@@ -171,6 +180,76 @@ def _restore_rotation(c, comp, bounds_rects):
         c.restoreState()
     if br_rot != 0:
         c.restoreState()
+
+def _draw_barcode_or_qr(c, comp, page_h):
+    """Draw barcode or QR code as vector paths (not raster)"""
+    comp_type = comp.get('type')
+    x = comp.get('x', 0) * mm
+    w = comp.get('width', 0) * mm
+    h = comp.get('height', 0) * mm
+    comp_y = comp.get('y', 0) * mm
+    y = page_h - comp_y - h  # PDF Y-axis flip
+
+    if comp_type == 'qrcoderegion':
+        qr_data = comp.get('qrData', '')
+        if not qr_data:
+            return
+        try:
+            import qrcode
+            qr = qrcode.QRCode(version=1, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=1, border=0)
+            qr.add_data(qr_data)
+            qr.make(fit=True)
+            mc = qr.modules_count
+            cw = w / mc
+            ch = h / mc
+            # White background
+            c.setFillColorRGB(1, 1, 1)
+            c.rect(x, y, w, h, fill=1, stroke=0)
+            # Black modules as vector rects
+            c.setFillColorRGB(0, 0, 0)
+            for row in range(mc):
+                for col in range(mc):
+                    if qr.modules[row][col]:
+                        rx = x + col * cw
+                        ry = y + h - (row + 1) * ch  # flip row order
+                        c.rect(rx, ry, cw, ch, fill=1, stroke=0)
+        except Exception as e:
+            print(f"Warning: Could not render QR code: {e}")
+
+    elif comp_type == 'barcoderegion':
+        barcode_data = comp.get('barcodeData', '')
+        barcode_format = comp.get('barcodeFormat', 'code128')
+        if not barcode_data:
+            return
+        try:
+            import barcode as python_barcode
+            fmt_map = {
+                'code128': 'code128',
+                'ean13': 'ean13',
+                'code39': 'code39',
+                'upc': 'upca'
+            }
+            fmt = fmt_map.get(barcode_format, 'code128')
+            bc_class = python_barcode.get_barcode_class(fmt)
+            bc = bc_class(barcode_data)
+            encoded = bc.build()
+            if not encoded:
+                return
+            bars = ''.join(encoded)
+            num_modules = len(bars)
+            if num_modules == 0:
+                return
+            bar_w = w / num_modules
+            # White background
+            c.setFillColorRGB(1, 1, 1)
+            c.rect(x, y, w, h, fill=1, stroke=0)
+            # Black bars as vector rects
+            c.setFillColorRGB(0, 0, 0)
+            for i, bit in enumerate(bars):
+                if bit == '1':
+                    c.rect(x + i * bar_w, y, bar_w, h, fill=1, stroke=0)
+        except Exception as e:
+            print(f"Warning: Could not render barcode: {e}")
 
 def _draw_bounds_rects(c, bounds_rects, page_h):
     """Draw green dotted bounds rect borders matching the web app"""
