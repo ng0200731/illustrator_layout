@@ -598,6 +598,8 @@ function jEditOverlayRegion(ovIdx) {
     if (typeSelect) { typeSelect.value = contentType; jOnContentTypeChange(); }
     var btns = _jel('ct-buttons');
     if (btns) btns.style.display = '';
+    var rotBtns = _jel('ct-rotate-buttons');
+    if (rotBtns) rotBtns.style.display = '';
 
     jLoadFontList();
     jPrefillContentForm(contentType, ov);
@@ -670,6 +672,8 @@ function jEditTextNode(node) {
     if (typeSelect) { typeSelect.value = 'text'; jOnContentTypeChange(); }
     var btns = _jel('ct-buttons');
     if (btns) btns.style.display = '';
+    var rotBtns = _jel('ct-rotate-buttons');
+    if (rotBtns) rotBtns.style.display = '';
 
     jLoadFontList(true).then(function() {
         jPrefillContentForm('text', {
@@ -1494,6 +1498,17 @@ function jRenderOverlays(c) {
 function jRenderOverlayItem(c, ov, idx) {
     var x = ov.x, y = ov.y, w = ov.w, h = ov.h;
     var isSelected = idx === jState.selectedOverlayIdx;
+    var ovRot = ov._rotation || 0;
+
+    // Apply overlay's own rotation around its center
+    if (ovRot !== 0) {
+        c.save();
+        var ocx = x + w / 2;
+        var ocy = y + h / 2;
+        c.translate(ocx, ocy);
+        c.rotate(ovRot * Math.PI / 180);
+        c.translate(-ocx, -ocy);
+    }
 
     // Draw region border
     c.save();
@@ -1552,6 +1567,11 @@ function jRenderOverlayItem(c, ov, idx) {
     // Draw 8 resize handles if this overlay is selected and has bounds constraint
     if (isSelected && ov._boundsRectIdx >= 0) {
         jDrawOverlayHandles(c, x, y, w, h);
+    }
+
+    // Close overlay rotation transform
+    if (ovRot !== 0) {
+        c.restore();
     }
 }
 
@@ -1910,11 +1930,47 @@ function jRenderOverlayTreeItem(parent, ov, ovIdx, depth) {
     var labelMap = { 'textregion': 'Text', 'imageregion': 'Image', 'qrcoderegion': 'QR', 'barcoderegion': 'Barcode' };
     var txt = labelMap[ov.type] || ov.type;
     if (ov.type === 'textregion' && ov.content) txt += ': "' + ov.content.substring(0, 15) + '"';
+    var ovRot = ov._rotation || 0;
+    if (ovRot) txt += ' [' + ovRot + '°]';
     label.textContent = '[OV] ' + txt;
+
+    // Rotate buttons for overlay
+    var rotCW = document.createElement('button');
+    rotCW.className = 'icon-btn';
+    rotCW.textContent = '↻';
+    rotCW.title = 'Rotate +90°';
+    rotCW.style.marginLeft = '4px';
+    rotCW.style.fontSize = '12px';
+    (function(idx) {
+        rotCW.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var o = jState.overlays[idx];
+            o._rotation = ((o._rotation || 0) + 90) % 360;
+            jRenderCanvas();
+            jRenderLayerTree();
+        });
+    })(ovIdx);
+
+    var rotCCW = document.createElement('button');
+    rotCCW.className = 'icon-btn';
+    rotCCW.textContent = '↺';
+    rotCCW.title = 'Rotate -90°';
+    rotCCW.style.fontSize = '12px';
+    (function(idx) {
+        rotCCW.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var o = jState.overlays[idx];
+            o._rotation = ((o._rotation || 0) - 90 + 360) % 360;
+            jRenderCanvas();
+            jRenderLayerTree();
+        });
+    })(ovIdx);
 
     item.appendChild(icon);
     item.appendChild(eyeBtn);
     item.appendChild(label);
+    item.appendChild(rotCW);
+    item.appendChild(rotCCW);
     (function(idx) {
         item.addEventListener('click', function() {
             jState.selectedOverlayIdx = idx;
@@ -2152,10 +2208,47 @@ function jRenderOverlayList() {
             'qrcoderegion': 'QR: ' + (ov.qrData || '').substring(0, 15),
             'barcoderegion': 'Barcode: ' + (ov.barcodeData || '').substring(0, 15)
         };
-        label.textContent = labelMap[ov.type] || ov.type;
+        var ovRot = ov._rotation || 0;
+        var rotSuffix = ovRot ? ' [' + ovRot + '°]' : '';
+        label.textContent = (labelMap[ov.type] || ov.type) + rotSuffix;
+
+        var rotCW = document.createElement('button');
+        rotCW.className = 'icon-btn';
+        rotCW.textContent = '↻';
+        rotCW.title = 'Rotate +90°';
+        rotCW.style.marginLeft = '4px';
+        rotCW.style.fontSize = '12px';
+        (function(idx) {
+            rotCW.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var o = jState.overlays[idx];
+                o._rotation = ((o._rotation || 0) + 90) % 360;
+                jRenderCanvas();
+                jRenderOverlayList();
+                jRenderLayerTree();
+            });
+        })(i);
+
+        var rotCCW = document.createElement('button');
+        rotCCW.className = 'icon-btn';
+        rotCCW.textContent = '↺';
+        rotCCW.title = 'Rotate -90°';
+        rotCCW.style.fontSize = '12px';
+        (function(idx) {
+            rotCCW.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var o = jState.overlays[idx];
+                o._rotation = ((o._rotation || 0) - 90 + 360) % 360;
+                jRenderCanvas();
+                jRenderOverlayList();
+                jRenderLayerTree();
+            });
+        })(i);
 
         item.appendChild(eyeBtn);
         item.appendChild(label);
+        item.appendChild(rotCW);
+        item.appendChild(rotCCW);
         (function(idx) {
             item.addEventListener('click', function() {
                 jState.selectedOverlayIdx = idx;
@@ -2184,6 +2277,17 @@ function jDeleteSelected() {
     jUpdateActionButtons();
 }
 
+function rotateSelectedOverlay(deg) {
+    var idx = jState.editingComponentIdx;
+    if (idx < 0 || idx >= jState.overlays.length) return;
+    jCaptureState();
+    var o = jState.overlays[idx];
+    o._rotation = ((o._rotation || 0) + deg + 360) % 360;
+    jRenderCanvas();
+    jRenderOverlayList();
+    jRenderLayerTree();
+}
+
 // ─── Content Type Handling ───
 
 function jOnContentTypeChange() {
@@ -2195,11 +2299,12 @@ function jOnContentTypeChange() {
         if (el) el.style.display = 'none';
     });
     var btns = _jel('ct-buttons');
-    if (val === 'text') { var f = _jel('ct-form-text'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; }
-    else if (val === 'image') { var f = _jel('ct-form-image'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; }
-    else if (val === 'qrcode') { var f = _jel('ct-form-qrcode'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; }
-    else if (val === 'barcode') { var f = _jel('ct-form-barcode'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; }
-    else { if (btns) btns.style.display = 'none'; }
+    var rotBtns = _jel('ct-rotate-buttons');
+    if (val === 'text') { var f = _jel('ct-form-text'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; if (rotBtns) rotBtns.style.display = ''; }
+    else if (val === 'image') { var f = _jel('ct-form-image'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; if (rotBtns) rotBtns.style.display = ''; }
+    else if (val === 'qrcode') { var f = _jel('ct-form-qrcode'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; if (rotBtns) rotBtns.style.display = ''; }
+    else if (val === 'barcode') { var f = _jel('ct-form-barcode'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; if (rotBtns) rotBtns.style.display = ''; }
+    else { if (btns) btns.style.display = 'none'; if (rotBtns) rotBtns.style.display = 'none'; }
 }
 
 function applyContentSettings() {
@@ -2241,6 +2346,7 @@ function applyContentSettings() {
             comp.x = existing.x; comp.y = existing.y;
             comp.w = existing.w; comp.h = existing.h;
             comp._boundsRectIdx = existing._boundsRectIdx;
+            comp._rotation = existing._rotation || 0;
             jState.overlays[jState.editingComponentIdx] = comp;
             jState.selectedOverlayIdx = -1;
         } else {
@@ -2261,6 +2367,8 @@ function applyContentSettings() {
     if (picker) picker.style.display = 'none';
     var btns = _jel('ct-buttons');
     if (btns) btns.style.display = 'none';
+    var rotBtns = _jel('ct-rotate-buttons');
+    if (rotBtns) rotBtns.style.display = 'none';
     ['ct-form-text', 'ct-form-image', 'ct-form-qrcode', 'ct-form-barcode'].forEach(function(id) {
         var el = _jel(id); if (el) el.style.display = 'none';
     });
@@ -2281,6 +2389,8 @@ function cancelContentSettings() {
     if (picker) picker.style.display = 'none';
     var btns = _jel('ct-buttons');
     if (btns) btns.style.display = 'none';
+    var rotBtns = _jel('ct-rotate-buttons');
+    if (rotBtns) rotBtns.style.display = 'none';
     ['ct-form-text', 'ct-form-image', 'ct-form-qrcode', 'ct-form-barcode'].forEach(function(id) {
         var el = _jel(id); if (el) el.style.display = 'none';
     });
@@ -2731,7 +2841,8 @@ function saveLayoutToDatabase() {
                     docWidth: jState.docWidth,
                     docHeight: jState.docHeight,
                     scale: jState.scale,
-                    edges: jState.edges
+                    edges: jState.edges,
+                    boundsRectRotations: (jState.boundsRects || []).map(function(br) { return br._rotation || 0; })
                 },
                 customer_id: customerId
             };
@@ -2824,6 +2935,20 @@ function jLoadLayoutFromDatabase(layoutId) {
 
         if (jState.documentTree) {
             jAssignNodeIds(jState.documentTree, '');
+            // Re-collect bounds rects so overlay constraints work
+            jState.boundsRects = [];
+            jCollectBoundsRects(jState.documentTree);
+            // Restore bounds rect rotations from saved data
+            var savedRotations = data.boundsRectRotations || [];
+            for (var bi = 0; bi < jState.boundsRects.length && bi < savedRotations.length; bi++) {
+                jState.boundsRects[bi]._rotation = savedRotations[bi] || 0;
+            }
+            // Re-assign _boundsRectIdx for overlays based on coordinates
+            for (var oi = 0; oi < jState.overlays.length; oi++) {
+                var ov = jState.overlays[oi];
+                var br = jFindContainingBoundsRect(ov);
+                ov._boundsRectIdx = br ? jState.boundsRects.indexOf(br) : -1;
+            }
         }
 
         var emptyState = _jel('empty-state');
@@ -2911,6 +3036,23 @@ function jExportFile(type, outlined) {
     var components = [];
     jFlattenForExport(jState.documentTree, components, 1.0);
 
+    // Assign boundsRectIdx to flattened components based on center point
+    var brs = jState.boundsRects || [];
+    for (var ci = 0; ci < components.length; ci++) {
+        var comp = components[ci];
+        if (comp._isBoundsRect) continue;
+        var ccx = comp.x + comp.width / 2;
+        var ccy = comp.y + comp.height / 2;
+        comp.boundsRectIdx = -1;
+        for (var bi = 0; bi < brs.length; bi++) {
+            var tbr = brs[bi];
+            if (ccx >= tbr.x && ccx <= tbr.x + tbr.w && ccy >= tbr.y && ccy <= tbr.y + tbr.h) {
+                comp.boundsRectIdx = bi;
+                break;
+            }
+        }
+    }
+
     // Add overlay components
     for (var i = 0; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
@@ -2933,14 +3075,29 @@ function jExportFile(type, outlined) {
             imageFit: ov.imageFit || 'contain',
             qrData: ov.qrData || '',
             barcodeData: ov.barcodeData || '',
-            barcodeFormat: ov.barcodeFormat || 'code128'
+            barcodeFormat: ov.barcodeFormat || 'code128',
+            rotation: ov._rotation || 0,
+            boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1
         });
+    }
+
+    // Build boundsRects info for export (rotation + geometry)
+    var exportBoundsRects = [];
+    if (jState.boundsRects) {
+        for (var bi = 0; bi < jState.boundsRects.length; bi++) {
+            var br = jState.boundsRects[bi];
+            exportBoundsRects.push({
+                x: br.x, y: br.y, w: br.w, h: br.h,
+                rotation: br._rotation || 0
+            });
+        }
     }
 
     var separateInvisible = type === 'ai-separate';
     var data = {
         label: { width: jState.docWidth, height: jState.docHeight },
         components: components,
+        boundsRects: exportBoundsRects,
         outlined: !!outlined,
         separateInvisible: separateInvisible
     };
@@ -2974,6 +3131,7 @@ function jFlattenForExport(nodes, out, parentOpacity) {
     if (!nodes) return;
     for (var i = nodes.length - 1; i >= 0; i--) {
         var node = nodes[i];
+        if (node._isBoundsRect) continue;
         var opacity = parentOpacity * ((node.opacity || 100) / 100);
 
         if (node.children) {

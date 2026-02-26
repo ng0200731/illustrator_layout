@@ -5,7 +5,8 @@
       "Bash(if not exist \".tmp\" mkdir .tmp)",
       "Bash(git checkout:*)",
       "Bash(find \"/d/project/illustrator-layout/static/js\" -name \"*.js\" -exec wc -l {} +)",
-      "Bash(claude mcp add context7 -- npx -y @upstash/context7-mcp@latest)"
+      "Bash(claude mcp add context7 -- npx -y @upstash/context7-mcp@latest)",
+      "Bash(find /d/project/illustrator-layout/templates -name \"*.html\" -exec grep -l \"overlay\\\\|panel\\\\|region\" {} ;)"
     ]
   }
 }

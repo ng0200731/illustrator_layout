@@ -3,6 +3,7 @@ from reportlab.lib.units import mm
 import os
 import tempfile
 import sys
+import math
 
 def export_ai(data, outlined=False):
     """
@@ -17,7 +18,11 @@ def export_ai(data, outlined=False):
     """
     label = data.get('label', {})
     components = data.get('components', [])
+    bounds_rects = data.get('boundsRects', [])
     separate_invisible = data.get('separateInvisible', False)
+
+    print(f"DEBUG export_ai: bounds_rects={bounds_rects}")
+    print(f"DEBUG export_ai: num_components={len(components)}")
 
     page_w = label.get('width', 100) * mm
     page_h = label.get('height', 100) * mm
@@ -52,7 +57,9 @@ def export_ai(data, outlined=False):
 
         # Draw hidden paths first (bottom of Layers panel in Illustrator)
         for comp in hidden_paths:
+            _apply_rotation(c, comp, bounds_rects, page_h)
             _draw_pdfpath(c, comp, page_h)
+            _restore_rotation(c, comp, bounds_rects)
 
         # Draw red separator line (helps identify hidden/visible boundary)
         if len(hidden_paths) > 0 and len(visible_paths) > 0:
@@ -71,18 +78,23 @@ def export_ai(data, outlined=False):
 
         # Draw visible paths (top of Layers panel in Illustrator)
         for comp in visible_paths:
+            _apply_rotation(c, comp, bounds_rects, page_h)
             _draw_pdfpath(c, comp, page_h)
+            _restore_rotation(c, comp, bounds_rects)
 
         # Draw text components
         for comp in text_components:
+            _apply_rotation(c, comp, bounds_rects, page_h)
             if outlined:
                 _draw_text_outlined(c, comp, page_h)
             else:
                 _draw_text(c, comp, page_h)
+            _restore_rotation(c, comp, bounds_rects)
     else:
         # Normal export: draw all components (including invisible ones)
         for comp in components:
             comp_type = comp.get('type')
+            _apply_rotation(c, comp, bounds_rects, page_h)
 
             if comp_type == 'pdfpath':
                 _draw_pdfpath(c, comp, page_h)
@@ -91,6 +103,11 @@ def export_ai(data, outlined=False):
                     _draw_text_outlined(c, comp, page_h)
                 else:
                     _draw_text(c, comp, page_h)
+
+            _restore_rotation(c, comp, bounds_rects)
+
+    # Draw bounds rect borders (green dotted lines)
+    _draw_bounds_rects(c, bounds_rects, page_h)
 
     # Embed full fonts (not subsetted) so Illustrator can match local fonts
     # Only for fonts under 2MB to avoid huge file sizes
@@ -117,6 +134,64 @@ def export_ai(data, outlined=False):
     else:
         c.save()
     return filepath
+
+def _apply_rotation(c, comp, bounds_rects, page_h):
+    """Apply bounds rect rotation + overlay rotation, matching canvas logic"""
+    br_idx = comp.get('boundsRectIdx', -1)
+    br_rot = 0
+    if 0 <= br_idx < len(bounds_rects):
+        br_rot = bounds_rects[br_idx].get('rotation', 0)
+    ov_rot = comp.get('rotation', 0)
+
+    print(f"DEBUG _apply_rotation: type={comp.get('type')} br_idx={br_idx} br_rot={br_rot} ov_rot={ov_rot}")
+
+    if br_rot != 0:
+        br = bounds_rects[br_idx]
+        # Rotate around bounds rect center (in PDF coords)
+        cx = (br['x'] + br['w'] / 2) * mm
+        cy = page_h - (br['y'] + br['h'] / 2) * mm
+        c.saveState()
+        c.translate(cx, cy)
+        c.rotate(-br_rot)  # negative because PDF Y is flipped vs canvas
+        c.translate(-cx, -cy)
+
+    if ov_rot != 0:
+        # Rotate around overlay center (in PDF coords)
+        ox = (comp.get('x', 0) + comp.get('width', 0) / 2) * mm
+        oy = page_h - (comp.get('y', 0) + comp.get('height', 0) / 2) * mm
+        c.saveState()
+        c.translate(ox, oy)
+        c.rotate(-ov_rot)  # negative because PDF Y is flipped vs canvas
+        c.translate(-ox, -oy)
+
+def _restore_rotation(c, comp, bounds_rects):
+    """Restore canvas state after rotation"""
+    ov_rot = comp.get('rotation', 0)
+    br_idx = comp.get('boundsRectIdx', -1)
+    br_rot = 0
+    if 0 <= br_idx < len(bounds_rects):
+        br_rot = bounds_rects[br_idx].get('rotation', 0)
+
+    if ov_rot != 0:
+        c.restoreState()
+    if br_rot != 0:
+        c.restoreState()
+
+def _draw_bounds_rects(c, bounds_rects, page_h):
+    """Draw green dotted bounds rect borders matching the web app"""
+    if not bounds_rects:
+        return
+    for br in bounds_rects:
+        x = br['x'] * mm
+        y = page_h - (br['y'] + br['h']) * mm
+        w = br['w'] * mm
+        h = br['h'] * mm
+        c.saveState()
+        c.setStrokeColorRGB(0, 0, 0)  # black like canvas
+        c.setLineWidth(0.3 * mm)
+        c.setDash(1.5 * mm, 1 * mm)
+        c.rect(x, y, w, h, fill=0, stroke=1)
+        c.restoreState()
 
 def _draw_pdfpath(c, comp, page_h):
     """Draw PDF path component"""
@@ -197,7 +272,7 @@ def _draw_text(c, comp, page_h):
 
     # Split into lines for multi-line support
     lines = content.split('\n')
-    line_height = font_size * 1.2  # match canvas lineHeight
+    line_height = font_size * 1.2 + letter_spacing  # match canvas: fontSize * 1.2 + letterSpacing
 
     # Calculate vertical start based on alignV
     total_text_h = len(lines) * line_height
@@ -247,7 +322,8 @@ def _draw_text_outlined(c, comp, page_h):
 
     # Split into lines for multi-line support
     lines = content.split('\n')
-    line_height_mm = font_size * 0.3528 * 1.2  # points to mm, match canvas lineHeight
+    letter_spacing = comp.get('letterSpacing', 0)
+    line_height_mm = font_size * 0.3528 * 1.2 + letter_spacing * 0.3528  # match canvas: fontSizeMm * 1.2 + letterSpacing * PT_TO_MM
     total_text_h = len(lines) * line_height_mm
 
     # Calculate vertical start for first line baseline
