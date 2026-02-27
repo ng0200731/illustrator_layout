@@ -369,6 +369,7 @@ function jParseJsonFile(file) {
             jState.boundsRects = [];
             jCollectBoundsRects(jState.documentTree);
             jAutoCreateTextOverlays(jState.documentTree);
+            jLoadOverlayFonts();
 
             // Hide empty state, enable export
             var emptyState = _jel('empty-state');
@@ -795,8 +796,9 @@ function jEditOverlayRegion(ovIdx) {
     var rotBtns = _jel('ct-rotate-buttons');
     if (rotBtns) rotBtns.style.display = '';
 
-    jLoadFontList();
-    jPrefillContentForm(contentType, ov);
+    jLoadFontList().then(function() {
+        jPrefillContentForm(contentType, ov);
+    });
     jAttachContentPreviewListeners();
     var aiFontRow = _jel('ct-ai-font-row');
     if (aiFontRow) aiFontRow.style.display = 'none';
@@ -965,33 +967,39 @@ function jPrefillContentForm(type, data) {
         // Select matching font in dropdown
         var fontSelect = _jel('ct-font-select');
         if (fontSelect && (data.fontId || data.fontFamily)) {
-            var selectFont = function() {
-                if (!fontSelect) return;
-                // Try by fontId first
-                if (data.fontId) {
-                    for (var fi = 0; fi < fontSelect.options.length; fi++) {
-                        if (fontSelect.options[fi].value == data.fontId) {
-                            fontSelect.selectedIndex = fi;
-                            return;
-                        }
+            var found = false;
+            // Try by fontId first
+            if (data.fontId) {
+                for (var fi = 0; fi < fontSelect.options.length; fi++) {
+                    if (fontSelect.options[fi].value == data.fontId) {
+                        fontSelect.selectedIndex = fi;
+                        found = true;
+                        break;
                     }
                 }
-                // Fallback: match by fontFamily name
-                if (data.fontFamily) {
-                    var normalizedName = data.fontFamily.toLowerCase().replace(/[\s\-_]/g, '');
-                    for (var fi = 0; fi < fontSelect.options.length; fi++) {
-                        var optName = (fontSelect.options[fi].dataset.fontName || '').toLowerCase().replace(/[\s\-_]/g, '');
-                        if (optName && (optName === normalizedName || optName.indexOf(normalizedName) >= 0 || normalizedName.indexOf(optName) >= 0)) {
-                            fontSelect.selectedIndex = fi;
-                            return;
-                        }
+            }
+            // Fallback: match by fontFamily name (exact normalized match only)
+            if (!found && data.fontFamily) {
+                var normalizedName = data.fontFamily.toLowerCase().replace(/[\s\-_]/g, '');
+                for (var fi = 0; fi < fontSelect.options.length; fi++) {
+                    var optName = (fontSelect.options[fi].dataset.fontName || '').toLowerCase().replace(/[\s\-_]/g, '');
+                    if (optName && optName === normalizedName) {
+                        fontSelect.selectedIndex = fi;
+                        found = true;
+                        break;
                     }
                 }
-            };
-            // Font list may still be loading, try now and retry after delays
-            selectFont();
-            setTimeout(selectFont, 500);
-            setTimeout(selectFont, 1500);
+            }
+            // If not found, add a placeholder option so dropdown doesn't default to wrong font
+            if (!found && data.fontFamily) {
+                var placeholder = document.createElement('option');
+                placeholder.value = '';
+                placeholder.textContent = data.fontFamily + ' (not available)';
+                placeholder.dataset.fontName = data.fontFamily;
+                placeholder.disabled = true;
+                fontSelect.insertBefore(placeholder, fontSelect.firstChild);
+                fontSelect.selectedIndex = 0;
+            }
         }
 
         // Show AI Font name from Illustrator
@@ -1032,7 +1040,7 @@ function jCheckAiFontAvailability(aiFontName) {
         for (var i = 0; i < fontSelect.options.length; i++) {
             var opt = fontSelect.options[i];
             var optName = (opt.dataset.fontName || opt.textContent || '').toLowerCase().replace(/[\s\-_]/g, '');
-            if (optName && (optName.indexOf(normalizedAi) >= 0 || normalizedAi.indexOf(optName) >= 0)) {
+            if (optName && optName === normalizedAi) {
                 found = true;
                 matchIdx = i;
                 break;
@@ -1624,8 +1632,14 @@ function jRenderCanvas() {
             if (textVal) {
                 var fontSize = parseFloat((_jel('ct-font-size') || {}).value) || 12;
                 var fontPt = fontSize * 0.3528;
+                var fontSelect = _jel('ct-font-select');
+                var fontName = 'sans-serif';
+                if (fontSelect && fontSelect.options[fontSelect.selectedIndex]) {
+                    var fn = fontSelect.options[fontSelect.selectedIndex].dataset.fontName;
+                    if (fn) fontName = "'" + fn + "', sans-serif";
+                }
                 c.fillStyle = (_jel('ct-color') || {}).value || '#000';
-                c.font = fontPt + 'px sans-serif';
+                c.font = fontPt + 'px ' + fontName;
                 c.textBaseline = 'top';
                 c.save();
                 c.beginPath();
@@ -3931,6 +3945,56 @@ function jLoadFontForCanvas(fontId, fontName) {
 
 // Load font list into select (filtered by customer if selected)
 // Returns a promise that resolves when fonts are loaded
+function jLoadOverlayFonts() {
+    if (!jState || !jState.overlays || jState.overlays.length === 0) return;
+    var url = jState.currentCustomerId ? '/font/list/' + encodeURIComponent(jState.currentCustomerId) : '/font/list';
+    fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+        if (!data.success || !data.fonts) return;
+        var fonts = data.fonts;
+        var missingFonts = {};
+        for (var i = 0; i < jState.overlays.length; i++) {
+            var ov = jState.overlays[i];
+            if (ov.type !== 'textregion' || !ov.fontFamily) continue;
+            var normalizedOv = ov.fontFamily.toLowerCase().replace(/[\s\-_]/g, '');
+            var found = false;
+            for (var fi = 0; fi < fonts.length; fi++) {
+                var f = fonts[fi];
+                var normalizedF = f.font_name.toLowerCase().replace(/[\s\-_]/g, '');
+                if (normalizedF === normalizedOv) {
+                    ov.fontFamily = f.font_name;
+                    ov.fontId = f.id;
+                    jLoadFontForCanvas(f.id, f.font_name);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                missingFonts[ov.fontFamily] = true;
+            }
+        }
+        var missingList = Object.keys(missingFonts);
+        if (missingList.length > 0) {
+            jShowMissingFontWarning(missingList);
+        }
+    }).catch(function() {});
+}
+
+function jShowMissingFontWarning(missingList) {
+    var modal = _jel('missing-font-modal');
+    var list = _jel('missing-font-list');
+    if (!modal || !list) {
+        alert('Missing fonts: ' + missingList.join(', ') + '\nPlease replace with a customer font.');
+        return;
+    }
+    list.innerHTML = '';
+    for (var i = 0; i < missingList.length; i++) {
+        var li = document.createElement('li');
+        li.textContent = missingList[i];
+        list.appendChild(li);
+    }
+    modal.style.display = 'flex';
+}
+
 function jLoadFontList(forceReload) {
     var sel = _jel('ct-font-select');
     if (!sel) return Promise.resolve();

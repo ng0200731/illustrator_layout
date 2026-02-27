@@ -282,4 +282,16 @@
         </div>
     </div>
 
+    <!-- Missing Font Modal -->
+    <div id="missing-font-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content">
+            <h2>Missing Fonts</h2>
+            <p style="margin:8px 0;line-height:1.5;">The following fonts from the Illustrator file are not available in the customer font list. Please replace them with a customer font.</p>
+            <ul id="missing-font-list" style="margin:8px 0;padding-left:20px;"></ul>
+            <div class="modal-buttons">
+                <button type="button" class="btn-primary" onclick="document.getElementById('missing-font-modal').style.display='none'">OK</button>
+            </div>
+        </div>
+    </div>
+
 </div>
