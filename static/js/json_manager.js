@@ -12,6 +12,9 @@ function getJCanvasState(c) {
             overlays: [],
             selectedOverlayIdx: -1,
             selectedTreePath: null,
+            selectedTreePaths: {},
+            lastClickedTreePath: null,
+            selectedTreePanelId: null,
             scale: 1,
             pan: { x: 0, y: 0, zoom: 1, dragging: false, startX: 0, startY: 0, spaceDown: false },
             dragState: { active: false, startX: 0, startY: 0, overlayIdx: -1 },
@@ -52,6 +55,8 @@ function getJCanvasState(c) {
             addOverlayStep: null,
             addOverlaySelectedBRIdx: -1,
             addOverlayDraw: null,
+            addOverlaySnapPoint: null,
+            addOverlayHoverPoint: null,
             _addOverlayBRIdx: -1
         });
     }
@@ -346,6 +351,9 @@ function jParseJsonFile(file) {
             jState.edges = [];
             jState.selectedOverlayIdx = -1;
             jState.selectedTreePath = null;
+            jState.selectedTreePaths = {};
+            jState.lastClickedTreePath = null;
+            jState.selectedTreePanelId = null;
 
             // Compute scale to fit canvas
             var container = _jel('canvas-container');
@@ -398,6 +406,93 @@ function jAssignNodeIds(nodes, prefix) {
             for (var j = 0; j < node.paths.length; j++) {
                 node.paths[j]._id = node._id + '-p' + j;
             }
+        }
+    }
+}
+
+function jFindNodeByIdInTree(nodes, id) {
+    if (!nodes) return null;
+    for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i]._id === id) return nodes[i];
+        if (nodes[i].children) {
+            var found = jFindNodeByIdInTree(nodes[i].children, id);
+            if (found) return found;
+        }
+        if (nodes[i].paths) {
+            for (var j = 0; j < nodes[i].paths.length; j++) {
+                if (nodes[i].paths[j]._id === id) return nodes[i].paths[j];
+            }
+        }
+    }
+    return null;
+}
+
+function jFindParentOfNode(nodes, id, parent) {
+    if (!nodes) return null;
+    for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i]._id === id) return { parent: parent, index: i, array: nodes };
+        if (nodes[i].children) {
+            var found = jFindParentOfNode(nodes[i].children, id, nodes[i]);
+            if (found) return found;
+        }
+        if (nodes[i].paths) {
+            for (var j = 0; j < nodes[i].paths.length; j++) {
+                if (nodes[i].paths[j]._id === id) return { parent: nodes[i], index: j, array: nodes[i].paths };
+            }
+        }
+    }
+    return null;
+}
+
+function jGetPanelNodeIds(panelId) {
+    if (!panelId) return [];
+    var brIdx = parseInt(panelId.replace('__br_', ''));
+    var brs = jState.boundsRects;
+    if (!brs || brIdx < 0 || brIdx >= brs.length) return [];
+    var br = brs[brIdx];
+    var allNodes = [];
+    jCollectDisplayNodes(jState.documentTree, allNodes);
+    var ids = [];
+    for (var i = 0; i < allNodes.length; i++) {
+        var node = allNodes[i];
+        if (node._isBoundsRect) continue;
+        var b = node.bounds;
+        if (!b && node._isUserGroup && node.children && node.children.length > 0) {
+            b = node.children[0].bounds;
+        }
+        if (!b) continue;
+        var cx = b.x * PT_TO_MM + (b.width * PT_TO_MM) / 2;
+        var cy = b.y * PT_TO_MM + (b.height * PT_TO_MM) / 2;
+        if (cx >= br.x && cx <= br.x + br.w && cy >= br.y && cy <= br.y + br.h) {
+            ids.push(node._id);
+        }
+    }
+    return ids;
+}
+
+function jGetNodeRange(panelId, fromId, toId) {
+    var orderedIds = jGetPanelNodeIds(panelId);
+    var fromIdx = -1, toIdx = -1;
+    for (var i = 0; i < orderedIds.length; i++) {
+        if (orderedIds[i] === fromId) fromIdx = i;
+        if (orderedIds[i] === toId) toIdx = i;
+    }
+    if (fromIdx < 0 || toIdx < 0) return [toId];
+    var lo = Math.min(fromIdx, toIdx), hi = Math.max(fromIdx, toIdx);
+    return orderedIds.slice(lo, hi + 1);
+}
+
+function jCollectDisplayNodes(nodes, out) {
+    if (!nodes) return;
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (node._isBoundsRect) continue;
+        if (node._isUserGroup) {
+            out.push(node);
+        } else if (node.children) {
+            jCollectDisplayNodes(node.children, out);
+        } else if (node.type === 'path' || node.type === 'compoundPath' || node.type === 'text' || node.type === 'image') {
+            out.push(node);
         }
     }
 }
@@ -520,19 +615,65 @@ function jSetupCanvasInteraction() {
     var oldMD = currentCanvas._jMouseDown;
     var oldWH = currentCanvas._jWheel;
     var oldDC = currentCanvas._jDblClick;
+    var oldMM = currentCanvas._jMouseMove;
     if (oldMD) currentCanvas.removeEventListener('mousedown', oldMD);
     if (oldWH) currentCanvas.removeEventListener('wheel', oldWH);
     if (oldDC) currentCanvas.removeEventListener('dblclick', oldDC);
+    if (oldMM) currentCanvas.removeEventListener('mousemove', oldMM);
 
     var mouseDownHandler = function(e) { jSwitchToCanvas(currentCanvas); jOnMouseDown(e); };
     var wheelHandler = function(e) { jSwitchToCanvas(currentCanvas); jOnWheel(e); };
     var dblClickHandler = function(e) { jSwitchToCanvas(currentCanvas); jOnCanvasDblClick(e); };
+    var mouseMoveHandler = function(e) { jSwitchToCanvas(currentCanvas); jOnCanvasMouseMove(e); };
     currentCanvas._jMouseDown = mouseDownHandler;
     currentCanvas._jWheel = wheelHandler;
     currentCanvas._jDblClick = dblClickHandler;
+    currentCanvas._jMouseMove = mouseMoveHandler;
     currentCanvas.addEventListener('mousedown', mouseDownHandler);
     currentCanvas.addEventListener('wheel', wheelHandler);
     currentCanvas.addEventListener('dblclick', dblClickHandler);
+    currentCanvas.addEventListener('mousemove', mouseMoveHandler);
+}
+
+function jOnCanvasMouseMove(e) {
+    if (!jState) return;
+    // Hover indicators only during addOverlay drawRegion step
+    if (jState.addOverlayMode && jState.addOverlayStep === 'drawRegion') {
+        var brIdx = jState.addOverlaySelectedBRIdx;
+        var br = (brIdx >= 0 && jState.boundsRects) ? jState.boundsRects[brIdx] : null;
+        if (!br) return;
+        var rawPos = jScreenToDoc(e.clientX, e.clientY);
+        var pos = jUnrotatePoint(rawPos.x, rawPos.y, brIdx);
+        var snapPts = [
+            { x: br.x, y: br.y, type: 'corner' },
+            { x: br.x + br.w, y: br.y, type: 'corner' },
+            { x: br.x, y: br.y + br.h, type: 'corner' },
+            { x: br.x + br.w, y: br.y + br.h, type: 'corner' },
+            { x: br.x + br.w / 2, y: br.y, type: 'edge' },
+            { x: br.x + br.w / 2, y: br.y + br.h, type: 'edge' },
+            { x: br.x, y: br.y + br.h / 2, type: 'edge' },
+            { x: br.x + br.w, y: br.y + br.h / 2, type: 'edge' }
+        ];
+        var THRESH = 2;
+        var best = null, bestDist = THRESH;
+        for (var i = 0; i < snapPts.length; i++) {
+            var sp = snapPts[i];
+            var dx = pos.x - sp.x, dy = pos.y - sp.y;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < bestDist) { bestDist = dist; best = sp; }
+        }
+        var prev = jState.addOverlayHoverPoint;
+        if (best !== prev && (best === null || prev === null || best.x !== prev.x || best.y !== prev.y)) {
+            jState.addOverlayHoverPoint = best;
+            jRenderCanvas();
+        }
+        return;
+    }
+    // Clear hover when not in drawRegion step
+    if (jState.addOverlayHoverPoint) {
+        jState.addOverlayHoverPoint = null;
+        jRenderCanvas();
+    }
 }
 
 function jOnCanvasDblClick(e) {
@@ -655,6 +796,7 @@ function jEditOverlayRegion(ovIdx) {
 
     jLoadFontList();
     jPrefillContentForm(contentType, ov);
+    jAttachContentPreviewListeners();
     var aiFontRow = _jel('ct-ai-font-row');
     if (aiFontRow) aiFontRow.style.display = 'none';
     jRenderCanvas();
@@ -741,6 +883,7 @@ function jEditTextNode(node) {
             aiFontName: fontFamily,
             aiFontStyle: fontStyle
         });
+        jAttachContentPreviewListeners();
         jRenderCanvas();
     });
 }
@@ -1005,6 +1148,23 @@ function jOnMouseDown(e) {
         }
     }
 
+    // Check if clicking on pending content region (move/resize before Apply)
+    if (jState.pendingContentRegion) {
+        var prPos = jScreenToDoc(e.clientX, e.clientY);
+        var pr = jState.pendingContentRegion;
+        var prBrIdx = jState._addOverlayBRIdx;
+        var upos = (prBrIdx >= 0) ? jUnrotatePoint(prPos.x, prPos.y, prBrIdx) : prPos;
+        var handleId = jHitTestPendingHandle(upos, pr);
+        if (handleId) {
+            jStartPendingResize(e, handleId);
+            return;
+        }
+        if (upos.x >= pr.x && upos.x <= pr.x + pr.w && upos.y >= pr.y && upos.y <= pr.y + pr.h) {
+            jStartPendingDrag(e);
+            return;
+        }
+    }
+
     // Check if clicking on an overlay resize handle
     var pos = jScreenToDoc(e.clientX, e.clientY);
     var ovHandleId = jHitTestOverlayHandle(pos);
@@ -1018,11 +1178,36 @@ function jOnMouseDown(e) {
     if (hitIdx >= 0) {
         jState.selectedOverlayIdx = hitIdx;
         jState.selectedTreePath = null;
+        jState.selectedTreePaths = {};
+        jState.lastClickedTreePath = null;
+        jState.selectedTreePanelId = null;
         jStartOverlayDrag(e, hitIdx);
     } else {
+        // Start rectangle selection drag on empty canvas
         jState.selectedOverlayIdx = -1;
-        jState.selectedTreePath = null;
         jState._selectedTextNode = null;
+        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+            jState.selectedTreePath = null;
+            jState.selectedTreePaths = {};
+            jState.lastClickedTreePath = null;
+            jState.selectedTreePanelId = null;
+        }
+        var rsPos = jScreenToDoc(e.clientX, e.clientY);
+        jState.rectSelect = { active: true, startX: rsPos.x, startY: rsPos.y, endX: rsPos.x, endY: rsPos.y };
+        jRenderCanvas();
+        var onRSMove = function(ev) {
+            var mp = jScreenToDoc(ev.clientX, ev.clientY);
+            jState.rectSelect.endX = mp.x;
+            jState.rectSelect.endY = mp.y;
+            jRenderCanvas();
+        };
+        var onRSUp = function() {
+            document.removeEventListener('mousemove', onRSMove);
+            document.removeEventListener('mouseup', onRSUp);
+            jFinishRectSelect(e.ctrlKey || e.metaKey);
+        };
+        document.addEventListener('mousemove', onRSMove);
+        document.addEventListener('mouseup', onRSUp);
     }
     jRenderCanvas();
     jRenderOverlayList();
@@ -1039,6 +1224,62 @@ function jScreenToDoc(clientX, clientY) {
         x: (clientX - rect.left - pan.x - offsetX) / s,
         y: (clientY - rect.top - pan.y - offsetY) / s
     };
+}
+
+function jFinishRectSelect(additive) {
+    var rs = jState.rectSelect;
+    if (!rs || !rs.active) return;
+    var rx = Math.min(rs.startX, rs.endX), ry = Math.min(rs.startY, rs.endY);
+    var rw = Math.abs(rs.endX - rs.startX), rh = Math.abs(rs.endY - rs.startY);
+    rs.active = false;
+
+    // If drag was too small, treat as a click (clear selection)
+    if (rw < 0.5 && rh < 0.5) {
+        if (!additive) {
+            jState.selectedTreePaths = {};
+            jState.selectedTreePath = null;
+            jState.lastClickedTreePath = null;
+            jState.selectedTreePanelId = null;
+        }
+        jRenderCanvas();
+        jRenderLayerTree();
+        return;
+    }
+
+    // Collect all display nodes and test intersection
+    var allNodes = [];
+    jCollectDisplayNodes(jState.documentTree, allNodes);
+    if (!additive) {
+        jState.selectedTreePaths = {};
+        jState.selectedTreePanelId = null;
+    }
+    for (var i = 0; i < allNodes.length; i++) {
+        var node = allNodes[i];
+        if (node._isBoundsRect) continue;
+        if (node.visible === false) continue;
+        if (node.locked) continue;
+        var b = node.bounds;
+        if (!b && node._isUserGroup && node.children && node.children.length > 0) {
+            b = node.children[0].bounds;
+        }
+        if (!b) continue;
+        var nx = b.x * PT_TO_MM, ny = b.y * PT_TO_MM;
+        var nw = b.width * PT_TO_MM, nh = b.height * PT_TO_MM;
+        // Check AABB overlap
+        if (nx + nw > rx && nx < rx + rw && ny + nh > ry && ny < ry + rh) {
+            jState.selectedTreePaths[node._id] = true;
+        }
+    }
+    var keys = Object.keys(jState.selectedTreePaths);
+    jState.selectedTreePath = keys.length === 1 ? keys[0] : null;
+    jState.lastClickedTreePath = keys.length > 0 ? keys[keys.length - 1] : null;
+    jRenderCanvas();
+    jRenderLayerTree();
+    // Scroll first selected item into view in layer tree
+    if (keys.length > 0) {
+        var firstSelEl = document.querySelector('.layer-tree-item[data-node-id="' + keys[0] + '"]');
+        if (firstSelEl) firstSelEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
 }
 
 function jHitTestOverlay(x, y) {
@@ -1109,6 +1350,94 @@ function jStartOverlayDrag(e, idx) {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
         jCaptureState();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+}
+
+function jHitTestPendingHandle(pos, pr) {
+    var T = 1.5;
+    var handles = [
+        { id: 'tl', x: pr.x, y: pr.y },
+        { id: 'tr', x: pr.x + pr.w, y: pr.y },
+        { id: 'bl', x: pr.x, y: pr.y + pr.h },
+        { id: 'br', x: pr.x + pr.w, y: pr.y + pr.h }
+    ];
+    for (var i = 0; i < handles.length; i++) {
+        var h = handles[i];
+        if (Math.abs(pos.x - h.x) < T && Math.abs(pos.y - h.y) < T) return h.id;
+    }
+    return null;
+}
+
+function jStartPendingDrag(e) {
+    var pr = jState.pendingContentRegion;
+    var brIdx = jState._addOverlayBRIdx;
+    var br = (brIdx >= 0 && jState.boundsRects) ? jState.boundsRects[brIdx] : null;
+    var rawPos = jScreenToDoc(e.clientX, e.clientY);
+    var pos = (brIdx >= 0) ? jUnrotatePoint(rawPos.x, rawPos.y, brIdx) : rawPos;
+    var offX = pos.x - pr.x, offY = pos.y - pr.y;
+    var snaps = br ? jGetBoundsSnapPoints(br) : [];
+    var onMove = function(ev) {
+        var rawP = jScreenToDoc(ev.clientX, ev.clientY);
+        var p = (brIdx >= 0) ? jUnrotatePoint(rawP.x, rawP.y, brIdx) : rawP;
+        var nx = p.x - offX, ny = p.y - offY;
+        if (br) {
+            if (nx < br.x) nx = br.x;
+            if (ny < br.y) ny = br.y;
+            if (nx + pr.w > br.x + br.w) nx = br.x + br.w - pr.w;
+            if (ny + pr.h > br.y + br.h) ny = br.y + br.h - pr.h;
+            var snapped = jSnapOverlayToPoints(nx, ny, pr.w, pr.h, snaps);
+            nx = snapped.x; ny = snapped.y;
+        }
+        pr.x = nx; pr.y = ny;
+        jRenderCanvas();
+    };
+    var onUp = function() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+}
+
+function jStartPendingResize(e, handleId) {
+    var pr = jState.pendingContentRegion;
+    var brIdx = jState._addOverlayBRIdx;
+    var br = (brIdx >= 0 && jState.boundsRects) ? jState.boundsRects[brIdx] : null;
+    var MIN = 1;
+    var onMove = function(ev) {
+        var rawP = jScreenToDoc(ev.clientX, ev.clientY);
+        var p = (brIdx >= 0) ? jUnrotatePoint(rawP.x, rawP.y, brIdx) : rawP;
+        if (br) {
+            p.x = Math.max(br.x, Math.min(p.x, br.x + br.w));
+            p.y = Math.max(br.y, Math.min(p.y, br.y + br.h));
+        }
+        if (handleId === 'br') {
+            pr.w = Math.max(MIN, p.x - pr.x);
+            pr.h = Math.max(MIN, p.y - pr.y);
+        } else if (handleId === 'bl') {
+            var r = pr.x + pr.w;
+            pr.x = Math.min(p.x, r - MIN);
+            pr.w = r - pr.x;
+            pr.h = Math.max(MIN, p.y - pr.y);
+        } else if (handleId === 'tr') {
+            var b = pr.y + pr.h;
+            pr.w = Math.max(MIN, p.x - pr.x);
+            pr.y = Math.min(p.y, b - MIN);
+            pr.h = b - pr.y;
+        } else if (handleId === 'tl') {
+            var r2 = pr.x + pr.w, b2 = pr.y + pr.h;
+            pr.x = Math.min(p.x, r2 - MIN);
+            pr.y = Math.min(p.y, b2 - MIN);
+            pr.w = r2 - pr.x;
+            pr.h = b2 - pr.y;
+        }
+        jRenderCanvas();
+    };
+    var onUp = function() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -1288,7 +1617,29 @@ function jRenderCanvas() {
     if (jState.pendingContentRegion && jState.pendingContentType) {
         var pr = jState.pendingContentRegion;
         var pt = jState.pendingContentType;
-        if (pt === 'image') {
+        if (pt === 'text') {
+            c.save();
+            c.strokeStyle = '#00aa00';
+            c.lineWidth = 0.5;
+            c.setLineDash([1, 1]);
+            c.strokeRect(pr.x, pr.y, pr.w, pr.h);
+            c.setLineDash([]);
+            var textVal = (_jel('ct-text-value') || {}).value || '';
+            if (textVal) {
+                var fontSize = parseFloat((_jel('ct-font-size') || {}).value) || 12;
+                var fontPt = fontSize * 0.3528;
+                c.fillStyle = (_jel('ct-color') || {}).value || '#000';
+                c.font = fontPt + 'px sans-serif';
+                c.textBaseline = 'top';
+                c.save();
+                c.beginPath();
+                c.rect(pr.x, pr.y, pr.w, pr.h);
+                c.clip();
+                c.fillText(textVal, pr.x + 0.5, pr.y + 0.5);
+                c.restore();
+            }
+            c.restore();
+        } else if (pt === 'image') {
             c.save();
             c.strokeStyle = '#00aa00';
             c.lineWidth = 0.5;
@@ -1363,9 +1714,23 @@ function jRenderCanvas() {
             }
             c.restore();
         }
+        // Draw resize handles on pending region
+        var hs = 0.8;
+        var prHandles = [
+            { x: pr.x, y: pr.y }, { x: pr.x + pr.w, y: pr.y },
+            { x: pr.x, y: pr.y + pr.h }, { x: pr.x + pr.w, y: pr.y + pr.h }
+        ];
+        c.save();
+        for (var hi = 0; hi < prHandles.length; hi++) {
+            var hh = prHandles[hi];
+            c.fillStyle = '#fff';
+            c.strokeStyle = '#00aa00';
+            c.lineWidth = 0.3;
+            c.fillRect(hh.x - hs, hh.y - hs, hs * 2, hs * 2);
+            c.strokeRect(hh.x - hs, hh.y - hs, hs * 2, hs * 2);
+        }
+        c.restore();
     }
-
-    // (Edge rendering removed)
 
     // Draw add-overlay region while dragging
     if (jState.addOverlayDraw) {
@@ -1396,6 +1761,96 @@ function jRenderCanvas() {
         c.setLineDash([]);
         c.restore();
         if (aRot !== 0) c.restore();
+
+        // Snap indicator dot
+        if (jState.addOverlaySnapPoint) {
+            var sp = jState.addOverlaySnapPoint;
+            var spRot = 0;
+            if (jState.boundsRects && brIdx >= 0 && brIdx < jState.boundsRects.length) {
+                spRot = jState.boundsRects[brIdx]._rotation || 0;
+            }
+            if (spRot !== 0) {
+                var sbr = jState.boundsRects[brIdx];
+                var scx = sbr.x + sbr.w / 2, scy = sbr.y + sbr.h / 2;
+                c.save();
+                c.translate(scx, scy);
+                c.rotate(spRot * Math.PI / 180);
+                c.translate(-scx, -scy);
+            }
+            c.save();
+            c.beginPath();
+            c.arc(sp.x, sp.y, 1, 0, Math.PI * 2);
+            c.fillStyle = sp.type === 'corner' ? '#0066ff' : '#ff0000';
+            c.fill();
+            c.restore();
+            if (spRot !== 0) c.restore();
+        }
+    }
+
+    // Hover indicator dot (when not dragging, just hovering over mother panel)
+    if (jState.addOverlayHoverPoint && !jState.addOverlayDraw) {
+        var hp = jState.addOverlayHoverPoint;
+        var hpBrIdx = jState.addOverlaySelectedBRIdx;
+        var hpRot = 0;
+        if (jState.boundsRects && hpBrIdx >= 0 && hpBrIdx < jState.boundsRects.length) {
+            hpRot = jState.boundsRects[hpBrIdx]._rotation || 0;
+        }
+        if (hpRot !== 0) {
+            var hbr = jState.boundsRects[hpBrIdx];
+            var hcx = hbr.x + hbr.w / 2, hcy = hbr.y + hbr.h / 2;
+            c.save();
+            c.translate(hcx, hcy);
+            c.rotate(hpRot * Math.PI / 180);
+            c.translate(-hcx, -hcy);
+        }
+        c.save();
+        c.beginPath();
+        c.arc(hp.x, hp.y, 1, 0, Math.PI * 2);
+        c.fillStyle = hp.type === 'corner' ? '#0066ff' : '#ff0000';
+        c.fill();
+        c.restore();
+        if (hpRot !== 0) c.restore();
+    }
+
+    // Highlight selected tree nodes on canvas
+    var selKeys = Object.keys(jState.selectedTreePaths);
+    if (selKeys.length > 0) {
+        for (var si = 0; si < selKeys.length; si++) {
+            var selNode = jFindNodeByIdInTree(jState.documentTree, selKeys[si]);
+            if (!selNode || selNode.visible === false) continue;
+            var sb = selNode.bounds;
+            if (!sb && selNode._isUserGroup && selNode.children && selNode.children.length > 0) {
+                sb = selNode.children[0].bounds;
+            }
+            if (!sb) continue;
+            var sx = sb.x * PT_TO_MM, sy = sb.y * PT_TO_MM;
+            var sw = sb.width * PT_TO_MM, sh = sb.height * PT_TO_MM;
+            c.save();
+            c.strokeStyle = '#0066ff';
+            c.lineWidth = 0.4;
+            c.setLineDash([1, 1]);
+            c.strokeRect(sx, sy, sw, sh);
+            c.fillStyle = 'rgba(0, 102, 255, 0.08)';
+            c.fillRect(sx, sy, sw, sh);
+            c.setLineDash([]);
+            c.restore();
+        }
+    }
+
+    // Draw rectangle selection marquee
+    var rs = jState.rectSelect;
+    if (rs && rs.active) {
+        var rsx = Math.min(rs.startX, rs.endX), rsy = Math.min(rs.startY, rs.endY);
+        var rsw = Math.abs(rs.endX - rs.startX), rsh = Math.abs(rs.endY - rs.startY);
+        c.save();
+        c.strokeStyle = '#0066ff';
+        c.lineWidth = 0.4;
+        c.setLineDash([1.5, 1.5]);
+        c.strokeRect(rsx, rsy, rsw, rsh);
+        c.fillStyle = 'rgba(0, 102, 255, 0.06)';
+        c.fillRect(rsx, rsy, rsw, rsh);
+        c.setLineDash([]);
+        c.restore();
     }
 
     c.restore();
@@ -1945,6 +2400,43 @@ function jRenderLayerTree() {
     var tree = _jel('layer-tree');
     if (!tree) return;
     tree.innerHTML = '';
+
+    // Show/hide Group/Ungroup buttons based on selection
+    var groupBtn = _jel('layer-group-btn');
+    var ungroupBtn = _jel('layer-ungroup-btn');
+    var selKeys = Object.keys(jState.selectedTreePaths);
+    if (groupBtn) groupBtn.style.display = selKeys.length >= 2 ? 'inline-block' : 'none';
+    if (ungroupBtn) {
+        var showUngroup = false;
+        if (selKeys.length === 1) {
+            var selNode = jFindNodeByIdInTree(jState.documentTree, selKeys[0]);
+            if (selNode && selNode._isUserGroup) showUngroup = true;
+        }
+        ungroupBtn.style.display = showUngroup ? 'inline-block' : 'none';
+    }
+
+    // Auto-expand panels containing selected nodes
+    if (selKeys.length > 0 && jState.boundsRects && jState.boundsRects.length > 0) {
+        var allNodesForExpand = [];
+        jCollectDisplayNodes(jState.documentTree, allNodesForExpand);
+        for (var ei = 0; ei < allNodesForExpand.length; ei++) {
+            var en = allNodesForExpand[ei];
+            if (!jState.selectedTreePaths[en._id]) continue;
+            var eb = en.bounds;
+            if (!eb && en._isUserGroup && en.children && en.children.length > 0) eb = en.children[0].bounds;
+            if (!eb) continue;
+            var ecx = eb.x * PT_TO_MM + (eb.width * PT_TO_MM) / 2;
+            var ecy = eb.y * PT_TO_MM + (eb.height * PT_TO_MM) / 2;
+            for (var ebi = 0; ebi < jState.boundsRects.length; ebi++) {
+                var ebr = jState.boundsRects[ebi];
+                if (ecx >= ebr.x && ecx <= ebr.x + ebr.w && ecy >= ebr.y && ecy <= ebr.y + ebr.h) {
+                    jState.layerExpanded['__br_' + ebi] = true;
+                    break;
+                }
+            }
+        }
+    }
+
     if (!jState.documentTree || jState.documentTree.length === 0) {
         tree.innerHTML = '<div class="empty-message">No JSON loaded</div>';
         return;
@@ -1955,9 +2447,9 @@ function jRenderLayerTree() {
         var countEl = _jel('layer-count');
         if (countEl) countEl.textContent = '(' + brs.length + ' layers)';
 
-        // Collect all leaf nodes (paths, compoundPaths, texts, images) from document tree
+        // Collect display nodes (leaf nodes + user groups as units)
         var allNodes = [];
-        jCollectLeafNodes(jState.documentTree, allNodes);
+        jCollectDisplayNodes(jState.documentTree, allNodes);
 
         // Group nodes by which bounds rect contains them
         var buckets = [];
@@ -1967,6 +2459,9 @@ function jRenderLayerTree() {
             var node = allNodes[ni];
             if (node._isBoundsRect) continue;
             var b = node.bounds;
+            if (!b && node._isUserGroup && node.children && node.children.length > 0) {
+                b = node.children[0].bounds;
+            }
             if (!b) continue;
             var cx = b.x * PT_TO_MM + (b.width * PT_TO_MM) / 2;
             var cy = b.y * PT_TO_MM + (b.height * PT_TO_MM) / 2;
@@ -1977,6 +2472,17 @@ function jRenderLayerTree() {
                     break;
                 }
             }
+        }
+
+        // Move user groups to top of each bucket
+        for (var si = 0; si < buckets.length; si++) {
+            var groups = [];
+            var others = [];
+            for (var sj = 0; sj < buckets[si].length; sj++) {
+                if (buckets[si][sj]._isUserGroup) groups.push(buckets[si][sj]);
+                else others.push(buckets[si][sj]);
+            }
+            buckets[si] = groups.concat(others);
         }
 
         // Render each bounds rect as a layer
@@ -1996,7 +2502,7 @@ function jRenderLayerTree() {
             if (isExpanded) {
                 // Render contained nodes
                 for (var ci = 0; ci < buckets[li].length; ci++) {
-                    jRenderTreeNode(tree, buckets[li][ci], 1, false);
+                    jRenderTreeNode(tree, buckets[li][ci], 1, false, layerId);
                 }
                 // Render overlays belonging to this layer
                 for (var oi = 0; oi < jState.overlays.length; oi++) {
@@ -2012,7 +2518,7 @@ function jRenderLayerTree() {
         var countEl = _jel('layer-count');
         if (countEl) countEl.textContent = '(' + jState.documentTree.length + ' layers)';
         for (var i = 0; i < jState.documentTree.length; i++) {
-            jRenderTreeNode(tree, jState.documentTree[i], 0, false);
+            jRenderTreeNode(tree, jState.documentTree[i], 0, false, null);
         }
     }
 }
@@ -2022,6 +2528,7 @@ function jCollectLeafNodes(nodes, out) {
     for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
         if (node._isBoundsRect) continue;
+        if (node.visible === false) continue;
         if (node.children) {
             jCollectLeafNodes(node.children, out);
         } else if (node.type === 'path' || node.type === 'compoundPath' || node.type === 'text' || node.type === 'image') {
@@ -2128,17 +2635,37 @@ function jRenderBoundsLayerItem(parent, br, layerId, isExpanded, childCount) {
 function jSetChildVisibility(br) {
     if (!jState.documentTree) return;
     var visible = br._visible !== false;
-    var allNodes = [];
-    jCollectLeafNodes(jState.documentTree, allNodes);
-    for (var i = 0; i < allNodes.length; i++) {
-        var node = allNodes[i];
+    jSetVisibilityInBounds(jState.documentTree, br, visible);
+}
+
+function jSetVisibilityInBounds(nodes, br, visible) {
+    if (!nodes) return;
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
         if (node._isBoundsRect) continue;
         var b = node.bounds;
-        if (!b) continue;
-        var cx = b.x * PT_TO_MM + (b.width * PT_TO_MM) / 2;
-        var cy = b.y * PT_TO_MM + (b.height * PT_TO_MM) / 2;
-        if (cx >= br.x && cx <= br.x + br.w && cy >= br.y && cy <= br.y + br.h) {
-            node.visible = visible;
+        if (b) {
+            var cx = b.x * PT_TO_MM + (b.width * PT_TO_MM) / 2;
+            var cy = b.y * PT_TO_MM + (b.height * PT_TO_MM) / 2;
+            if (cx >= br.x && cx <= br.x + br.w && cy >= br.y && cy <= br.y + br.h) {
+                node.visible = visible;
+            }
+        }
+        if (node.children) jSetVisibilityInBounds(node.children, br, visible);
+        if (node.paths) jSetVisibilityInBounds(node.paths, br, visible);
+    }
+}
+
+// Like jCollectLeafNodes but does NOT skip invisible nodes
+function jCollectAllLeafNodes(nodes, out) {
+    if (!nodes) return;
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (node._isBoundsRect) continue;
+        if (node.children) {
+            jCollectAllLeafNodes(node.children, out);
+        } else if (node.type === 'path' || node.type === 'compoundPath' || node.type === 'text' || node.type === 'image') {
+            out.push(node);
         }
     }
 }
@@ -2146,18 +2673,24 @@ function jSetChildVisibility(br) {
 function jSetChildLocked(br) {
     if (!jState.documentTree) return;
     var locked = br._locked === true;
-    var allNodes = [];
-    jCollectLeafNodes(jState.documentTree, allNodes);
-    for (var i = 0; i < allNodes.length; i++) {
-        var node = allNodes[i];
+    jSetLockedInBounds(jState.documentTree, br, locked);
+}
+
+function jSetLockedInBounds(nodes, br, locked) {
+    if (!nodes) return;
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
         if (node._isBoundsRect) continue;
         var b = node.bounds;
-        if (!b) continue;
-        var cx = b.x * PT_TO_MM + (b.width * PT_TO_MM) / 2;
-        var cy = b.y * PT_TO_MM + (b.height * PT_TO_MM) / 2;
-        if (cx >= br.x && cx <= br.x + br.w && cy >= br.y && cy <= br.y + br.h) {
-            node.locked = locked;
+        if (b) {
+            var cx = b.x * PT_TO_MM + (b.width * PT_TO_MM) / 2;
+            var cy = b.y * PT_TO_MM + (b.height * PT_TO_MM) / 2;
+            if (cx >= br.x && cx <= br.x + br.w && cy >= br.y && cy <= br.y + br.h) {
+                node.locked = locked;
+            }
         }
+        if (node.children) jSetLockedInBounds(node.children, br, locked);
+        if (node.paths) jSetLockedInBounds(node.paths, br, locked);
     }
 }
 
@@ -2236,6 +2769,9 @@ function jRenderOverlayTreeItem(parent, ov, ovIdx, depth) {
         item.addEventListener('click', function() {
             jState.selectedOverlayIdx = idx;
             jState.selectedTreePath = null;
+            jState.selectedTreePaths = {};
+            jState.lastClickedTreePath = null;
+            jState.selectedTreePanelId = null;
             jRenderCanvas();
             jRenderLayerTree();
             jRenderOverlayList();
@@ -2244,12 +2780,13 @@ function jRenderOverlayTreeItem(parent, ov, ovIdx, depth) {
     parent.appendChild(item);
 }
 
-function jRenderTreeNode(parent, node, depth, isPanel) {
+function jRenderTreeNode(parent, node, depth, isPanel, panelId) {
     // Skip __bounds__ rect nodes from the tree
     if (node._isBoundsRect) return;
 
     var item = document.createElement('div');
     item.className = 'layer-tree-item';
+    item.setAttribute('data-node-id', node._id);
     item.style.paddingLeft = (depth * 12 + 4) + 'px';
 
     // Count visible children (excluding __bounds__ rects)
@@ -2287,7 +2824,10 @@ function jRenderTreeNode(parent, node, depth, isPanel) {
     (function(n) {
         eyeBtn.addEventListener('click', function(e) {
             e.stopPropagation();
-            n.visible = !(n.visible !== false);
+            var newVal = !(n.visible !== false);
+            n.visible = newVal;
+            if (n.children) jSetVisibleAll(n.children, newVal);
+            if (n.paths) jSetVisibleAll(n.paths, newVal);
             jRenderCanvas();
             jRenderLayerTree();
         });
@@ -2301,7 +2841,10 @@ function jRenderTreeNode(parent, node, depth, isPanel) {
     (function(n) {
         lockBtn.addEventListener('click', function(e) {
             e.stopPropagation();
-            n.locked = !n.locked;
+            var newVal = !n.locked;
+            n.locked = newVal;
+            if (n.children) jSetLockAll(n.children, newVal);
+            if (n.paths) jSetLockAll(n.paths, newVal);
             jRenderLayerTree();
         });
     })(node);
@@ -2325,17 +2868,42 @@ function jRenderTreeNode(parent, node, depth, isPanel) {
     item.appendChild(lockBtn);
     item.appendChild(label);
 
-    // Click to select/highlight
-    (function(n) {
-        item.addEventListener('click', function() {
-            jState.selectedTreePath = n._id;
+    // Click to select/highlight (multi-select support)
+    (function(n, pid) {
+        item.addEventListener('click', function(e) {
+            e.stopPropagation();
             jState.selectedOverlayIdx = -1;
+            if (e.ctrlKey || e.metaKey) {
+                if (jState.selectedTreePanelId && jState.selectedTreePanelId !== pid) {
+                    jState.selectedTreePaths = {};
+                    jState.selectedTreePanelId = pid;
+                }
+                if (jState.selectedTreePaths[n._id]) {
+                    delete jState.selectedTreePaths[n._id];
+                } else {
+                    jState.selectedTreePaths[n._id] = true;
+                    jState.selectedTreePanelId = pid;
+                }
+                jState.lastClickedTreePath = n._id;
+            } else if (e.shiftKey && jState.lastClickedTreePath && jState.selectedTreePanelId === pid) {
+                var range = jGetNodeRange(pid, jState.lastClickedTreePath, n._id);
+                for (var ri = 0; ri < range.length; ri++) {
+                    jState.selectedTreePaths[range[ri]] = true;
+                }
+            } else {
+                jState.selectedTreePaths = {};
+                jState.selectedTreePaths[n._id] = true;
+                jState.selectedTreePanelId = pid;
+                jState.lastClickedTreePath = n._id;
+            }
+            var keys = Object.keys(jState.selectedTreePaths);
+            jState.selectedTreePath = keys.length === 1 ? keys[0] : null;
             jRenderCanvas();
             jRenderLayerTree();
         });
-    })(node);
+    })(node, panelId);
 
-    if (jState.selectedTreePath === node._id) {
+    if (jState.selectedTreePaths[node._id]) {
         item.style.background = '#e0e0e0';
     }
 
@@ -2344,11 +2912,11 @@ function jRenderTreeNode(parent, node, depth, isPanel) {
     // Render children if expanded (skip __bounds__ rects)
     if (hasChildren && isExpanded) {
         for (var i = 0; i < visibleChildren.length; i++) {
-            jRenderTreeNode(parent, visibleChildren[i], depth + 1, false);
+            jRenderTreeNode(parent, visibleChildren[i], depth + 1, false, panelId);
         }
         if (node.paths) {
             for (var i = 0; i < node.paths.length; i++) {
-                jRenderTreeNode(parent, node.paths[i], depth + 1, false);
+                jRenderTreeNode(parent, node.paths[i], depth + 1, false, panelId);
             }
         }
     }
@@ -2386,6 +2954,94 @@ function collapseAllLayers() {
             jState.layerExpanded['__br_' + i] = false;
         }
     }
+    jRenderLayerTree();
+}
+
+function jGroupSelectedNodes() {
+    var selKeys = Object.keys(jState.selectedTreePaths);
+    if (selKeys.length < 2) return;
+    var groupName = prompt('Enter group name:', 'Group');
+    if (!groupName) return;
+
+    // Collect node parent info
+    var nodesToGroup = [];
+    for (var i = 0; i < selKeys.length; i++) {
+        var info = jFindParentOfNode(jState.documentTree, selKeys[i], null);
+        if (info) nodesToGroup.push(info);
+    }
+    if (nodesToGroup.length < 2) return;
+
+    // Group by parent array, sort descending index within each to avoid shift issues
+    var byArray = [];
+    for (var i = 0; i < nodesToGroup.length; i++) {
+        var found = false;
+        for (var j = 0; j < byArray.length; j++) {
+            if (byArray[j].arr === nodesToGroup[i].array) {
+                byArray[j].items.push(nodesToGroup[i]);
+                found = true;
+                break;
+            }
+        }
+        if (!found) byArray.push({ arr: nodesToGroup[i].array, items: [nodesToGroup[i]] });
+    }
+
+    // Remove nodes from parents (descending index order), collect children
+    var children = [];
+    var firstArray = nodesToGroup[0].array;
+    var firstIndex = nodesToGroup[0].index;
+    // Find the earliest index in the first array for insertion
+    for (var i = 0; i < nodesToGroup.length; i++) {
+        if (nodesToGroup[i].array === firstArray && nodesToGroup[i].index < firstIndex) {
+            firstIndex = nodesToGroup[i].index;
+        }
+    }
+
+    for (var g = 0; g < byArray.length; g++) {
+        byArray[g].items.sort(function(a, b) { return b.index - a.index; });
+        for (var k = 0; k < byArray[g].items.length; k++) {
+            var removed = byArray[g].arr.splice(byArray[g].items[k].index, 1)[0];
+            children.unshift(removed);
+        }
+    }
+
+    var groupNode = {
+        type: 'group',
+        name: groupName,
+        visible: true,
+        locked: false,
+        children: children,
+        _isUserGroup: true
+    };
+
+    firstArray.splice(firstIndex, 0, groupNode);
+    jAssignNodeIds(jState.documentTree, '');
+    jState.selectedTreePaths = {};
+    jState.selectedTreePaths[groupNode._id] = true;
+    jState.selectedTreePath = groupNode._id;
+    jState.lastClickedTreePath = null;
+    jState.layerExpanded[groupNode._id] = true;
+    jRenderCanvas();
+    jRenderLayerTree();
+}
+
+function jUngroupSelectedNode() {
+    var selKeys = Object.keys(jState.selectedTreePaths);
+    if (selKeys.length !== 1) return;
+    var groupId = selKeys[0];
+    var info = jFindParentOfNode(jState.documentTree, groupId, null);
+    if (!info) return;
+    var groupNode = info.array[info.index];
+    if (!groupNode._isUserGroup || !groupNode.children) return;
+    var children = groupNode.children;
+    info.array.splice(info.index, 1);
+    for (var i = 0; i < children.length; i++) {
+        info.array.splice(info.index + i, 0, children[i]);
+    }
+    jAssignNodeIds(jState.documentTree, '');
+    jState.selectedTreePaths = {};
+    jState.selectedTreePath = null;
+    jState.lastClickedTreePath = null;
+    jRenderCanvas();
     jRenderLayerTree();
 }
 
@@ -2614,6 +3270,9 @@ function jRenderOverlayList() {
             item.addEventListener('click', function() {
                 jState.selectedOverlayIdx = idx;
                 jState.selectedTreePath = null;
+                jState.selectedTreePaths = {};
+                jState.lastClickedTreePath = null;
+                jState.selectedTreePanelId = null;
                 jRenderCanvas();
                 jRenderOverlayList();
                 jUpdateActionButtons();
@@ -2674,6 +3333,18 @@ function rotateSelectedOverlay(deg) {
 }
 
 // ─── Content Type Handling ───
+
+function jAttachContentPreviewListeners() {
+    var ids = ['ct-text-value','ct-font-size','ct-color','ct-letter-spacing',
+               'ct-qr-data','ct-barcode-data','ct-barcode-format','ct-image-url','ct-image-fit'];
+    ids.forEach(function(id) {
+        var el = _jel(id);
+        if (el && !el._ctPreviewBound) {
+            el._ctPreviewBound = true;
+            el.addEventListener('input', function() { jRenderCanvas(); });
+        }
+    });
+}
 
 function jOnContentTypeChange() {
     var sel = _jel('ct-type-select');
@@ -2982,6 +3653,8 @@ function jCancelAddOverlay() {
     jState.addOverlayStep = null;
     jState.addOverlaySelectedBRIdx = -1;
     jState.addOverlayDraw = null;
+    jState.addOverlaySnapPoint = null;
+    jState.addOverlayHoverPoint = null;
     var hint = _jel('overlay-add-hint');
     if (hint) hint.style.display = 'none';
     var addBtn = _jel('overlay-add-btn');
@@ -3015,13 +3688,37 @@ function jOnAddOverlayDrawStart(e) {
     var onMove = function(ev) {
         var rawP = jScreenToDoc(ev.clientX, ev.clientY);
         var p = jUnrotatePoint(rawP.x, rawP.y, brIdx);
-        jState.addOverlayDraw.x2 = Math.max(br.x, Math.min(p.x, br.x + br.w));
-        jState.addOverlayDraw.y2 = Math.max(br.y, Math.min(p.y, br.y + br.h));
+        var cx2 = Math.max(br.x, Math.min(p.x, br.x + br.w));
+        var cy2 = Math.max(br.y, Math.min(p.y, br.y + br.h));
+        // Snap to corners and edge midpoints
+        var snapPts = [
+            { x: br.x, y: br.y, type: 'corner' },
+            { x: br.x + br.w, y: br.y, type: 'corner' },
+            { x: br.x, y: br.y + br.h, type: 'corner' },
+            { x: br.x + br.w, y: br.y + br.h, type: 'corner' },
+            { x: br.x + br.w / 2, y: br.y, type: 'edge' },
+            { x: br.x + br.w / 2, y: br.y + br.h, type: 'edge' },
+            { x: br.x, y: br.y + br.h / 2, type: 'edge' },
+            { x: br.x + br.w, y: br.y + br.h / 2, type: 'edge' }
+        ];
+        var SNAP_THRESH = 2;
+        var bestSnap = null, bestDist = SNAP_THRESH;
+        for (var si = 0; si < snapPts.length; si++) {
+            var sp = snapPts[si];
+            var dx = cx2 - sp.x, dy = cy2 - sp.y;
+            var dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < bestDist) { bestDist = dist; bestSnap = sp; }
+        }
+        if (bestSnap) { cx2 = bestSnap.x; cy2 = bestSnap.y; }
+        jState.addOverlaySnapPoint = bestSnap;
+        jState.addOverlayDraw.x2 = cx2;
+        jState.addOverlayDraw.y2 = cy2;
         jRenderCanvas();
     };
     var onUp = function() {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        jState.addOverlaySnapPoint = null;
         var rd = jState.addOverlayDraw;
         if (rd && Math.abs(rd.x2 - rd.x1) > 0.5 && Math.abs(rd.y2 - rd.y1) > 0.5) {
             var x = Math.min(rd.x1, rd.x2), y = Math.min(rd.y1, rd.y2);
@@ -3041,6 +3738,7 @@ function jOnAddOverlayDrawStart(e) {
             var rotBtns = _jel('ct-rotate-buttons');
             if (rotBtns) rotBtns.style.display = '';
             jLoadFontList();
+            jAttachContentPreviewListeners();
             jState.addOverlayMode = false;
             jState.addOverlayStep = null;
             jState.addOverlayDraw = null;
@@ -3585,6 +4283,9 @@ function jLoadLayoutFromExport(data) {
     jState.edges = data.edges || [];
     jState.selectedOverlayIdx = -1;
     jState.selectedTreePath = null;
+    jState.selectedTreePaths = {};
+    jState.lastClickedTreePath = null;
+    jState.selectedTreePanelId = null;
     jState.currentLayoutId = null;
     jState.currentLayoutName = null;
     jState.currentCustomerId = null;
