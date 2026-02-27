@@ -580,7 +580,8 @@ function jAutoCreateTextOverlays(nodes) {
             letterSpacing: tracking / 1000 * fontSize,
             alignH: alignment, alignV: 'top',
             content: content, visible: true, locked: false, isVariable: false,
-            _boundsRectIdx: boundsRect ? jState.boundsRects.indexOf(boundsRect) : -1
+            _boundsRectIdx: boundsRect ? jState.boundsRects.indexOf(boundsRect) : -1,
+            _autoFromText: true
         });
         node._isDoubledText = true;
     }
@@ -4461,22 +4462,6 @@ function jExportFile(type, outlined) {
             }
         }
     }
-
-    // Remove pdfpath components that fall inside an overlay region
-    // (handles cases where original AI text was already outlined as paths)
-    var overlays = jState.overlays || [];
-    components = components.filter(function(comp) {
-        if (comp.type !== 'pdfpath') return true;
-        var cx = comp.x + comp.width / 2;
-        var cy = comp.y + comp.height / 2;
-        for (var oi = 0; oi < overlays.length; oi++) {
-            var ov = overlays[oi];
-            if (cx >= ov.x && cx <= ov.x + ov.w && cy >= ov.y && cy <= ov.y + ov.h) {
-                return false;
-            }
-        }
-        return true;
-    });
 
     // Add overlay components
     for (var i = 0; i < jState.overlays.length; i++) {
