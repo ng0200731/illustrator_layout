@@ -47,7 +47,12 @@ function getJCanvasState(c) {
             _selectedTextNode: null,
             _textNodeResizing: null,
             regionResizing: null,
-            boundsRects: []
+            boundsRects: [],
+            addOverlayMode: false,
+            addOverlayStep: null,
+            addOverlaySelectedBRIdx: -1,
+            addOverlayDraw: null,
+            _addOverlayBRIdx: -1
         });
     }
     return jCanvasStates.get(c);
@@ -368,6 +373,8 @@ function jParseJsonFile(file) {
             if (exportAiE) exportAiE.disabled = false;
             if (exportAiO) exportAiO.disabled = false;
             if (exportJson) exportJson.disabled = false;
+            var addBtn = _jel('overlay-add-btn');
+            if (addBtn) addBtn.disabled = (jState.boundsRects.length === 0);
 
             jState.historyStack = [];
             jState.historyIndex = -1;
@@ -972,16 +979,30 @@ function jOnMouseDown(e) {
         }
     }
 
-    // Edge mode drawing
-    if (jState.edgeMode) {
-        jOnEdgeMouseDown(e);
-        return;
-    }
+    // (Block/Edge/Content modes removed)
 
-    // Content region drawing
-    if (jState.contentRegionMode) {
-        jOnContentRegionMouseDown(e);
-        return;
+    // Add-overlay mode handling
+    if (jState.addOverlayMode) {
+        if (jState.addOverlayStep === 'selectPanel') {
+            var pos0 = jScreenToDoc(e.clientX, e.clientY);
+            var clickedBRIdx = jHitTestBoundsRect(pos0.x, pos0.y);
+            if (clickedBRIdx >= 0) {
+                jState.addOverlayStep = 'drawRegion';
+                jState.addOverlaySelectedBRIdx = clickedBRIdx;
+                var hint = _jel('overlay-add-hint');
+                if (hint) {
+                    var brName = jState.boundsRects[clickedBRIdx].groupName || ('Panel ' + (clickedBRIdx + 1));
+                    hint.textContent = 'Step 2: Draw inside "' + brName + '". Esc to cancel.';
+                }
+                if (jCanvas) jCanvas.style.cursor = 'crosshair';
+                jRenderCanvas();
+            }
+            return;
+        }
+        if (jState.addOverlayStep === 'drawRegion') {
+            jOnAddOverlayDrawStart(e);
+            return;
+        }
     }
 
     // Check if clicking on an overlay resize handle
@@ -1109,6 +1130,9 @@ document.addEventListener('keydown', function(e) {
         e.preventDefault();
         jState.pan.spaceDown = true;
     }
+    if (jState && e.code === 'Escape' && jState.addOverlayMode) {
+        jCancelAddOverlay();
+    }
 });
 document.addEventListener('keyup', function(e) {
     if (jState && e.code === 'Space') {
@@ -1195,6 +1219,26 @@ function jRenderCanvas() {
             c.strokeRect(pbr.x, pbr.y, pbr.w, pbr.h);
             c.setLineDash([]);
             c.restore();
+
+            // Highlight boundsRects during add-overlay mode
+            if (jState.addOverlayMode && jState.addOverlayStep === 'selectPanel') {
+                c.save();
+                c.fillStyle = 'rgba(0, 150, 255, 0.08)';
+                c.strokeStyle = 'rgba(0, 150, 255, 0.6)';
+                c.lineWidth = 0.5;
+                c.fillRect(pbr.x, pbr.y, pbr.w, pbr.h);
+                c.strokeRect(pbr.x, pbr.y, pbr.w, pbr.h);
+                c.restore();
+            }
+            if (jState.addOverlayMode && jState.addOverlayStep === 'drawRegion' && pi === jState.addOverlaySelectedBRIdx) {
+                c.save();
+                c.fillStyle = 'rgba(0, 200, 0, 0.06)';
+                c.strokeStyle = 'rgba(0, 200, 0, 0.8)';
+                c.lineWidth = 0.6;
+                c.fillRect(pbr.x, pbr.y, pbr.w, pbr.h);
+                c.strokeRect(pbr.x, pbr.y, pbr.w, pbr.h);
+                c.restore();
+            }
 
             if (rot !== 0) {
                 var cx = pbr.x + pbr.w / 2;
@@ -1321,8 +1365,38 @@ function jRenderCanvas() {
         }
     }
 
-    // Render edges
-    jRenderEdges(c);
+    // (Edge rendering removed)
+
+    // Draw add-overlay region while dragging
+    if (jState.addOverlayDraw) {
+        var aod = jState.addOverlayDraw;
+        var brIdx = jState.addOverlaySelectedBRIdx;
+        var aRot = 0;
+        if (jState.boundsRects && brIdx >= 0 && brIdx < jState.boundsRects.length) {
+            aRot = jState.boundsRects[brIdx]._rotation || 0;
+        }
+        if (aRot !== 0) {
+            var abr = jState.boundsRects[brIdx];
+            var acx = abr.x + abr.w / 2;
+            var acy = abr.y + abr.h / 2;
+            c.save();
+            c.translate(acx, acy);
+            c.rotate(aRot * Math.PI / 180);
+            c.translate(-acx, -acy);
+        }
+        c.save();
+        c.strokeStyle = '#00aa00';
+        c.lineWidth = 0.5;
+        c.setLineDash([1.5, 1.5]);
+        var rx = Math.min(aod.x1, aod.x2), ry = Math.min(aod.y1, aod.y2);
+        var rw = Math.abs(aod.x2 - aod.x1), rh = Math.abs(aod.y2 - aod.y1);
+        c.strokeRect(rx, ry, rw, rh);
+        c.fillStyle = 'rgba(0, 170, 0, 0.05)';
+        c.fillRect(rx, ry, rw, rh);
+        c.setLineDash([]);
+        c.restore();
+        if (aRot !== 0) c.restore();
+    }
 
     c.restore();
 
@@ -2667,8 +2741,12 @@ function applyContentSettings() {
             jState.selectedOverlayIdx = -1;
         } else {
             // Find containing bounds rect for new overlay
-            var br = jFindContainingBoundsRect(comp);
-            comp._boundsRectIdx = br ? jState.boundsRects.indexOf(br) : -1;
+            if (jState._addOverlayBRIdx >= 0 && jState._addOverlayBRIdx < jState.boundsRects.length) {
+                comp._boundsRectIdx = jState._addOverlayBRIdx;
+            } else {
+                var br = jFindContainingBoundsRect(comp);
+                comp._boundsRectIdx = br ? jState.boundsRects.indexOf(br) : -1;
+            }
             jState.overlays.push(comp);
             jState.selectedOverlayIdx = -1;
         }
@@ -2689,6 +2767,7 @@ function applyContentSettings() {
     jState._selectedTextNode = null;
     jState.pendingContentRegion = null;
     jState.pendingContentType = null;
+    jState._addOverlayBRIdx = -1;
     var picker = _jel('content-type-picker');
     if (picker) picker.style.display = 'none';
     var btns = _jel('ct-buttons');
@@ -2708,6 +2787,7 @@ function applyContentSettings() {
 function cancelContentSettings() {
     jState.pendingContentRegion = null;
     jState.pendingContentType = null;
+    jState._addOverlayBRIdx = -1;
     jState.editingComponentIdx = -1;
     jState._editingTextNode = null;
     jState._selectedTextNode = null;
@@ -2876,15 +2956,106 @@ function jFindContainingEdge(region) {
 // ─── Edge Mode ───
 
 function toggleEdgeMode() {
-    if (!jState) return;
-    jState.edgeMode = !jState.edgeMode;
-    jState.contentMode = false;
-    jState.contentRegionMode = false;
-    var btn = _jel('btn-define-edge');
-    if (btn) btn.classList.toggle('active', jState.edgeMode);
-    var cbtn = _jel('btn-add-content');
-    if (cbtn) cbtn.classList.remove('active');
+    // Block section removed — no-op
+}
+
+// ─── Add Overlay Mode ───
+
+function jStartAddOverlay() {
+    if (!jState || !jState.boundsRects || jState.boundsRects.length === 0) return;
+    if (jState.addOverlayMode) { jCancelAddOverlay(); return; }
+    jState.addOverlayMode = true;
+    jState.addOverlayStep = 'selectPanel';
+    jState.addOverlaySelectedBRIdx = -1;
+    jState.addOverlayDraw = null;
+    var hint = _jel('overlay-add-hint');
+    if (hint) { hint.style.display = ''; hint.textContent = 'Step 1: Click a panel on the canvas'; }
+    var addBtn = _jel('overlay-add-btn');
+    if (addBtn) addBtn.classList.add('var-active');
+    if (jCanvas) jCanvas.style.cursor = 'pointer';
     jRenderCanvas();
+}
+
+function jCancelAddOverlay() {
+    if (!jState) return;
+    jState.addOverlayMode = false;
+    jState.addOverlayStep = null;
+    jState.addOverlaySelectedBRIdx = -1;
+    jState.addOverlayDraw = null;
+    var hint = _jel('overlay-add-hint');
+    if (hint) hint.style.display = 'none';
+    var addBtn = _jel('overlay-add-btn');
+    if (addBtn) addBtn.classList.remove('var-active');
+    if (jCanvas) jCanvas.style.cursor = '';
+    jRenderCanvas();
+}
+
+function jHitTestBoundsRect(x, y) {
+    if (!jState || !jState.boundsRects) return -1;
+    var bestIdx = -1, bestArea = Infinity;
+    for (var i = 0; i < jState.boundsRects.length; i++) {
+        var br = jState.boundsRects[i];
+        if (x >= br.x && x <= br.x + br.w && y >= br.y && y <= br.y + br.h) {
+            var area = br.w * br.h;
+            if (area < bestArea) { bestArea = area; bestIdx = i; }
+        }
+    }
+    return bestIdx;
+}
+
+function jOnAddOverlayDrawStart(e) {
+    var brIdx = jState.addOverlaySelectedBRIdx;
+    var br = jState.boundsRects[brIdx];
+    if (!br) return;
+    var rawPos = jScreenToDoc(e.clientX, e.clientY);
+    var pos = jUnrotatePoint(rawPos.x, rawPos.y, brIdx);
+    var sx = Math.max(br.x, Math.min(pos.x, br.x + br.w));
+    var sy = Math.max(br.y, Math.min(pos.y, br.y + br.h));
+    jState.addOverlayDraw = { x1: sx, y1: sy, x2: sx, y2: sy };
+    var onMove = function(ev) {
+        var rawP = jScreenToDoc(ev.clientX, ev.clientY);
+        var p = jUnrotatePoint(rawP.x, rawP.y, brIdx);
+        jState.addOverlayDraw.x2 = Math.max(br.x, Math.min(p.x, br.x + br.w));
+        jState.addOverlayDraw.y2 = Math.max(br.y, Math.min(p.y, br.y + br.h));
+        jRenderCanvas();
+    };
+    var onUp = function() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        var rd = jState.addOverlayDraw;
+        if (rd && Math.abs(rd.x2 - rd.x1) > 0.5 && Math.abs(rd.y2 - rd.y1) > 0.5) {
+            var x = Math.min(rd.x1, rd.x2), y = Math.min(rd.y1, rd.y2);
+            var w = Math.abs(rd.x2 - rd.x1), h = Math.abs(rd.y2 - rd.y1);
+            jState.pendingContentRegion = { x: x, y: y, w: w, h: h };
+            jState.pendingContentType = 'text';
+            jState.editingComponentIdx = -1;
+            jState._addOverlayBRIdx = brIdx;
+            var panel = _jel('content-type-panel');
+            if (panel) panel.style.display = '';
+            var picker = _jel('content-type-picker');
+            if (picker) picker.style.display = '';
+            var typeSelect = _jel('ct-type-select');
+            if (typeSelect) { typeSelect.value = 'text'; jOnContentTypeChange(); }
+            var btns = _jel('ct-buttons');
+            if (btns) btns.style.display = '';
+            var rotBtns = _jel('ct-rotate-buttons');
+            if (rotBtns) rotBtns.style.display = '';
+            jLoadFontList();
+            jState.addOverlayMode = false;
+            jState.addOverlayStep = null;
+            jState.addOverlayDraw = null;
+            var hint = _jel('overlay-add-hint');
+            if (hint) hint.style.display = 'none';
+            var addBtn = _jel('overlay-add-btn');
+            if (addBtn) addBtn.classList.remove('var-active');
+            if (jCanvas) jCanvas.style.cursor = '';
+        } else {
+            jState.addOverlayDraw = null;
+        }
+        jRenderCanvas();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
 }
 
 function jOnEdgeMouseDown(e) {
@@ -2917,22 +3088,7 @@ function jOnEdgeMouseDown(e) {
 // ─── Content Mode ───
 
 function toggleContentMode() {
-    if (!jState) return;
-    jState.contentMode = !jState.contentMode;
-    jState.edgeMode = false;
-    var btn = _jel('btn-add-content');
-    if (btn) btn.classList.toggle('active', jState.contentMode);
-    var ebtn = _jel('btn-define-edge');
-    if (ebtn) ebtn.classList.remove('active');
-    var panel = _jel('content-type-panel');
-    if (panel) panel.style.display = jState.contentMode ? '' : 'none';
-
-    if (jState.contentMode) {
-        jState.contentRegionMode = true;
-    } else {
-        jState.contentRegionMode = false;
-    }
-    jRenderCanvas();
+    // Block section removed — no-op
 }
 
 function jOnContentRegionMouseDown(e) {
@@ -3459,6 +3615,8 @@ function jLoadLayoutFromExport(data) {
     if (exportPdf) exportPdf.disabled = false;
     if (exportAiE) exportAiE.disabled = false;
     if (exportAiO) exportAiO.disabled = false;
+    var addBtn = _jel('overlay-add-btn');
+    if (addBtn) addBtn.disabled = (jState.boundsRects.length === 0);
 
     jState.historyStack = [];
     jState.historyIndex = -1;

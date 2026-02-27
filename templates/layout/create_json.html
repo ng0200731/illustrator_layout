@@ -160,9 +160,11 @@
                 <h2 class="collapsible-header">OVERLAYS <span id="overlay-count">(0 items)</span> <span class="collapse-icon">▼</span></h2>
                 <div class="panel-section-body">
                     <div style="display:flex;gap:4px;margin-bottom:4px;">
+                        <button class="icon-btn" id="overlay-add-btn" onclick="jStartAddOverlay()" title="Add overlay" disabled>+</button>
                         <button class="icon-btn" id="overlay-toggle-visible" onclick="jToggleAllOverlayVisible()" title="Toggle all visibility">👁</button>
                         <button class="icon-btn" id="overlay-toggle-lock" onclick="jToggleAllOverlayLock()" title="Toggle all lock">🔓</button>
                     </div>
+                    <div id="overlay-add-hint" style="display:none;font-size:11px;color:#666;padding:2px 4px;"></div>
                     <div id="overlay-list">
                         <div class="empty-message">No overlays added</div>
                     </div>
@@ -178,18 +180,6 @@
                 </div>
             </div>
 
-            <div class="panel-section">
-                <h2 class="collapsible-header">BLOCK <span class="collapse-icon">▼</span></h2>
-                <div class="panel-section-body">
-                    <div class="block-buttons">
-                        <button id="btn-define-edge" onclick="toggleEdgeMode()">Define Edge</button>
-                        <button id="btn-add-content" onclick="toggleContentMode()">Content</button>
-                    </div>
-                    <div id="edge-list">
-                        <div class="empty-message">No edges defined</div>
-                    </div>
-                </div>
-            </div>
 
             <div class="panel-section" id="properties-section" style="display: none;">
                 <h2 class="collapsible-header">SELECTED <span class="collapse-icon">▼</span></h2>

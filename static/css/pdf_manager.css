@@ -366,26 +366,16 @@
 }
 
 /* Block section */
-.block-buttons {
-    display: flex;
-    flex-direction: row;
-    gap: 4px;
-    margin-bottom: 6px;
-}
-
-.block-buttons button {
-    flex: 1;
-}
-
 .btn-active {
     background: #000 !important;
     color: #fff !important;
 }
 
-#edge-list {
-    max-height: 200px;
-    overflow-y: auto;
+#overlay-add-btn {
+    font-weight: 700;
+    font-size: 14px;
 }
+
 
 .edge-item {
     display: flex;
