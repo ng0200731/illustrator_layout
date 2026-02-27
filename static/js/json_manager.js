@@ -781,6 +781,7 @@ function jEditOverlayRegion(ovIdx) {
     jState.pendingContentRegion = { x: ov.x, y: ov.y, w: ov.w, h: ov.h };
     jState.pendingContentType = contentType;
     jState.editingComponentIdx = ovIdx;
+    jState._addOverlayBRIdx = ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1;
 
     // Show content type panel
     var panel = _jel('content-type-panel');
@@ -1275,11 +1276,6 @@ function jFinishRectSelect(additive) {
     jState.lastClickedTreePath = keys.length > 0 ? keys[keys.length - 1] : null;
     jRenderCanvas();
     jRenderLayerTree();
-    // Scroll first selected item into view in layer tree
-    if (keys.length > 0) {
-        var firstSelEl = document.querySelector('.layer-tree-item[data-node-id="' + keys[0] + '"]');
-        if (firstSelEl) firstSelEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
 }
 
 function jHitTestOverlay(x, y) {
@@ -1817,7 +1813,7 @@ function jRenderCanvas() {
     if (selKeys.length > 0) {
         for (var si = 0; si < selKeys.length; si++) {
             var selNode = jFindNodeByIdInTree(jState.documentTree, selKeys[si]);
-            if (!selNode || selNode.visible === false) continue;
+            if (!selNode || selNode.visible === false || selNode._isBoundsRect) continue;
             var sb = selNode.bounds;
             if (!sb && selNode._isUserGroup && selNode.children && selNode.children.length > 0) {
                 sb = selNode.children[0].bounds;
@@ -2133,6 +2129,7 @@ function jRenderOverlays(c) {
     for (var i = 0; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
         if (!ov.visible) continue;
+        if (jState.editingComponentIdx === i && jState.pendingContentRegion) continue;
         var rot = 0;
         if (brs && ov._boundsRectIdx >= 0 && ov._boundsRectIdx < brs.length) {
             rot = brs[ov._boundsRectIdx]._rotation || 0;
@@ -4240,18 +4237,48 @@ function confirmCustomerSelect() {
 
 // ─── Export JSON ───
 
+function jFilterVisibleTree(nodes) {
+    if (!nodes) return null;
+    var result = [];
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (node.visible === false) continue;
+        var clone = {};
+        for (var k in node) { clone[k] = node[k]; }
+        if (node.children) {
+            clone.children = jFilterVisibleTree(node.children);
+        }
+        if (node.paths) {
+            clone.paths = jFilterVisibleTree(node.paths);
+        }
+        result.push(clone);
+    }
+    return result;
+}
+
 function jExportJson() {
     if (!jState || !jState.documentTree) return;
 
     var btn = _jel('btn-export-json');
     if (btn) btn.classList.add('exporting');
 
+    var includeHidden = true;
+    var chk = _jel('export-include-hidden');
+    if (chk) includeHidden = chk.checked;
+
+    var tree = jState.documentTree;
+    var overlays = jState.overlays;
+    if (!includeHidden) {
+        tree = jFilterVisibleTree(tree);
+        overlays = overlays.filter(function(ov) { return ov.visible !== false; });
+    }
+
     var exportData = {
         _exportType: 'layout-state',
-        documentTree: jState.documentTree,
+        documentTree: tree,
         docMetadata: jState.docMetadata,
         docSwatches: jState.docSwatches,
-        overlays: jState.overlays,
+        overlays: overlays,
         docWidth: jState.docWidth,
         docHeight: jState.docHeight,
         scale: jState.scale,
@@ -4264,7 +4291,9 @@ function jExportJson() {
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
-    a.download = (jState.currentLayoutName || 'layout') + '.json';
+    var jsonFilename = (jState.currentLayoutName || 'layout');
+    if (!includeHidden) jsonFilename += '_no_eye';
+    a.download = jsonFilename + '.json';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -4339,9 +4368,18 @@ function jExportFile(type, outlined) {
     if (btn) btn.classList.add('exporting');
     console.log('jExportFile start:', type, outlined);
 
+    var includeHidden = true;
+    var chk = _jel('export-include-hidden');
+    if (chk) includeHidden = chk.checked;
+
     // Flatten document tree into components array for export
     var components = [];
     jFlattenForExport(jState.documentTree, components, 1.0);
+
+    // If export-eye-close is off, remove hidden components
+    if (!includeHidden) {
+        components = components.filter(function(c) { return c.visible !== false; });
+    }
 
     // Assign boundsRectIdx to flattened components based on center point
     var brs = jState.boundsRects || [];
@@ -4379,6 +4417,7 @@ function jExportFile(type, outlined) {
     // Add overlay components
     for (var i = 0; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
+        if (!includeHidden && ov.visible === false) continue;
         components.push({
             type: ov.type,
             x: ov.x, y: ov.y,
@@ -4428,6 +4467,7 @@ function jExportFile(type, outlined) {
 
     var endpoint = type === 'pdf' ? '/export/pdf' : '/export/ai';
     var filename = (jState.currentLayoutName || 'layout');
+    if (!includeHidden) filename += '_no_eye';
     if (type === 'pdf') filename += '.pdf';
     else if (outlined) filename += '_outlined.ai';
     else filename += '_editable.ai';
