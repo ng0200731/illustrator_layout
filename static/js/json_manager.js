@@ -314,6 +314,12 @@ function jSetupAlignmentButtons() {
             btn.addEventListener('click', function() {
                 group.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
                 btn.classList.add('active');
+                if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
+                    var comp = jState.overlays[jState.editingComponentIdx];
+                    if (group.id === 'ct-align-h') comp.alignH = btn.dataset.val;
+                    else if (group.id === 'ct-align-v') comp.alignV = btn.dataset.val;
+                }
+                jRenderCanvas();
             });
         });
     });
@@ -1191,11 +1197,19 @@ function jOnMouseDown(e) {
         jState.selectedTreePaths = {};
         jState.lastClickedTreePath = null;
         jState.selectedTreePanelId = null;
+        jState.pendingContentRegion = null;
+        jState.pendingContentType = null;
+        jState.editingComponentIdx = -1;
+        jState._editingTextNode = null;
         jStartOverlayDrag(e, hitIdx);
     } else {
         // Start rectangle selection drag on empty canvas
         jState.selectedOverlayIdx = -1;
         jState._selectedTextNode = null;
+        jState.pendingContentRegion = null;
+        jState.pendingContentType = null;
+        jState.editingComponentIdx = -1;
+        jState._editingTextNode = null;
         if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
             jState.selectedTreePath = null;
             jState.selectedTreePaths = {};
@@ -1632,21 +1646,49 @@ function jRenderCanvas() {
             var textVal = (_jel('ct-text-value') || {}).value || '';
             if (textVal) {
                 var fontSize = parseFloat((_jel('ct-font-size') || {}).value) || 12;
-                var fontPt = fontSize * 0.3528;
+                var fontSizeMm = fontSize * PT_TO_MM;
                 var fontSelect = _jel('ct-font-select');
                 var fontName = 'sans-serif';
                 if (fontSelect && fontSelect.options[fontSelect.selectedIndex]) {
                     var fn = fontSelect.options[fontSelect.selectedIndex].dataset.fontName;
                     if (fn) fontName = "'" + fn + "', sans-serif";
                 }
+                var pBold = _jel('ct-bold-btn') && _jel('ct-bold-btn').classList.contains('active');
+                var pItalic = _jel('ct-italic-btn') && _jel('ct-italic-btn').classList.contains('active');
+                var pFontStyle = '';
+                if (pItalic) pFontStyle += 'italic ';
+                if (pBold) pFontStyle += 'bold ';
+                pFontStyle += fontSizeMm + 'px ' + fontName;
+                c.font = pFontStyle;
                 c.fillStyle = (_jel('ct-color') || {}).value || '#000';
-                c.font = fontPt + 'px ' + fontName;
+                var pAlignH = 'left';
+                var pAlignHEl = _jel('ct-align-h');
+                if (pAlignHEl) { var pa = pAlignHEl.querySelector('.active'); if (pa) pAlignH = pa.dataset.val; }
+                var pAlignV = 'top';
+                var pAlignVEl = _jel('ct-align-v');
+                if (pAlignVEl) { var pv = pAlignVEl.querySelector('.active'); if (pv) pAlignV = pv.dataset.val; }
+                if (pAlignH === 'center') c.textAlign = 'center';
+                else if (pAlignH === 'right') c.textAlign = 'right';
+                else c.textAlign = 'left';
                 c.textBaseline = 'top';
+                var tx = pr.x;
+                if (pAlignH === 'center') tx = pr.x + pr.w / 2;
+                else if (pAlignH === 'right') tx = pr.x + pr.w;
+                var lines = textVal.split('\n');
+                var letterSpacing = parseFloat((_jel('ct-letter-spacing') || {}).value) || 0;
+                var lineSpacing = letterSpacing * PT_TO_MM;
+                var lineHeight = fontSizeMm * 1.2 + lineSpacing;
+                var totalH = lines.length * lineHeight;
+                var startY = pr.y;
+                if (pAlignV === 'center') startY = pr.y + (pr.h - totalH) / 2;
+                else if (pAlignV === 'bottom') startY = pr.y + pr.h - totalH;
                 c.save();
                 c.beginPath();
                 c.rect(pr.x, pr.y, pr.w, pr.h);
                 c.clip();
-                c.fillText(textVal, pr.x + 0.5, pr.y + 0.5);
+                for (var li = 0; li < lines.length; li++) {
+                    c.fillText(lines[li], tx, startY + li * lineHeight);
+                }
                 c.restore();
             }
             c.restore();
@@ -2187,6 +2229,7 @@ function jRenderOverlayItem(c, ov, idx) {
     c.setLineDash([]);
 
     if (ov.type === 'textregion' && ov.content && ov.fontFamily) {
+        var tr = ov._resizeTextRect || { x: x, y: y, w: w, h: h };
         var fontSizeMm = ov.fontSize * PT_TO_MM;
         var fontStyle = '';
         if (ov.italic) fontStyle += 'italic ';
@@ -2200,21 +2243,21 @@ function jRenderOverlayItem(c, ov, idx) {
         else c.textAlign = 'left';
         c.textBaseline = 'top';
 
-        var tx = x;
-        if (ov.alignH === 'center') tx = x + w / 2;
-        else if (ov.alignH === 'right') tx = x + w;
+        var tx = tr.x;
+        if (ov.alignH === 'center') tx = tr.x + tr.w / 2;
+        else if (ov.alignH === 'right') tx = tr.x + tr.w;
 
         var lines = ov.content.split('\n');
         var lineSpacing = (ov.letterSpacing || 0) * PT_TO_MM;
         var lineHeight = fontSizeMm * 1.2 + lineSpacing;
         var totalH = lines.length * lineHeight;
-        var startY = y;
-        if (ov.alignV === 'center') startY = y + (h - totalH) / 2;
-        else if (ov.alignV === 'bottom') startY = y + h - totalH;
+        var startY = tr.y;
+        if (ov.alignV === 'center') startY = tr.y + (tr.h - totalH) / 2;
+        else if (ov.alignV === 'bottom') startY = tr.y + tr.h - totalH;
 
         c.save();
         c.beginPath();
-        c.rect(x, y, w, h);
+        c.rect(tr.x, tr.y, tr.w, tr.h);
         c.clip();
         for (var li = 0; li < lines.length; li++) {
             c.fillText(lines[li], tx, startY + li * lineHeight);
@@ -2351,6 +2394,7 @@ function jStartOverlayResize(e, idx, handleId) {
     if (!ov) return;
     if (ov.locked) return;
     var origX = ov.x, origY = ov.y, origW = ov.w, origH = ov.h;
+    ov._resizeTextRect = { x: origX, y: origY, w: origW, h: origH };
     var brIdx = ov._boundsRectIdx;
     var rawStart = jScreenToDoc(e.clientX, e.clientY);
     var startPos = jUnrotatePoint(rawStart.x, rawStart.y, brIdx);
@@ -2384,6 +2428,7 @@ function jStartOverlayResize(e, idx, handleId) {
     var onUp = function() {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        delete ov._resizeTextRect;
         jCaptureState();
     };
     document.addEventListener('mousemove', onMove);
