@@ -213,3 +213,31 @@
     color: #222;
     word-break: break-all;
 }
+
+/* Glyph grid for font viewer */
+.glyph-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.glyph-cell {
+    width: 50px;
+    border: 1px solid #ddd;
+    text-align: center;
+}
+
+.glyph-key {
+    font-size: 10px;
+    color: #666;
+    padding: 2px 0;
+    border-bottom: 1px solid #eee;
+    font-family: monospace;
+}
+
+.glyph-render {
+    font-size: 28px;
+    padding: 4px 0;
+    color: #000;
+    line-height: 1.2;
+}

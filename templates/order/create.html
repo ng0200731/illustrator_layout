@@ -175,12 +175,9 @@
             } else {
                 line.vars.forEach(function(v) {
                     varsHtml +=
-                        '<div class="var-row-full">' +
-                            '<div class="var-info">' +
-                                '<span class="var-original">Original: ' + escHtml(v.content) + '</span>' +
-                                '<span class="var-font">Font: ' + escHtml(v.fontFamily || 'default') + '</span>' +
-                            '</div>' +
-                            '<textarea data-line="' + li + '" data-idx="' + v.idx + '" ' +
+                        '<div class="var-row-side">' +
+                            '<div class="var-left">' + escHtml(v.content) + '</div>' +
+                            '<textarea class="var-right" data-line="' + li + '" data-idx="' + v.idx + '" ' +
                                 'placeholder="Enter value" rows="2" oninput="onVarInput(this)">' +
                                 escHtml(line.variableValues[v.idx] || '') +
                             '</textarea>' +
@@ -276,8 +273,7 @@
         .then(function(res) {
             closePoModal();
             if (res.ok) {
-                var oid = res.data.order_id;
-                openTab('Order (' + oid + ')', '/order/detail/' + oid);
+                openTab('Orders', '/order/view');
             } else {
                 document.getElementById('order-result').innerHTML = '<p class="error">' + res.data.error + '</p>';
             }

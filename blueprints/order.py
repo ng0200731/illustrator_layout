@@ -39,7 +39,6 @@ def api_create():
                 line['quantity'],
                 line.get('variable_values')
             )
-        Order.generate_and_store(order_id)
         return jsonify({'order_id': order_id}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -57,6 +56,42 @@ def api_detail(order_id):
     if not result:
         return jsonify({'error': 'Not found'}), 404
     return jsonify(result)
+
+
+@order_bp.route('/api/<order_id>', methods=['DELETE'])
+def api_delete(order_id):
+    try:
+        Order.delete(order_id)
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@order_bp.route('/api/<order_id>/confirm', methods=['POST'])
+def api_confirm(order_id):
+    try:
+        Order.generate_and_store(order_id)
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@order_bp.route('/api/<order_id>/generate', methods=['POST'])
+def api_generate(order_id):
+    """Generate layout data for all lines without changing order status."""
+    try:
+        result = Order.get_by_id(order_id)
+        if not result:
+            return jsonify({'error': 'Not found'}), 404
+        import json
+        generated = []
+        for line in result['lines']:
+            vv = json.loads(line['variable_values']) if line['variable_values'] else {}
+            data = Order.generate_layout_data(line['layout_id'], vv)
+            generated.append(data)
+        return jsonify({'lines': generated})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @order_bp.route('/api/layouts/<customer_id>')

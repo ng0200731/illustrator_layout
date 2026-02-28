@@ -3,14 +3,19 @@
 
     <div class="order-view">
         <h2>Orders</h2>
-        <table id="orders-table">
+        <div style="display:flex; gap:6px; margin-bottom:8px;">
+            <button onclick="selectAll()" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">Select All</button>
+            <button onclick="deleteSelected()" style="padding:3px 10px;border:1px solid #c00;background:#fff;color:#c00;cursor:pointer;font-size:10px;">Delete Selected</button>
+        </div>
+        <table id="orders-table" class="layout-search-table">
             <thead>
                 <tr>
-                    <th>Order ID</th>
-                    <th>Customer</th>
-                    <th>PO #</th>
-                    <th>Status</th>
-                    <th>Created</th>
+                    <th style="width:30px;"><input type="checkbox" id="check-all" onchange="toggleAll(this)"></th>
+                    <th><input type="text" placeholder="Order ID..." oninput="filterOrders()"></th>
+                    <th><input type="text" placeholder="Customer..." oninput="filterOrders()"></th>
+                    <th><input type="text" placeholder="PO #..." oninput="filterOrders()"></th>
+                    <th><input type="text" placeholder="Status..." oninput="filterOrders()"></th>
+                    <th><input type="text" placeholder="Created..." oninput="filterOrders()"></th>
                     <th></th>
                 </tr>
             </thead>
@@ -20,28 +25,107 @@
     </div>
 
     <script>
+    var allOrders = [];
+
     (function() {
         fetch('/order/api/list')
             .then(function(r) { return r.json(); })
             .then(function(orders) {
-                var tbody = document.querySelector('#orders-table tbody');
+                allOrders = orders;
                 if (orders.length === 0) {
                     document.getElementById('orders-table').style.display = 'none';
                     document.getElementById('empty-orders').style.display = 'block';
                     return;
                 }
-                orders.forEach(function(o) {
-                    var tr = document.createElement('tr');
-                    tr.innerHTML =
-                        '<td>' + o.order_id + '</td>' +
-                        '<td>' + o.company_name + '</td>' +
-                        '<td>' + o.po_number + '</td>' +
-                        '<td>' + o.status + '</td>' +
-                        '<td>' + o.created_at + '</td>' +
-                        '<td><button onclick="openTab(\'Order (' + o.order_id + ')\', \'/order/detail/' + o.order_id + '\')">View</button></td>';
-                    tbody.appendChild(tr);
-                });
+                renderOrders(orders);
             });
     })();
+    function renderOrders(orders) {
+        var tbody = document.querySelector('#orders-table tbody');
+        tbody.innerHTML = '';
+        orders.forEach(function(o) {
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td><input type="checkbox" class="order-check" value="' + o.order_id + '"></td>' +
+                '<td>' + o.order_id + '</td>' +
+                '<td>' + o.company_name + '</td>' +
+                '<td>' + o.po_number + '</td>' +
+                '<td>' + o.status + '</td>' +
+                '<td>' + o.created_at + '</td>' +
+                '<td>' +
+                    (o.status === 'draft' ? '<button onclick="confirmOrder(\'' + o.order_id + '\')">Confirm</button> ' : '') +
+                    '<button onclick="openTab(\'Order (' + o.order_id + ')\', \'/order/detail/' + o.order_id + '\')">View</button> ' +
+                    '<button style="border-color:#c00;color:#c00;" onclick="deleteSingle(\'' + o.order_id + '\')">Del</button>' +
+                '</td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    function filterOrders() {
+        var inputs = document.querySelectorAll('#orders-table thead input[type="text"]');
+        var filters = [];
+        inputs.forEach(function(inp) { filters.push(inp.value.toLowerCase()); });
+
+        var filtered = allOrders.filter(function(o) {
+            var vals = [o.order_id, o.company_name, o.po_number, o.status, o.created_at];
+            for (var i = 0; i < filters.length; i++) {
+                if (filters[i] && vals[i].toLowerCase().indexOf(filters[i]) === -1) return false;
+            }
+            return true;
+        });
+        renderOrders(filtered);
+    }
+
+    function toggleAll(el) {
+        var checks = document.querySelectorAll('.order-check');
+        checks.forEach(function(c) { c.checked = el.checked; });
+    }
+
+    function selectAll() {
+        document.getElementById('check-all').checked = true;
+        var checks = document.querySelectorAll('.order-check');
+        checks.forEach(function(c) { c.checked = true; });
+    }
+
+    function deleteSelected() {
+        var checks = document.querySelectorAll('.order-check:checked');
+        var ids = [];
+        checks.forEach(function(c) { ids.push(c.value); });
+        if (ids.length === 0) { alert('No orders selected.'); return; }
+        if (!confirm('Delete ' + ids.length + ' order(s)?')) return;
+        var promises = ids.map(function(id) {
+            return fetch('/order/api/' + id, { method: 'DELETE' });
+        });
+        Promise.all(promises).then(function() {
+            allOrders = allOrders.filter(function(o) { return ids.indexOf(o.order_id) === -1; });
+            renderOrders(allOrders);
+            document.getElementById('check-all').checked = false;
+        });
+    }
+
+    function confirmOrder(orderId) {
+        if (!confirm('Confirm order ' + orderId + '?')) return;
+        fetch('/order/api/' + orderId + '/confirm', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+                if (res.ok) {
+                    var o = allOrders.find(function(x) { return x.order_id === orderId; });
+                    if (o) o.status = 'confirmed';
+                    filterOrders();
+                } else {
+                    alert('Confirm failed: ' + (res.error || 'Unknown error'));
+                }
+            })
+            .catch(function(err) { alert('Confirm error: ' + err.message); });
+    }
+
+    function deleteSingle(orderId) {
+        if (!confirm('Delete order ' + orderId + '?')) return;
+        fetch('/order/api/' + orderId, { method: 'DELETE' })
+            .then(function() {
+                allOrders = allOrders.filter(function(o) { return o.order_id !== orderId; });
+                renderOrders(allOrders);
+            });
+    }
     </script>
 </div>

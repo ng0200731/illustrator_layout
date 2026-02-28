@@ -101,20 +101,26 @@ async function previewFont(file) {
 
 function renderCharacterPreview(fontName) {
     const sections = [
-        { label: 'Lowercase (a-z)', chars: 'abcdefghijklmnopqrstuvwxyz' },
         { label: 'Uppercase (A-Z)', chars: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' },
+        { label: 'Lowercase (a-z)', chars: 'abcdefghijklmnopqrstuvwxyz' },
         { label: 'Numbers (0-9)', chars: '0123456789' },
         { label: 'Symbols', chars: '!@#$%^&*()_+-={}[]|\\:;"\'<>,.?/~`' }
     ];
 
     let html = '';
-
     sections.forEach(section => {
-        html += `<div class="preview-group">`;
-        html += `<div class="preview-label">${section.label}</div>`;
-        html += `<div class="preview-text" style="font-family: '${fontName}', sans-serif;">`;
-        html += section.chars;
-        html += `</div></div>`;
+        html += '<div class="preview-group">';
+        html += '<div class="preview-label">' + section.label + '</div>';
+        html += '<div class="glyph-grid">';
+        for (var i = 0; i < section.chars.length; i++) {
+            var ch = section.chars[i];
+            var display = ch.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+            html += '<div class="glyph-cell">';
+            html += '<div class="glyph-key">' + display + '</div>';
+            html += '<div class="glyph-render" style="font-family:\'' + fontName + '\', sans-serif;">' + display + '</div>';
+            html += '</div>';
+        }
+        html += '</div></div>';
     });
 
     return html;

@@ -13,8 +13,6 @@
         <table id="lines-table">
             <thead>
                 <tr>
-                    <th>Layout</th>
-                    <th>Type</th>
                     <th>Qty</th>
                     <th>Variables</th>
                     <th>Export</th>
@@ -36,6 +34,7 @@
 
     <script>
     var orderLines = [];
+    var generatedCache = {};
 
     (function() {
         fetch('/order/api/{{ order_id }}')
@@ -44,9 +43,12 @@
                 var order = data.order;
                 orderLines = data.lines;
 
+                var layoutName = orderLines.length > 0 ? orderLines[0].layout_name : '—';
+
                 document.getElementById('order-info').innerHTML =
                     '<div class="info-grid">' +
                     '<div class="info-row"><label>Customer:</label><span>' + order.company_name + '</span></div>' +
+                    '<div class="info-row"><label>Layout:</label><span><a href="#" class="layout-link" onclick="previewLayout(' + (orderLines.length > 0 ? orderLines[0].layout_id : 0) + ', \'' + (orderLines.length > 0 ? orderLines[0].layout_type : '') + '\', \'' + layoutName.replace(/'/g, "\\'") + '\'); return false;">' + layoutName + '</a></span></div>' +
                     '<div class="info-row"><label>PO #:</label><span>' + order.po_number + '</span></div>' +
                     '<div class="info-row"><label>Status:</label><span>' + order.status + '</span></div>' +
                     '<div class="info-row"><label>Created:</label><span>' + order.created_at + '</span></div>' +
@@ -61,8 +63,6 @@
 
                     var tr = document.createElement('tr');
                     tr.innerHTML =
-                        '<td><a href="#" class="layout-link" onclick="previewLayout(' + l.layout_id + ', \'' + l.layout_type + '\', \'' + l.layout_name.replace(/'/g, "\\'") + '\'); return false;">' + l.layout_name + '</a></td>' +
-                        '<td>' + l.layout_type + '</td>' +
                         '<td>' + l.quantity + '</td>' +
                         '<td>' + varDisplay + '</td>' +
                         '<td class="export-cell">' +
@@ -157,22 +157,37 @@
         });
     })();
 
+    function getGeneratedData(lineIdx) {
+        var line = orderLines[lineIdx];
+        if (line.generated_data) {
+            var genData = typeof line.generated_data === 'string' ? JSON.parse(line.generated_data) : line.generated_data;
+            return Promise.resolve(genData);
+        }
+        if (generatedCache[lineIdx]) {
+            return Promise.resolve(generatedCache[lineIdx]);
+        }
+        return fetch('/order/api/{{ order_id }}/generate', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+                if (res.lines) {
+                    res.lines.forEach(function(g, i) { generatedCache[i] = g; });
+                    return res.lines[lineIdx];
+                }
+                throw new Error(res.error || 'Generate failed');
+            });
+    }
+
     function exportLine(lineIdx, outlined) {
         var line = orderLines[lineIdx];
-        if (!line || !line.generated_data) {
-            alert('No generated data for this line.');
-            return;
-        }
+        if (!line) { alert('Line not found.'); return; }
 
-        var genData = typeof line.generated_data === 'string' ? JSON.parse(line.generated_data) : line.generated_data;
-
-        var payload;
-        if (genData.exportPayload) {
-            // Use pre-built export payload (includes flattened document tree + overlays)
-            payload = genData.exportPayload;
-            payload.outlined = !!outlined;
-            payload.separateInvisible = true;
-        } else {
+        getGeneratedData(lineIdx).then(function(genData) {
+            var payload;
+            if (genData.exportPayload) {
+                payload = genData.exportPayload;
+                payload.outlined = !!outlined;
+                payload.separateInvisible = true;
+            } else {
             // Fallback for older orders without exportPayload
             var comps = genData.components || [];
             payload = {
@@ -232,28 +247,30 @@
         .catch(function(err) {
             alert('Export failed: ' + err.message);
         });
+        });
     }
 
     function exportAll(outlined) {
-        var pages = [];
+        var promises = [];
         for (var i = 0; i < orderLines.length; i++) {
-            var line = orderLines[i];
-            if (!line || !line.generated_data) continue;
-            var genData = typeof line.generated_data === 'string'
-                ? JSON.parse(line.generated_data) : line.generated_data;
-            if (genData.exportPayload) {
-                pages.push(genData.exportPayload);
+            promises.push(getGeneratedData(i));
+        }
+        Promise.all(promises).then(function(results) {
+            var pages = [];
+            results.forEach(function(genData) {
+                if (genData && genData.exportPayload) {
+                    pages.push(genData.exportPayload);
+                }
+            });
+            if (pages.length === 0) {
+                alert('No data to export.');
+                return;
             }
-        }
-        if (pages.length === 0) {
-            alert('No generated data to export.');
-            return;
-        }
-        fetch('/export/ai/batch', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ outlined: !!outlined, pages: pages })
-        })
+            fetch('/export/ai/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ outlined: !!outlined, pages: pages })
+            })
         .then(function(response) {
             if (!response.ok) throw new Error('Batch export failed');
             return response.blob();
@@ -268,6 +285,7 @@
         })
         .catch(function(err) {
             alert('Batch export failed: ' + err.message);
+        });
         });
     }
     </script>
