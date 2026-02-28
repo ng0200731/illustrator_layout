@@ -192,6 +192,58 @@
 .success { color: #060; font-size: 12px; margin-top: 12px; }
 .error { color: #c00; font-size: 12px; margin-top: 12px; }
 
+/* Layout search table */
+.layout-search-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.layout-search-table th,
+.layout-search-table td {
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    text-align: left;
+}
+
+.layout-search-table th {
+    background: #000;
+    color: #fff;
+    font-weight: 500;
+}
+
+.layout-search-table th input {
+    width: 100%;
+    padding: 4px 6px;
+    border: 1px solid #666;
+    font-size: 11px;
+    font-family: inherit;
+    background: #fff;
+    color: #000;
+    box-sizing: border-box;
+}
+
+.layout-row {
+    cursor: pointer;
+}
+
+.layout-row:hover {
+    background: #f0f0f0;
+}
+
+.layout-row.selected {
+    background: #000;
+    color: #fff;
+}
+
+#order-qty {
+    width: 80px;
+    padding: 6px 8px;
+    border: 1px solid #000;
+    font-size: 11px;
+    text-align: center;
+}
+
 /* Tables */
 #orders-table,
 #lines-table {

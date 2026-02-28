@@ -59,7 +59,22 @@ def api_detail(order_id):
 @order_bp.route('/api/layouts/<customer_id>')
 def api_layouts(customer_id):
     rows = execute_query(
-        "SELECT id, name, type, data FROM layouts WHERE customer_id = ? ORDER BY name",
+        "SELECT id, name, type, data, created_at FROM layouts WHERE customer_id = ? ORDER BY name",
         (customer_id,), fetch_all=True
     )
-    return jsonify([dict(r) for r in rows])
+    import json
+    results = []
+    for r in rows:
+        d = dict(r)
+        var_count = 0
+        if d.get('data'):
+            try:
+                layout_data = json.loads(d['data']) if isinstance(d['data'], str) else d['data']
+                for c in layout_data.get('components', []):
+                    if c.get('isVariable'):
+                        var_count += 1
+            except Exception:
+                pass
+        d['var_count'] = var_count
+        results.append(d)
+    return jsonify(results)
