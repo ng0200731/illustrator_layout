@@ -60,6 +60,8 @@
                 orderLines = data.lines;
 
                 var layoutName = orderLines.length > 0 ? orderLines[0].layout_name : '—';
+                var totalQty = 0;
+                orderLines.forEach(function(l) { totalQty += l.quantity || 0; });
 
                 document.getElementById('order-info').innerHTML =
                     '<div class="info-grid">' +
@@ -67,6 +69,7 @@
                     '<div class="info-row"><label>Layout:</label><span><a href="#" class="layout-link" onclick="previewLayout(' + (orderLines.length > 0 ? orderLines[0].layout_id : 0) + ', \'' + (orderLines.length > 0 ? orderLines[0].layout_type : '') + '\', \'' + layoutName.replace(/'/g, "\\'") + '\'); return false;">' + layoutName + '</a></span></div>' +
                     '<div class="info-row"><label>PO #:</label><span>' + order.po_number + '</span></div>' +
                     '<div class="info-row"><label>Status:</label><span>' + order.status + '</span></div>' +
+                    '<div class="info-row"><label>Total Qty:</label><span>' + totalQty + '</span></div>' +
                     '<div class="info-row"><label>Created:</label><span>' + order.created_at + '</span></div>' +
                     '</div>';
 

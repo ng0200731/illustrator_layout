@@ -19,6 +19,7 @@ def generate_template(variables):
     ws.title = "Data"
     for col_idx, var in enumerate(variables, start=1):
         ws.cell(row=1, column=col_idx, value=var['content'])
+    ws.cell(row=1, column=len(variables) + 1, value='qty')
 
     _write_metadata(wb, variables)
 
@@ -42,10 +43,12 @@ def generate_dummy(variables):
 
     for col_idx, var in enumerate(variables, start=1):
         ws.cell(row=1, column=col_idx, value=var['content'])
+    ws.cell(row=1, column=len(variables) + 1, value='qty')
 
     for row in range(2, num_rows + 2):
         for col_idx, var in enumerate(variables, start=1):
             ws.cell(row=row, column=col_idx, value=_random_placeholder(var['content']))
+        ws.cell(row=row, column=len(variables) + 1, value=random.randint(1, 50))
 
     _write_metadata(wb, variables)
 
@@ -76,10 +79,10 @@ def parse_upload(file_storage, expected_variables):
         if not idx_mapping:
             idx_mapping = [v['idx'] for v in expected_variables]
 
-        # Validate column count
+        # Validate column count (variables + qty)
         header_row = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
         actual_cols = len([h for h in header_row if h is not None])
-        expected_cols = len(expected_variables)
+        expected_cols = len(expected_variables) + 1  # +1 for qty
         if actual_cols != expected_cols:
             return {'success': False, 'error': f'Column count mismatch: expected {expected_cols}, got {actual_cols}'}
 
@@ -89,6 +92,7 @@ def parse_upload(file_storage, expected_variables):
                 return {'success': False, 'error': f'Empty header in column {i + 1}'}
 
         # Read data rows and validate
+        var_cols = len(expected_variables)
         rows = []
         prev_was_empty = False
         for row in ws.iter_rows(min_row=2, values_only=True):
@@ -108,9 +112,16 @@ def parse_upload(file_storage, expected_variables):
                     return {'success': False, 'error': f'Empty cell at row {len(rows) + 2}, column {ci + 1}'}
 
             vv = {}
-            for ci, v in enumerate(values):
-                vv[str(idx_mapping[ci])] = str(v)
-            rows.append(vv)
+            for ci in range(var_cols):
+                vv[str(idx_mapping[ci])] = str(values[ci])
+            qty_val = values[var_cols]
+            try:
+                qty = int(float(str(qty_val)))
+            except (ValueError, TypeError):
+                return {'success': False, 'error': f'Invalid qty at row {len(rows) + 2}: {qty_val}'}
+            if qty < 1:
+                return {'success': False, 'error': f'Qty must be >= 1 at row {len(rows) + 2}'}
+            rows.append({'variableValues': vv, 'quantity': qty})
 
         if not rows:
             return {'success': False, 'error': 'No data rows found'}

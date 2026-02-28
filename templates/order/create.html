@@ -194,7 +194,7 @@
             card.className = 'order-line-card';
 
             var header = '<div class="line-card-header">' +
-                '<span>' + escHtml(line.layoutName) + '</span>' +
+                '<span>' + escHtml(line.layoutName) + ' (qty: ' + (line.quantity || 1) + ')</span>' +
                 '<button class="btn-remove" onclick="removeLine(' + li + ')">✕</button>' +
                 '</div>';
 
@@ -289,7 +289,7 @@
             }
             return {
                 layout_id: line.layout_id,
-                quantity: 1,
+                quantity: line.quantity || 1,
                 variable_values: hasVals ? vv : null
             };
         });
@@ -402,12 +402,13 @@
             if (data.success) {
                 var src = orderLinesList[0];
                 orderLinesList = [];
-                data.rows.forEach(function(vv) {
+                data.rows.forEach(function(row) {
                     orderLinesList.push({
                         layout_id: src.layout_id,
                         layoutName: src.layoutName,
                         vars: src.vars,
-                        variableValues: vv
+                        variableValues: row.variableValues || row,
+                        quantity: row.quantity || 1
                     });
                 });
                 renderOrderLines();
