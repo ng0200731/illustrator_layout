@@ -1,6 +1,9 @@
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, send_file
 from models.order import Order
 from models.database import execute_query
+import sys, os, json
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tools'))
+from excel_order import generate_template, generate_dummy, parse_upload
 
 order_bp = Blueprint('order', __name__, url_prefix='/order')
 
@@ -116,3 +119,54 @@ def api_layouts(customer_id):
         d['var_count'] = var_count
         results.append(d)
     return jsonify(results)
+
+
+@order_bp.route('/api/excel/template', methods=['POST'])
+def api_excel_template():
+    data = request.get_json()
+    variables = data.get('variables', [])
+    layout_name = data.get('layout_name', 'template')
+    if not variables:
+        return jsonify({'error': 'No variables provided'}), 400
+    try:
+        filepath = generate_template(variables)
+        return send_file(filepath, as_attachment=True,
+                         download_name=f'{layout_name}_template.xlsx')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@order_bp.route('/api/excel/dummy', methods=['POST'])
+def api_excel_dummy():
+    data = request.get_json()
+    variables = data.get('variables', [])
+    layout_name = data.get('layout_name', 'dummy')
+    if not variables:
+        return jsonify({'error': 'No variables provided'}), 400
+    try:
+        filepath = generate_dummy(variables)
+        return send_file(filepath, as_attachment=True,
+                         download_name=f'{layout_name}_dummy.xlsx')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@order_bp.route('/api/excel/upload', methods=['POST'])
+def api_excel_upload():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext != 'xlsx':
+        return jsonify({'error': 'Only .xlsx files are allowed'}), 400
+
+    variables_json = request.form.get('variables', '[]')
+    expected_variables = json.loads(variables_json)
+
+    result = parse_upload(file, expected_variables)
+    if result['success']:
+        return jsonify({'success': True, 'rows': result['rows']})
+    else:
+        return jsonify({'success': False, 'error': result['error']}), 400

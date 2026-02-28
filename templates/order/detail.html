@@ -22,6 +22,14 @@
         </table>
     </div>
 
+    <!-- Loading overlay -->
+    <div id="export-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.3);z-index:9999;justify-content:center;align-items:center;">
+        <div style="background:#fff;border:1px solid #000;padding:20px 32px;font-size:12px;text-align:center;">
+            <div class="spinner"></div>
+            <div style="margin-top:10px;">Exporting...</div>
+        </div>
+    </div>
+
     <div id="layout-preview-modal" class="preview-modal-overlay" onclick="closePreview(event)">
         <div class="preview-modal-content">
             <div class="preview-modal-header">
@@ -35,6 +43,14 @@
     <script>
     var orderLines = [];
     var generatedCache = {};
+
+    function showExportOverlay() {
+        var el = document.getElementById('export-overlay');
+        el.style.display = 'flex';
+    }
+    function hideExportOverlay() {
+        document.getElementById('export-overlay').style.display = 'none';
+    }
 
     (function() {
         fetch('/order/api/{{ order_id }}')
@@ -180,6 +196,7 @@
     function exportLine(lineIdx, outlined) {
         var line = orderLines[lineIdx];
         if (!line) { alert('Line not found.'); return; }
+        showExportOverlay();
 
         getGeneratedData(lineIdx).then(function(genData) {
             var payload;
@@ -243,14 +260,17 @@
             a.download = line.layout_name + (outlined ? '_outlined' : '_editable') + '.ai';
             a.click();
             URL.revokeObjectURL(url);
+            hideExportOverlay();
         })
         .catch(function(err) {
+            hideExportOverlay();
             alert('Export failed: ' + err.message);
         });
         });
     }
 
     function exportAll(outlined) {
+        showExportOverlay();
         var promises = [];
         for (var i = 0; i < orderLines.length; i++) {
             promises.push(getGeneratedData(i));
@@ -263,6 +283,7 @@
                 }
             });
             if (pages.length === 0) {
+                hideExportOverlay();
                 alert('No data to export.');
                 return;
             }
@@ -282,8 +303,10 @@
             a.download = 'order_{{ order_id }}' + (outlined ? '_outlined' : '_editable') + '.ai';
             a.click();
             URL.revokeObjectURL(url);
+            hideExportOverlay();
         })
         .catch(function(err) {
+            hideExportOverlay();
             alert('Batch export failed: ' + err.message);
         });
         });

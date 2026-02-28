@@ -15,6 +15,22 @@
 
         <div id="order-lines"></div>
 
+        <div id="excel-section" class="form-section" style="display:none;">
+            <h3>Excel Import</h3>
+            <div class="excel-actions">
+                <button onclick="downloadTemplate()" class="btn-excel">Download Template</button>
+                <button onclick="downloadDummy()" class="btn-excel">Download Dummy</button>
+            </div>
+            <div class="excel-upload-area" id="excel-upload-area">
+                <p>Drop .xlsx file here to import order lines</p>
+                <p>or</p>
+                <button onclick="document.getElementById('excel-input').click()" class="btn-excel">Choose File</button>
+            </div>
+            <input type="file" id="excel-input" accept=".xlsx" style="display:none;" onchange="handleExcelUpload(this)">
+            <div id="excel-error" class="error" style="display:none;"></div>
+            <div id="excel-success" class="success" style="display:none;"></div>
+        </div>
+
         <div class="form-section" id="layout-section" style="display:none;">
             <h3>Select Layout</h3>
             <table class="layout-search-table" id="layout-table">
@@ -61,6 +77,8 @@
     var orderLinesList = []; // [{layout_id, layoutName, variableValues:{}}]
     var currentCustomerId = '';
     var currentCustomerName = '';
+    var currentLayoutVars = [];
+    var currentLayoutName = '';
     (function init() {
         fetch('/customer/list')
             .then(function(r) { return r.json(); })
@@ -87,6 +105,9 @@
         document.getElementById('filter-name').value = '';
         hideSection('layout-section');
         hideSection('submit-section');
+        hideSection('excel-section');
+        currentLayoutVars = [];
+        currentLayoutName = '';
         document.getElementById('order-result').innerHTML = '';
         if (!currentCustomerId) return;
 
@@ -152,10 +173,18 @@
         vars.forEach(function(v) { lineObj.variableValues[v.idx] = v.content; });
         orderLinesList.push(lineObj);
 
+        currentLayoutVars = vars;
+        currentLayoutName = layout.name;
+
         // Collapse layout table, render line cards
         hideSection('layout-section');
         renderOrderLines();
         showSection('submit-section');
+        if (vars.length > 0) {
+            showSection('excel-section');
+            document.getElementById('excel-error').style.display = 'none';
+            document.getElementById('excel-success').style.display = 'none';
+        }
     }
     function renderOrderLines() {
         var container = document.getElementById('order-lines');
@@ -223,6 +252,7 @@
         renderOrderLines();
         if (orderLinesList.length === 0) {
             hideSection('submit-section');
+            hideSection('excel-section');
             addAnotherLayout();
         }
     }
@@ -299,5 +329,128 @@
         d.textContent = s;
         return d.innerHTML;
     }
+
+    function downloadTemplate() {
+        if (currentLayoutVars.length === 0) return;
+        fetch('/order/api/excel/template', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                variables: currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content }; }),
+                layout_name: currentLayoutName
+            })
+        })
+        .then(function(r) {
+            if (!r.ok) throw new Error('Download failed');
+            return r.blob();
+        })
+        .then(function(blob) {
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = currentLayoutName + '_template.xlsx';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        })
+        .catch(function(err) { alert(err.message); });
+    }
+
+    function downloadDummy() {
+        if (currentLayoutVars.length === 0) return;
+        fetch('/order/api/excel/dummy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                variables: currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content }; }),
+                layout_name: currentLayoutName
+            })
+        })
+        .then(function(r) {
+            if (!r.ok) throw new Error('Download failed');
+            return r.blob();
+        })
+        .then(function(blob) {
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = currentLayoutName + '_dummy.xlsx';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        })
+        .catch(function(err) { alert(err.message); });
+    }
+
+    function handleExcelUpload(input) {
+        var file = input.files[0];
+        if (!file) return;
+
+        var errDiv = document.getElementById('excel-error');
+        var successDiv = document.getElementById('excel-success');
+        errDiv.style.display = 'none';
+        successDiv.style.display = 'none';
+
+        var formData = new FormData();
+        formData.append('file', file);
+        formData.append('variables', JSON.stringify(
+            currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content }; })
+        ));
+
+        fetch('/order/api/excel/upload', {
+            method: 'POST',
+            body: formData
+        })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.success) {
+                var src = orderLinesList[0];
+                orderLinesList = [];
+                data.rows.forEach(function(vv) {
+                    orderLinesList.push({
+                        layout_id: src.layout_id,
+                        layoutName: src.layoutName,
+                        vars: src.vars,
+                        variableValues: vv
+                    });
+                });
+                renderOrderLines();
+                showSection('submit-section');
+                successDiv.textContent = data.rows.length + ' order lines imported';
+                successDiv.style.display = '';
+            } else {
+                errDiv.textContent = data.error;
+                errDiv.style.display = '';
+            }
+        })
+        .catch(function(err) {
+            errDiv.textContent = 'Upload failed: ' + err.message;
+            errDiv.style.display = '';
+        });
+
+        input.value = '';
+    }
+
+    (function initExcelDragDrop() {
+        setTimeout(function() {
+            var area = document.getElementById('excel-upload-area');
+            if (!area) return;
+            area.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                area.classList.add('dragover');
+            });
+            area.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                area.classList.remove('dragover');
+            });
+            area.addEventListener('drop', function(e) {
+                e.preventDefault();
+                area.classList.remove('dragover');
+                if (e.dataTransfer.files.length > 0) {
+                    var input = document.getElementById('excel-input');
+                    var dt = new DataTransfer();
+                    dt.items.add(e.dataTransfer.files[0]);
+                    input.files = dt.files;
+                    handleExcelUpload(input);
+                }
+            });
+        }, 200);
+    })();
     </script>
 </div>
