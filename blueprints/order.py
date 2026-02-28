@@ -30,16 +30,19 @@ def api_create():
     if not customer_id or not po_number or not lines:
         return jsonify({'error': 'Missing required fields'}), 400
 
-    order_id = Order.create(customer_id, po_number)
-    for line in lines:
-        Order.add_line(
-            order_id,
-            line['layout_id'],
-            line['quantity'],
-            line.get('variable_values')
-        )
-    Order.generate_and_store(order_id)
-    return jsonify({'order_id': order_id}), 201
+    try:
+        order_id = Order.create(customer_id, po_number)
+        for line in lines:
+            Order.add_line(
+                order_id,
+                line['layout_id'],
+                line['quantity'],
+                line.get('variable_values')
+            )
+        Order.generate_and_store(order_id)
+        return jsonify({'order_id': order_id}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @order_bp.route('/api/list')
@@ -59,7 +62,7 @@ def api_detail(order_id):
 @order_bp.route('/api/layouts/<customer_id>')
 def api_layouts(customer_id):
     rows = execute_query(
-        "SELECT id, name, type, data, created_at FROM layouts WHERE customer_id = ? ORDER BY name",
+        "SELECT id, name, type, data, created_at FROM layouts WHERE customer_id = ? ORDER BY created_at DESC",
         (customer_id,), fetch_all=True
     )
     import json

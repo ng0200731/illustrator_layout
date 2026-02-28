@@ -19,10 +19,6 @@ def export_ai(data, outlined=False):
         str: Path to generated AI file
     """
     label = data.get('label', {})
-    components = data.get('components', [])
-    bounds_rects = data.get('boundsRects', [])
-    separate_invisible = data.get('separateInvisible', False)
-
     page_w = label.get('width', 100) * mm
     page_h = label.get('height', 100) * mm
 
@@ -32,6 +28,18 @@ def export_ai(data, outlined=False):
 
     # Create PDF canvas (AI can open PDFs)
     c = canvas.Canvas(filepath, pagesize=(page_w, page_h))
+
+    _draw_page(c, data, outlined, page_w, page_h)
+
+    _save_with_fonts(c, outlined)
+    return filepath
+
+
+def _draw_page(c, data, outlined, page_w, page_h):
+    """Draw a single page of components onto the canvas."""
+    components = data.get('components', [])
+    bounds_rects = data.get('boundsRects', [])
+    separate_invisible = data.get('separateInvisible', False)
 
     if separate_invisible:
         # Separate visible and hidden paths
@@ -115,6 +123,9 @@ def export_ai(data, outlined=False):
     # Draw bounds rect borders (green dotted lines)
     _draw_bounds_rects(c, bounds_rects, page_h)
 
+
+def _save_with_fonts(c, outlined):
+    """Save canvas with full font embedding when not outlined."""
     # Embed full fonts (not subsetted) so Illustrator can match local fonts
     # Only for fonts under 2MB to avoid huge file sizes
     if not outlined:
@@ -139,6 +150,32 @@ def export_ai(data, outlined=False):
             TTFontFile.makeSubset = _orig_makeSubset
     else:
         c.save()
+
+
+def export_ai_batch(pages_data, outlined=False):
+    """Generate a multi-page AI file. Each item in pages_data is a single-page payload."""
+    if not pages_data:
+        raise ValueError("No pages to export")
+
+    first_label = pages_data[0].get('label', {})
+    page_w = first_label.get('width', 100) * mm
+    page_h = first_label.get('height', 100) * mm
+
+    fd, filepath = tempfile.mkstemp(suffix='.ai', dir='.tmp')
+    os.close(fd)
+
+    c = canvas.Canvas(filepath, pagesize=(page_w, page_h))
+
+    for i, data in enumerate(pages_data):
+        label = data.get('label', {})
+        pw = label.get('width', 100) * mm
+        ph = label.get('height', 100) * mm
+        c.setPageSize((pw, ph))
+        _draw_page(c, data, outlined, pw, ph)
+        if i < len(pages_data) - 1:
+            c.showPage()
+
+    _save_with_fonts(c, outlined)
     return filepath
 
 def _apply_rotation(c, comp, bounds_rects, page_h):

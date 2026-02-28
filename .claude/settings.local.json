@@ -12,7 +12,9 @@
       "Bash(wc -l /d/project/illustrator-layout/static/js/*.js)",
       "Bash(grep -r \"def \" /d/project/illustrator-layout/blueprints/*.py)",
       "Bash(grep -r \"class\\\\|def \" /d/project/illustrator-layout/models/*.py)",
-      "Skill(do)"
+      "Skill(do)",
+      "Bash(grep -n \"document.fonts\\\\|@font-face\\\\|FontFace\" /d/project/illustrator-layout/static/js/*.js)",
+      "Bash(grep -n \"var jLoadedFonts\\\\|var loadedFonts\" /d/project/illustrator-layout/static/js/*.js)"
     ]
   }
 }

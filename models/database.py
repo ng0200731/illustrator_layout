@@ -91,7 +91,7 @@ def init_db():
 @contextmanager
 def get_db():
     """Context manager for database connections"""
-    conn = sqlite3.connect(DATABASE_PATH)
+    conn = sqlite3.connect(DATABASE_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     try:
         yield conn

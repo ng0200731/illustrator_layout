@@ -67,5 +67,32 @@ def export_ai():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
+@app.route('/export/ai/batch', methods=['POST'])
+def export_ai_batch():
+    try:
+        data = request.get_json()
+        pages = data.get('pages', [])
+        outlined = data.get('outlined', False)
+
+        if not pages:
+            return jsonify({'error': 'No pages provided'}), 400
+
+        for p in pages:
+            p['outlined'] = outlined
+            p['separateInvisible'] = True
+
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tools'))
+        import importlib
+        import export_ai as _export_ai_mod
+        importlib.reload(_export_ai_mod)
+
+        filepath = _export_ai_mod.export_ai_batch(pages, outlined)
+
+        return send_file(filepath, as_attachment=True, download_name='export_all.ai')
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, port=5001)

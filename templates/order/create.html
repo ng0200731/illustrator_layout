@@ -13,6 +13,8 @@
             </div>
         </div>
 
+        <div id="order-lines"></div>
+
         <div class="form-section" id="layout-section" style="display:none;">
             <h3>Select Layout</h3>
             <table class="layout-search-table" id="layout-table">
@@ -25,35 +27,40 @@
                 </thead>
                 <tbody id="layout-tbody"></tbody>
             </table>
-            <div id="no-layouts-msg" class="no-vars" style="display:none;">No layouts found for this customer</div>
-        </div>
-
-        <div class="form-section" id="selected-layout-section" style="display:none;">
-            <h3>Selected Layout: <span id="selected-layout-name"></span></h3>
-            <div id="line-variables"></div>
-        </div>
-
-        <div class="form-section" id="po-section" style="display:none;">
-            <div class="form-row">
-                <label>PO #</label>
-                <input type="text" id="order-po" placeholder="Purchase order number">
-            </div>
-            <div class="form-row">
-                <label>Quantity</label>
-                <input type="number" id="order-qty" value="1" min="1" placeholder="Qty">
-            </div>
+            <div id="no-layouts-msg" class="no-vars" style="display:none;">No layouts found</div>
         </div>
 
         <div class="form-actions" id="submit-section" style="display:none;">
-            <button onclick="submitOrder()" class="btn-primary">Create Order</button>
+            <button onclick="showPoModal()" class="btn-primary">Create Order</button>
         </div>
         <div id="order-result"></div>
     </div>
 
+    <!-- PO# Modal -->
+    <div id="po-modal" class="preview-modal-overlay" onclick="closePoModal(event)">
+        <div class="po-modal-content">
+            <div class="preview-modal-header">
+                <span>Order Details</span>
+                <button class="preview-modal-close" onclick="closePoModal()">&times;</button>
+            </div>
+            <div class="po-modal-body">
+                <div class="form-row">
+                    <label>PO #</label>
+                    <input type="text" id="po-input" placeholder="Purchase order number">
+                    <button onclick="autoGeneratePo()" class="btn-auto-po">Auto</button>
+                </div>
+                <div class="form-actions" style="margin-top:12px;">
+                    <button onclick="confirmOrder()" class="btn-primary">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
     var availableLayouts = [];
-    var selectedLayoutId = null;
-
+    var orderLinesList = []; // [{layout_id, layoutName, variableValues:{}}]
+    var currentCustomerId = '';
+    var currentCustomerName = '';
     (function init() {
         fetch('/customer/list')
             .then(function(r) { return r.json(); })
@@ -64,25 +71,26 @@
                     var opt = document.createElement('option');
                     opt.value = c.customer_id;
                     opt.textContent = c.company_name;
+                    opt.dataset.name = c.company_name;
                     sel.appendChild(opt);
                 });
             });
     })();
+
     function onCustomerChange() {
-        var customerId = document.getElementById('order-customer').value;
+        var sel = document.getElementById('order-customer');
+        currentCustomerId = sel.value;
+        currentCustomerName = sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].dataset.name : '';
         availableLayouts = [];
-        selectedLayoutId = null;
-        document.getElementById('layout-tbody').innerHTML = '';
+        orderLinesList = [];
+        document.getElementById('order-lines').innerHTML = '';
         document.getElementById('filter-name').value = '';
-        document.getElementById('line-variables').innerHTML = '';
         hideSection('layout-section');
-        hideSection('selected-layout-section');
-        hideSection('po-section');
         hideSection('submit-section');
         document.getElementById('order-result').innerHTML = '';
-        if (!customerId) return;
+        if (!currentCustomerId) return;
 
-        fetch('/order/api/layouts/' + customerId)
+        fetch('/order/api/layouts/' + currentCustomerId)
             .then(function(r) { return r.json(); })
             .then(function(layouts) {
                 availableLayouts = layouts;
@@ -102,7 +110,7 @@
         tbody.innerHTML = '';
         layouts.forEach(function(l) {
             var tr = document.createElement('tr');
-            tr.className = 'layout-row' + (l.id === selectedLayoutId ? ' selected' : '');
+            tr.className = 'layout-row';
             tr.dataset.layoutId = l.id;
             tr.onclick = function() { selectLayout(l.id); };
             var created = l.created_at ? l.created_at.substring(0, 10) : '-';
@@ -121,101 +129,157 @@
         });
         renderLayoutTable(filtered);
     }
+
     function selectLayout(layoutId) {
-        selectedLayoutId = layoutId;
         var layout = null;
         for (var i = 0; i < availableLayouts.length; i++) {
             if (availableLayouts[i].id === layoutId) { layout = availableLayouts[i]; break; }
         }
         if (!layout) return;
 
-        // highlight row
-        var rows = document.querySelectorAll('.layout-row');
-        rows.forEach(function(r) { r.classList.remove('selected'); });
-        var sel = document.querySelector('.layout-row[data-layout-id="' + layoutId + '"]');
-        if (sel) sel.classList.add('selected');
-
-        document.getElementById('selected-layout-name').textContent = layout.name;
-        showSection('selected-layout-section');
-        showSection('po-section');
-        showSection('submit-section');
-
-        // render variable inputs
-        var varsContainer = document.getElementById('line-variables');
-        varsContainer.innerHTML = '';
-        if (!layout.data) return;
-
-        var data = typeof layout.data === 'string' ? JSON.parse(layout.data) : layout.data;
+        // Parse layout data for variables
+        var data = layout.data ? (typeof layout.data === 'string' ? JSON.parse(layout.data) : layout.data) : {};
         var comps = data.components || [];
-        var hasVars = false;
-
+        var vars = [];
         comps.forEach(function(c, ci) {
             if (!c.isVariable) return;
-            hasVars = true;
-            var row = document.createElement('div');
-            row.className = 'var-row';
-            var lbl = document.createElement('label');
-            var displayLabel = c.content || c.type || 'Variable';
-            if (displayLabel.length > 40) displayLabel = displayLabel.substring(0, 40) + '...';
-            lbl.textContent = displayLabel;
-            lbl.title = c.content || '';
-            var ta = document.createElement('textarea');
-            ta.dataset.compIdx = ci;
-            ta.placeholder = 'Enter value';
-            ta.value = c.content || '';
-            ta.rows = 3;
-            row.appendChild(lbl);
-            row.appendChild(ta);
-            varsContainer.appendChild(row);
+            vars.push({ idx: ci, content: c.content || '', fontFamily: c.fontFamily || '', fontSize: c.fontSize || 12 });
         });
 
-        if (!hasVars) {
-            varsContainer.innerHTML = '<span class="no-vars">No variable fields</span>';
+        // Add to orderLinesList
+        var lineObj = { layout_id: layoutId, layoutName: layout.name, vars: vars, variableValues: {} };
+        // Pre-fill variable values with original content
+        vars.forEach(function(v) { lineObj.variableValues[v.idx] = v.content; });
+        orderLinesList.push(lineObj);
+
+        // Collapse layout table, render line cards
+        hideSection('layout-section');
+        renderOrderLines();
+        showSection('submit-section');
+    }
+    function renderOrderLines() {
+        var container = document.getElementById('order-lines');
+        container.innerHTML = '';
+        orderLinesList.forEach(function(line, li) {
+            var card = document.createElement('div');
+            card.className = 'order-line-card';
+
+            var header = '<div class="line-card-header">' +
+                '<span>' + escHtml(line.layoutName) + '</span>' +
+                '<button class="btn-remove" onclick="removeLine(' + li + ')">✕</button>' +
+                '</div>';
+
+            var varsHtml = '';
+            if (line.vars.length === 0) {
+                varsHtml = '<span class="no-vars">No variable fields</span>';
+            } else {
+                line.vars.forEach(function(v) {
+                    varsHtml +=
+                        '<div class="var-row-full">' +
+                            '<div class="var-info">' +
+                                '<span class="var-original">Original: ' + escHtml(v.content) + '</span>' +
+                                '<span class="var-font">Font: ' + escHtml(v.fontFamily || 'default') + '</span>' +
+                            '</div>' +
+                            '<textarea data-line="' + li + '" data-idx="' + v.idx + '" ' +
+                                'placeholder="Enter value" rows="2" oninput="onVarInput(this)">' +
+                                escHtml(line.variableValues[v.idx] || '') +
+                            '</textarea>' +
+                        '</div>';
+                });
+            }
+
+            card.innerHTML = header + '<div class="line-card-vars">' + varsHtml + '</div>';
+            container.appendChild(card);
+        });
+
+        // Add "+" button to duplicate same layout with new variable set
+        var addBtn = document.createElement('button');
+        addBtn.className = 'btn-add-layout';
+        addBtn.textContent = '+ Add Set';
+        addBtn.onclick = addVariableSet;
+        container.appendChild(addBtn);
+    }
+
+    function addVariableSet() {
+        if (orderLinesList.length === 0) return;
+        var src = orderLinesList[0];
+        var lineObj = { layout_id: src.layout_id, layoutName: src.layoutName, vars: src.vars, variableValues: {} };
+        src.vars.forEach(function(v) { lineObj.variableValues[v.idx] = v.content; });
+        orderLinesList.push(lineObj);
+        renderOrderLines();
+    }
+
+    function onVarInput(el) {
+        var li = parseInt(el.dataset.line);
+        var idx = el.dataset.idx;
+        orderLinesList[li].variableValues[idx] = el.value;
+    }
+
+    function addAnotherLayout() {
+        document.getElementById('filter-name').value = '';
+        renderLayoutTable(availableLayouts);
+        showSection('layout-section');
+    }
+
+    function removeLine(li) {
+        orderLinesList.splice(li, 1);
+        renderOrderLines();
+        if (orderLinesList.length === 0) {
+            hideSection('submit-section');
+            addAnotherLayout();
         }
     }
-    function submitOrder() {
-        var customerId = document.getElementById('order-customer').value;
-        var poNumber = document.getElementById('order-po').value.trim();
-        if (!customerId || !poNumber) { alert('Select a customer and enter a PO number.'); return; }
-        if (!selectedLayoutId) { alert('Select a layout.'); return; }
+    function showPoModal() {
+        if (orderLinesList.length === 0) { alert('Add at least one layout.'); return; }
+        document.getElementById('po-input').value = '';
+        document.getElementById('po-modal').classList.add('active');
+    }
 
-        var qty = parseInt(document.getElementById('order-qty').value, 10) || 1;
-        var varInputs = document.querySelectorAll('#line-variables .var-row textarea');
-        var variableValues = {};
-        var hasVals = false;
-        varInputs.forEach(function(inp) {
-            if (inp.value) {
-                variableValues[inp.dataset.compIdx] = inp.value;
-                hasVals = true;
+    function closePoModal(e) {
+        if (e && e.target !== e.currentTarget) return;
+        document.getElementById('po-modal').classList.remove('active');
+    }
+
+    function autoGeneratePo() {
+        var now = new Date();
+        var pad = function(n) { return String(n).padStart(2, '0'); };
+        var ts = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) +
+            '_' + pad(now.getHours()) + '_' + pad(now.getMinutes()) + '_' + pad(now.getSeconds());
+        var layoutName = orderLinesList.length > 0 ? orderLinesList[0].layoutName : '';
+        var po = ts + '_' + currentCustomerName + '_' + layoutName;
+        document.getElementById('po-input').value = po;
+    }
+
+    function confirmOrder() {
+        var poNumber = document.getElementById('po-input').value.trim();
+        if (!poNumber) { alert('Enter a PO number or click Auto.'); return; }
+
+        var lines = orderLinesList.map(function(line) {
+            var vv = {};
+            var hasVals = false;
+            for (var k in line.variableValues) {
+                if (line.variableValues[k]) { vv[k] = line.variableValues[k]; hasVals = true; }
             }
+            return {
+                layout_id: line.layout_id,
+                quantity: 1,
+                variable_values: hasVals ? vv : null
+            };
         });
-
-        var lines = [{
-            layout_id: selectedLayoutId,
-            quantity: qty,
-            variable_values: hasVals ? variableValues : null
-        }];
 
         fetch('/order/api/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customer_id: customerId, po_number: poNumber, lines: lines })
+            body: JSON.stringify({ customer_id: currentCustomerId, po_number: poNumber, lines: lines })
         })
         .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(res) {
-            var el = document.getElementById('order-result');
+            closePoModal();
             if (res.ok) {
                 var oid = res.data.order_id;
-                el.innerHTML =
-                    '<div class="order-success">' +
-                        '<p>Order <strong>' + oid + '</strong> created.</p>' +
-                        '<div class="order-success-actions">' +
-                            '<button onclick="viewOrder(\'' + oid + '\')">View Order</button>' +
-                            '<button onclick="createNewOrder()">Create New Order</button>' +
-                        '</div>' +
-                    '</div>';
+                openTab('Order (' + oid + ')', '/order/detail/' + oid);
             } else {
-                el.innerHTML = '<p class="error">' + res.data.error + '</p>';
+                document.getElementById('order-result').innerHTML = '<p class="error">' + res.data.error + '</p>';
             }
         });
     }
@@ -226,10 +290,8 @@
 
     function createNewOrder() {
         document.getElementById('order-customer').value = '';
-        document.getElementById('order-po').value = '';
-        document.getElementById('order-qty').value = '1';
         document.getElementById('order-result').innerHTML = '';
-        selectedLayoutId = null;
+        orderLinesList = [];
         availableLayouts = [];
         onCustomerChange();
     }

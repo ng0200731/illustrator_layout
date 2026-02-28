@@ -101,18 +101,26 @@ class Order:
 
     @staticmethod
     def generate_and_store(order_id):
+        # Read lines and generate data first (separate connections for reads)
         with get_db() as conn:
             lines = conn.execute(
                 "SELECT id, layout_id, variable_values FROM order_lines WHERE order_id = ?",
                 (order_id,)
             ).fetchall()
-            for line in lines:
-                line = dict(line)
-                vv = json.loads(line['variable_values']) if line['variable_values'] else {}
-                generated = Order.generate_layout_data(line['layout_id'], vv)
+            lines = [dict(l) for l in lines]
+
+        generated_pairs = []
+        for line in lines:
+            vv = json.loads(line['variable_values']) if line['variable_values'] else {}
+            generated = Order.generate_layout_data(line['layout_id'], vv)
+            generated_pairs.append((json.dumps(generated), line['id']))
+
+        # Write all updates in one connection
+        with get_db() as conn:
+            for gen_json, line_id in generated_pairs:
                 conn.execute(
                     "UPDATE order_lines SET generated_data = ? WHERE id = ?",
-                    (json.dumps(generated), line['id'])
+                    (gen_json, line_id)
                 )
             conn.execute(
                 "UPDATE orders SET status = 'confirmed', updated_at = CURRENT_TIMESTAMP WHERE order_id = ?",
