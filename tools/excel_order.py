@@ -29,14 +29,15 @@ def generate_template(variables):
     return filepath
 
 
-def generate_dummy(variables):
+def generate_dummy(variables, row_count=10):
     """Generate an xlsx with random placeholder data rows.
     Args:
         variables: list of dicts [{idx: int, content: str}, ...]
+        row_count: number of dummy rows to generate
     Returns:
         filepath to the generated .xlsx in .tmp/
     """
-    num_rows = random.randint(3, 10)
+    num_rows = max(1, int(row_count))
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Data"
@@ -79,12 +80,14 @@ def parse_upload(file_storage, expected_variables):
         if not idx_mapping:
             idx_mapping = [v['idx'] for v in expected_variables]
 
-        # Validate column count (variables + qty)
+        # Validate column count (variables + optional qty)
         header_row = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
-        actual_cols = len([h for h in header_row if h is not None])
-        expected_cols = len(expected_variables) + 1  # +1 for qty
-        if actual_cols != expected_cols:
-            return {'success': False, 'error': f'Column count mismatch: expected {expected_cols}, got {actual_cols}'}
+        actual_cols = len([h for h in header_row if h is not None and str(h).strip() != ''])
+        expected_cols_no_qty = len(expected_variables)
+        expected_cols_with_qty = len(expected_variables) + 1
+        has_qty = actual_cols == expected_cols_with_qty
+        if actual_cols != expected_cols_with_qty and actual_cols != expected_cols_no_qty:
+            return {'success': False, 'error': f'Column count mismatch: expected {expected_cols_no_qty} or {expected_cols_with_qty}, got {actual_cols}'}
 
         # Validate no empty headers
         for i, h in enumerate(header_row[:actual_cols]):
@@ -114,13 +117,16 @@ def parse_upload(file_storage, expected_variables):
             vv = {}
             for ci in range(var_cols):
                 vv[str(idx_mapping[ci])] = str(values[ci])
-            qty_val = values[var_cols]
-            try:
-                qty = int(float(str(qty_val)))
-            except (ValueError, TypeError):
-                return {'success': False, 'error': f'Invalid qty at row {len(rows) + 2}: {qty_val}'}
-            if qty < 1:
-                return {'success': False, 'error': f'Qty must be >= 1 at row {len(rows) + 2}'}
+            if has_qty:
+                qty_val = values[var_cols]
+                try:
+                    qty = int(float(str(qty_val)))
+                except (ValueError, TypeError):
+                    return {'success': False, 'error': f'Invalid qty at row {len(rows) + 2}: {qty_val}'}
+                if qty < 1:
+                    return {'success': False, 'error': f'Qty must be >= 1 at row {len(rows) + 2}'}
+            else:
+                qty = 1
             rows.append({'variableValues': vv, 'quantity': qty})
 
         if not rows:

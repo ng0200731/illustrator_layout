@@ -141,10 +141,11 @@ def api_excel_dummy():
     data = request.get_json()
     variables = data.get('variables', [])
     layout_name = data.get('layout_name', 'dummy')
+    row_count = data.get('row_count', 10)
     if not variables:
         return jsonify({'error': 'No variables provided'}), 400
     try:
-        filepath = generate_dummy(variables)
+        filepath = generate_dummy(variables, row_count=row_count)
         return send_file(filepath, as_attachment=True,
                          download_name=f'{layout_name}_dummy.xlsx')
     except Exception as e:

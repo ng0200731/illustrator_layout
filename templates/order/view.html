@@ -16,7 +16,7 @@
                     <th><input type="text" placeholder="PO #..." oninput="filterOrders()"></th>
                     <th><input type="text" placeholder="Status..." oninput="filterOrders()"></th>
                     <th><input type="text" placeholder="Created..." oninput="filterOrders()"></th>
-                    <th></th>
+                    <th>Action</th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -52,8 +52,8 @@
                 '<td>' + o.po_number + '</td>' +
                 '<td>' + o.status + '</td>' +
                 '<td>' + o.created_at + '</td>' +
-                '<td>' +
-                    (o.status === 'draft' ? '<button onclick="confirmOrder(\'' + o.order_id + '\')">Confirm</button> ' : '') +
+                '<td style="white-space:nowrap;">' +
+                    '<button onclick="confirmOrder(\'' + o.order_id + '\')">Confirm</button> ' +
                     '<button onclick="openTab(\'Order (' + o.order_id + ')\', \'/order/detail/' + o.order_id + '\')">View</button> ' +
                     '<button style="border-color:#c00;color:#c00;" onclick="deleteSingle(\'' + o.order_id + '\')">Del</button>' +
                 '</td>';

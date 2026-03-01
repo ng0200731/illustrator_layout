@@ -20,6 +20,7 @@
             <div class="excel-actions">
                 <button onclick="downloadTemplate()" class="btn-excel">Download Template</button>
                 <button onclick="downloadDummy()" class="btn-excel">Download Dummy</button>
+                <input type="number" id="dummy-rows" min="1" value="10" style="width:50px;padding:3px 6px;border:1px solid #000;font-size:10px;text-align:center;"> rows
             </div>
             <div class="excel-upload-area" id="excel-upload-area">
                 <p>Drop .xlsx file here to import order lines</p>
@@ -356,12 +357,14 @@
 
     function downloadDummy() {
         if (currentLayoutVars.length === 0) return;
+        var rowCount = parseInt(document.getElementById('dummy-rows').value) || 10;
         fetch('/order/api/excel/dummy', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 variables: currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content }; }),
-                layout_name: currentLayoutName
+                layout_name: currentLayoutName,
+                row_count: rowCount
             })
         })
         .then(function(r) {
