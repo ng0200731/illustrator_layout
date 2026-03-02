@@ -226,6 +226,8 @@ def _draw_barcode_or_qr(c, comp, page_h):
     h = comp.get('height', 0) * mm
     comp_y = comp.get('y', 0) * mm
     y = page_h - comp_y - h  # PDF Y-axis flip
+    color_hex = comp.get('color', '#000000')
+    fr, fg, fb = _hex_to_rgb(color_hex)
 
     if comp_type == 'qrcoderegion':
         qr_data = comp.get('qrData', '')
@@ -242,8 +244,8 @@ def _draw_barcode_or_qr(c, comp, page_h):
             # White background
             c.setFillColorRGB(1, 1, 1)
             c.rect(x, y, w, h, fill=1, stroke=0)
-            # Black modules as vector rects
-            c.setFillColorRGB(0, 0, 0)
+            # Colored modules as vector rects
+            c.setFillColorRGB(fr, fg, fb)
             for row in range(mc):
                 for col in range(mc):
                     if qr.modules[row][col]:
@@ -280,8 +282,8 @@ def _draw_barcode_or_qr(c, comp, page_h):
             # White background
             c.setFillColorRGB(1, 1, 1)
             c.rect(x, y, w, h, fill=1, stroke=0)
-            # Black bars as vector rects
-            c.setFillColorRGB(0, 0, 0)
+            # Colored bars as vector rects
+            c.setFillColorRGB(fr, fg, fb)
             for i, bit in enumerate(bars):
                 if bit == '1':
                     c.rect(x + i * bar_w, y, bar_w, h, fill=1, stroke=0)

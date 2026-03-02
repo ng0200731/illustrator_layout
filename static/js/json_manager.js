@@ -160,9 +160,17 @@ function jsonInitWithTabPane(tabPane) {
     var ctFontSelect = tabPane.querySelector('#ct-font-select');
 
     // Live preview for QR/barcode inputs
-    ['ct-qr-data', 'ct-barcode-data'].forEach(function(id) {
+    ['ct-qr-data', 'ct-barcode-data', 'ct-qr-color', 'ct-barcode-color'].forEach(function(id) {
         var el = tabPane.querySelector('#' + id);
-        if (el) el.addEventListener('input', function() { jRenderCanvas(); });
+        if (el) el.addEventListener('input', function() {
+            if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
+                var comp = jState.overlays[jState.editingComponentIdx];
+                if (id === 'ct-qr-data') comp.qrData = el.value;
+                else if (id === 'ct-barcode-data') comp.barcodeData = el.value;
+                else if (id === 'ct-qr-color' || id === 'ct-barcode-color') comp.color = el.value;
+            }
+            jRenderCanvas();
+        });
     });
     var bcFmtSelect = tabPane.querySelector('#ct-barcode-format');
     if (bcFmtSelect) bcFmtSelect.addEventListener('change', function() { jRenderCanvas(); });
@@ -390,7 +398,7 @@ function jParseJsonFile(file) {
             if (exportAiO) exportAiO.disabled = false;
             if (exportJson) exportJson.disabled = false;
             var addBtn = _jel('overlay-add-btn');
-            if (addBtn) addBtn.disabled = (jState.boundsRects.length === 0);
+            if (addBtn) addBtn.disabled = false;
 
             jState.historyStack = [];
             jState.historyIndex = -1;
@@ -1029,9 +1037,11 @@ function jPrefillContentForm(type, data) {
         var imf = _jel('ct-image-fit'); if (imf) imf.value = data.imageFit || 'contain';
     } else if (type === 'qrcode') {
         var qd = _jel('ct-qr-data'); if (qd) qd.value = data.qrData || '';
+        var qc = _jel('ct-qr-color'); if (qc) qc.value = data.color || '#000000';
     } else if (type === 'barcode') {
         var bd = _jel('ct-barcode-data'); if (bd) bd.value = data.barcodeData || '';
         var bf = _jel('ct-barcode-format'); if (bf) bf.value = data.barcodeFormat || 'code128';
+        var bc = _jel('ct-barcode-color'); if (bc) bc.value = data.color || '#000000';
     }
 }
 
@@ -1180,6 +1190,8 @@ function jOnMouseDown(e) {
             jStartPendingDrag(e);
             return;
         }
+        // Click outside pending region — do nothing, keep the region
+        return;
     }
 
     // Check if clicking on an overlay resize handle
@@ -1686,7 +1698,7 @@ function jRenderCanvas() {
                     var cw = pr.w / mc, ch = pr.h / mc;
                     c.fillStyle = '#ffffff';
                     c.fillRect(pr.x, pr.y, pr.w, pr.h);
-                    c.fillStyle = '#000000';
+                    c.fillStyle = (_jel('ct-qr-color') || {}).value || '#000000';
                     for (var qri = 0; qri < mc; qri++) {
                         for (var qci = 0; qci < mc; qci++) {
                             if (qrPrev.isDark(qri, qci)) {
@@ -1716,7 +1728,8 @@ function jRenderCanvas() {
                 try {
                     var bcCanvas = document.createElement('canvas');
                     JsBarcode(bcCanvas, bcVal, {
-                        format: bcFmt, displayValue: false, margin: 0, width: 2, height: 100
+                        format: bcFmt, displayValue: false, margin: 0, width: 2, height: 100,
+                        lineColor: (_jel('ct-barcode-color') || {}).value || '#000000'
                     });
                     c.drawImage(bcCanvas, pr.x, pr.y, pr.w, pr.h);
                 } catch(e) {}
@@ -2319,7 +2332,7 @@ function jRenderOverlayItem(c, ov, idx) {
             var cellW = w / mCount, cellH = h / mCount;
             c.fillStyle = '#ffffff';
             c.fillRect(x, y, w, h);
-            c.fillStyle = '#000000';
+            c.fillStyle = ov.color || '#000000';
             for (var qr_r = 0; qr_r < mCount; qr_r++) {
                 for (var qr_c = 0; qr_c < mCount; qr_c++) {
                     if (qr.isDark(qr_r, qr_c)) {
@@ -2344,7 +2357,8 @@ function jRenderOverlayItem(c, ov, idx) {
             var bcCanvas = document.createElement('canvas');
             JsBarcode(bcCanvas, ov.barcodeData, {
                 format: ov.barcodeFormat || 'CODE128',
-                displayValue: false, margin: 0, width: 2, height: 100
+                displayValue: false, margin: 0, width: 2, height: 100,
+                lineColor: ov.color || '#000000'
             });
             c.drawImage(bcCanvas, x, y, w, h);
         } catch(e) {
@@ -3508,6 +3522,7 @@ function applyContentSettings() {
         comp = {
             type: 'qrcoderegion', x: region.x, y: region.y, w: region.w, h: region.h,
             qrData: (_jel('ct-qr-data') || {}).value || '',
+            color: (_jel('ct-qr-color') || {}).value || '#000000',
             visible: true, locked: false, isVariable: false
         };
     } else if (type === 'barcode') {
@@ -3515,6 +3530,7 @@ function applyContentSettings() {
             type: 'barcoderegion', x: region.x, y: region.y, w: region.w, h: region.h,
             barcodeData: (_jel('ct-barcode-data') || {}).value || '',
             barcodeFormat: (_jel('ct-barcode-format') || {}).value || 'code128',
+            color: (_jel('ct-barcode-color') || {}).value || '#000000',
             visible: true, locked: false, isVariable: false
         };
     }
@@ -3754,16 +3770,25 @@ function toggleEdgeMode() {
 // ─── Add Overlay Mode ───
 
 function jStartAddOverlay() {
-    if (!jState || !jState.boundsRects || jState.boundsRects.length === 0) return;
+    if (!jState) return;
     if (jState.addOverlayMode) { jCancelAddOverlay(); return; }
     jState.addOverlayMode = true;
-    jState.addOverlayStep = 'selectPanel';
-    jState.addOverlaySelectedBRIdx = -1;
     jState.addOverlayDraw = null;
     var hint = _jel('overlay-add-hint');
-    if (hint) { hint.style.display = ''; hint.textContent = 'Step 1: Click a panel on the canvas'; }
     var addBtn = _jel('overlay-add-btn');
     if (addBtn) addBtn.classList.add('var-active');
+    if (jState.boundsRects && jState.boundsRects.length > 0) {
+        // Has panels: start with panel selection step
+        jState.addOverlayStep = 'selectPanel';
+        jState.addOverlaySelectedBRIdx = -1;
+        if (hint) { hint.style.display = ''; hint.textContent = 'Step 1: Click a panel on the canvas'; }
+    } else {
+        // No panels: go directly to draw step with no constraint
+        jState.addOverlayStep = 'drawRegion';
+        jState.addOverlaySelectedBRIdx = -1;
+        jState._addOverlayBRIdx = -1;
+        if (hint) { hint.style.display = ''; hint.textContent = 'Draw a region on the canvas'; }
+    }
     if (jCanvas) jCanvas.style.cursor = 'pointer';
     jRenderCanvas();
 }
@@ -4397,6 +4422,8 @@ function jLoadLayoutFromDatabase(layoutId) {
         if (exportAiE) exportAiE.disabled = false;
         if (exportAiO) exportAiO.disabled = false;
         if (exportJson) exportJson.disabled = false;
+        var addBtn = _jel('overlay-add-btn');
+        if (addBtn) addBtn.disabled = false;
 
         jState.historyStack = [];
         jState.historyIndex = -1;
@@ -4577,7 +4604,7 @@ function jLoadLayoutFromExport(data) {
     if (exportAiE) exportAiE.disabled = false;
     if (exportAiO) exportAiO.disabled = false;
     var addBtn = _jel('overlay-add-btn');
-    if (addBtn) addBtn.disabled = (jState.boundsRects.length === 0);
+    if (addBtn) addBtn.disabled = false;
 
     jState.historyStack = [];
     jState.historyIndex = -1;
