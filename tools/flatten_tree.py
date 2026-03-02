@@ -55,20 +55,7 @@ def flatten_layout_for_export(layout_data):
                 comp['boundsRectIdx'] = bi
                 break
 
-    # 4. Filter out pdfpath components that fall inside an overlay region
-    def _inside_overlay(comp):
-        if comp.get('type') != 'pdfpath':
-            return False
-        cx = comp.get('x', 0) + comp.get('width', 0) / 2
-        cy = comp.get('y', 0) + comp.get('height', 0) / 2
-        for ov in overlays:
-            if (cx >= ov.get('x', 0) and cx <= ov.get('x', 0) + ov.get('w', 0) and
-                    cy >= ov.get('y', 0) and cy <= ov.get('y', 0) + ov.get('h', 0)):
-                return True
-        return False
-
-    components = [c for c in components if not _inside_overlay(c)]
-    # 5. Add overlay components
+    # 4. Add overlay components (overlays render on top, original content stays)
     for ov in overlays:
         components.append({
             'type': ov.get('type', 'text'),

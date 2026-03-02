@@ -6,6 +6,8 @@
         <div style="display:flex; gap:6px; margin-bottom:8px;">
             <button onclick="selectAll()" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">Select All</button>
             <button onclick="deleteSelected()" style="padding:3px 10px;border:1px solid #c00;background:#fff;color:#c00;cursor:pointer;font-size:10px;">Delete Selected</button>
+            <button onclick="exportAllSelected(false)" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">AI E All</button>
+            <button onclick="exportAllSelected(true)" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">AI O All</button>
         </div>
         <table id="orders-table" class="layout-search-table">
             <thead>
@@ -24,8 +26,26 @@
         <div id="empty-orders" style="display:none;" class="empty-message">No orders found</div>
     </div>
 
+    <!-- Loading overlay -->
+    <div id="export-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.3);z-index:9999;justify-content:center;align-items:center;">
+        <div style="background:#fff;border:1px solid #000;padding:20px 32px;font-size:12px;text-align:center;">
+            <div class="spinner"></div>
+            <div id="export-status" style="margin-top:10px;">Exporting...</div>
+        </div>
+    </div>
+
     <script>
     var allOrders = [];
+    var orderDetailCache = {};
+
+    function showExportOverlay(msg) {
+        var el = document.getElementById('export-overlay');
+        el.style.display = 'flex';
+        document.getElementById('export-status').textContent = msg || 'Exporting...';
+    }
+    function hideExportOverlay() {
+        document.getElementById('export-overlay').style.display = 'none';
+    }
 
     (function() {
         fetch('/order/api/list')
@@ -40,6 +60,7 @@
                 renderOrders(orders);
             });
     })();
+
     function renderOrders(orders) {
         var tbody = document.querySelector('#orders-table tbody');
         tbody.innerHTML = '';
@@ -53,6 +74,8 @@
                 '<td>' + o.status + '</td>' +
                 '<td>' + o.created_at + '</td>' +
                 '<td style="white-space:nowrap;">' +
+                    '<button onclick="exportOrder(\'' + o.order_id + '\', false)">AI E</button> ' +
+                    '<button onclick="exportOrder(\'' + o.order_id + '\', true)">AI O</button> ' +
                     '<button onclick="confirmOrder(\'' + o.order_id + '\')">Confirm</button> ' +
                     '<button onclick="openTab(\'Order (' + o.order_id + ')\', \'/order/detail/' + o.order_id + '\')">View</button> ' +
                     '<button style="border-color:#c00;color:#c00;" onclick="deleteSingle(\'' + o.order_id + '\')">Del</button>' +
@@ -126,6 +149,196 @@
                 allOrders = allOrders.filter(function(o) { return o.order_id !== orderId; });
                 renderOrders(allOrders);
             });
+    }
+
+    // --- Export functions ---
+
+    function getOrderDetail(orderId) {
+        if (orderDetailCache[orderId]) {
+            return Promise.resolve(orderDetailCache[orderId]);
+        }
+        return fetch('/order/api/' + orderId)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                orderDetailCache[orderId] = data;
+                return data;
+            });
+    }
+
+    function generateOrderData(orderId) {
+        return fetch('/order/api/' + orderId + '/generate', { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(res) {
+                if (res.lines) return res.lines;
+                throw new Error(res.error || 'Generate failed');
+            });
+    }
+
+    function exportOrder(orderId, outlined) {
+        showExportOverlay('Exporting ' + orderId + '...');
+        getOrderDetail(orderId).then(function(data) {
+            var lines = data.lines || [];
+            // Check if lines have generated_data
+            var hasGenerated = lines.length > 0 && lines[0].generated_data;
+            var pagesPromise;
+            if (hasGenerated) {
+                var pages = [];
+                lines.forEach(function(line) {
+                    var genData = typeof line.generated_data === 'string' ? JSON.parse(line.generated_data) : line.generated_data;
+                    if (genData && genData.exportPayload) {
+                        pages.push(genData.exportPayload);
+                    }
+                });
+                pagesPromise = Promise.resolve(pages);
+            } else {
+                pagesPromise = generateOrderData(orderId).then(function(genLines) {
+                    var pages = [];
+                    genLines.forEach(function(genData) {
+                        if (genData && genData.exportPayload) {
+                            pages.push(genData.exportPayload);
+                        }
+                    });
+                    return pages;
+                });
+            }
+
+            pagesPromise.then(function(pages) {
+                if (pages.length === 0) {
+                    hideExportOverlay();
+                    alert('No data to export for ' + orderId);
+                    return;
+                }
+                if (pages.length === 1) {
+                    // Single page export
+                    var payload = pages[0];
+                    payload.outlined = !!outlined;
+                    payload.separateInvisible = true;
+                    return fetch('/export/ai', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    }).then(function(response) {
+                        if (!response.ok) throw new Error('Export failed');
+                        return response.blob();
+                    }).then(function(blob) {
+                        var url = URL.createObjectURL(blob);
+                        var a = document.createElement('a');
+                        a.href = url;
+                        a.download = orderId + (outlined ? '_outlined' : '_editable') + '.ai';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        hideExportOverlay();
+                    });
+                } else {
+                    // Batch export
+                    return fetch('/export/ai/batch', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ outlined: !!outlined, pages: pages })
+                    }).then(function(response) {
+                        if (!response.ok) throw new Error('Batch export failed');
+                        return response.blob();
+                    }).then(function(blob) {
+                        var url = URL.createObjectURL(blob);
+                        var a = document.createElement('a');
+                        a.href = url;
+                        a.download = orderId + (outlined ? '_outlined' : '_editable') + '.ai';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        hideExportOverlay();
+                    });
+                }
+            }).catch(function(err) {
+                hideExportOverlay();
+                alert('Export failed: ' + err.message);
+            });
+        }).catch(function(err) {
+            hideExportOverlay();
+            alert('Export failed: ' + err.message);
+        });
+    }
+
+    function exportAllSelected(outlined) {
+        var checks = document.querySelectorAll('.order-check:checked');
+        var ids = [];
+        checks.forEach(function(c) { ids.push(c.value); });
+        if (ids.length === 0) { alert('No orders selected.'); return; }
+
+        showExportOverlay('Exporting ' + ids.length + ' order(s)...');
+        var idx = 0;
+
+        function exportNext() {
+            if (idx >= ids.length) {
+                hideExportOverlay();
+                return;
+            }
+            var orderId = ids[idx];
+            document.getElementById('export-status').textContent = 'Exporting ' + (idx + 1) + '/' + ids.length + ' (' + orderId + ')...';
+
+            getOrderDetail(orderId).then(function(data) {
+                var lines = data.lines || [];
+                var hasGenerated = lines.length > 0 && lines[0].generated_data;
+                var pagesPromise;
+                if (hasGenerated) {
+                    var pages = [];
+                    lines.forEach(function(line) {
+                        var genData = typeof line.generated_data === 'string' ? JSON.parse(line.generated_data) : line.generated_data;
+                        if (genData && genData.exportPayload) pages.push(genData.exportPayload);
+                    });
+                    pagesPromise = Promise.resolve(pages);
+                } else {
+                    pagesPromise = generateOrderData(orderId).then(function(genLines) {
+                        var pages = [];
+                        genLines.forEach(function(genData) {
+                            if (genData && genData.exportPayload) pages.push(genData.exportPayload);
+                        });
+                        return pages;
+                    });
+                }
+
+                return pagesPromise.then(function(pages) {
+                    if (pages.length === 0) {
+                        idx++;
+                        return exportNext();
+                    }
+                    var fetchPromise;
+                    if (pages.length === 1) {
+                        var payload = pages[0];
+                        payload.outlined = !!outlined;
+                        payload.separateInvisible = true;
+                        fetchPromise = fetch('/export/ai', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                    } else {
+                        fetchPromise = fetch('/export/ai/batch', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ outlined: !!outlined, pages: pages })
+                        });
+                    }
+                    return fetchPromise.then(function(response) {
+                        if (!response.ok) throw new Error('Export failed for ' + orderId);
+                        return response.blob();
+                    }).then(function(blob) {
+                        var url = URL.createObjectURL(blob);
+                        var a = document.createElement('a');
+                        a.href = url;
+                        a.download = orderId + (outlined ? '_outlined' : '_editable') + '.ai';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                        idx++;
+                        return exportNext();
+                    });
+                });
+            }).catch(function(err) {
+                hideExportOverlay();
+                alert('Export failed for ' + orderId + ': ' + err.message);
+            });
+        }
+
+        exportNext();
     }
     </script>
 </div>

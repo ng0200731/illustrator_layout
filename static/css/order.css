@@ -475,6 +475,18 @@
     font-size: 10px;
 }
 
+#lines-table button {
+    padding: 3px 10px;
+    border: 1px solid #000;
+    background: #fff;
+    cursor: pointer;
+    font-size: 10px;
+}
+
+.export-cell {
+    white-space: nowrap;
+}
+
 /* Detail info */
 .info-grid {
     margin-bottom: 16px;

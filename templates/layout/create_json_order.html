@@ -1,0 +1,190 @@
+<div class="tab-pane" data-layout-id="{{ layout_id if layout_id else '' }}" data-tab-instance="{{ range(1000000, 9999999) | random }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pdf_manager.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/layout_modal.css') }}">
+
+    <div class="pdf-manager-container">
+        <div id="canvas-container" style="width:100%;">
+            <button id="canvas-reset-btn" onclick="resetViewport()" title="Reset View">⌂</button>
+            <button id="toggle-guides-btn" onclick="jToggleGuides()" title="Toggle guides">◼</button>
+            <canvas id="canvas"></canvas>
+            <div id="empty-state">
+                <p>Loading layout...</p>
+            </div>
+            <input type="file" id="file-input" accept=".json" style="display: none;">
+        </div>
+
+        <!-- Right panel hidden for order view -->
+        <div id="right-panel" style="display:none;">
+            <div class="panel-section" id="content-type-panel" style="display: none;">
+                <h2 class="collapsible-header">CONTENT TYPE <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <p class="ts-hint" id="content-mode-hint">Click a confirmed block, then draw a region inside it.</p>
+                    <div id="content-type-picker" style="display: none;">
+                        <div class="ts-row">
+                            <label>Type</label>
+                            <select id="ct-type-select">
+                                <option value="">Select type...</option>
+                                <option value="text">Text</option>
+                                <option value="image">Image</option>
+                                <option value="qrcode">QR Code</option>
+                                <option value="barcode">Barcode</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="ct-form-text" class="ct-form" style="display: none;">
+                        <div class="ts-row" id="ct-ai-font-row" style="display: none;">
+                            <label>AI Font</label>
+                            <span id="ct-ai-font-name"></span>
+                        </div>
+                        <div class="ts-row"><label>Value</label><textarea id="ct-text-value" rows="3"></textarea></div>
+                        <div class="ts-row"><label>Font</label><select id="ct-font-select"><option value="">Select a font...</option></select></div>
+                        <div class="ts-row"><label>Size (pt)</label><input type="number" id="ct-font-size" value="12" min="1" max="200"></div>
+                        <div class="ts-row"><label>Style</label><div class="style-toggles"><button type="button" id="ct-bold-btn">B</button><button type="button" id="ct-italic-btn">I</button></div></div>
+                        <div class="ts-row"><label>Color</label><input type="color" id="ct-color" value="#000000"></div>
+                        <div class="ts-row"><label>Spacing</label><input type="number" id="ct-letter-spacing" value="0" step="0.1"></div>
+                        <div class="ts-row"><label>H-Align</label><div class="alignment-buttons" id="ct-align-h"><button type="button" data-val="left" class="active">&#8676;</button><button type="button" data-val="center">&#8596;</button><button type="button" data-val="right">&#8677;</button></div></div>
+                        <div class="ts-row"><label>V-Align</label><div class="alignment-buttons" id="ct-align-v"><button type="button" data-val="top" class="active">&#8673;</button><button type="button" data-val="center">&#8597;</button><button type="button" data-val="bottom">&#8675;</button></div></div>
+                    </div>
+                    <div id="ct-form-image" class="ct-form" style="display: none;">
+                        <div class="ts-row"><label>Source</label><input type="text" id="ct-image-url" placeholder="Image URL or path"></div>
+                        <div class="ts-row"><label>Fit</label><select id="ct-image-fit"><option value="contain">Contain</option><option value="cover">Cover</option><option value="stretch">Stretch</option></select></div>
+                    </div>
+                    <div id="ct-form-qrcode" class="ct-form" style="display: none;">
+                        <div class="ts-row"><label>Data</label><input type="text" id="ct-qr-data" placeholder="URL or text to encode"></div>
+                        <div class="ts-row"><label>Color</label><input type="color" id="ct-qr-color" value="#000000"></div>
+                    </div>
+                    <div id="ct-form-barcode" class="ct-form" style="display: none;">
+                        <div class="ts-row"><label>Data</label><input type="text" id="ct-barcode-data" placeholder="Barcode value"></div>
+                        <div class="ts-row"><label>Format</label><select id="ct-barcode-format"><option value="code128">Code 128</option><option value="ean13">EAN-13</option><option value="code39">Code 39</option><option value="upc">UPC-A</option></select></div>
+                        <div class="ts-row"><label>Color</label><input type="color" id="ct-barcode-color" value="#000000"></div>
+                    </div>
+                    <div id="ct-rotate-buttons" class="ts-buttons" style="display: none;"></div>
+                    <div id="ct-buttons" class="ts-buttons" style="display: none;"></div>
+                </div>
+            </div>
+            <div id="customer-display" class="panel-section customer-header">
+                <span id="customer-name-label">No customer selected</span>
+                <button id="btn-select-customer" style="display:none;">Select</button>
+            </div>
+            <div class="panel-section">
+                <h2 class="collapsible-header">ACTIONS <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div class="action-buttons">
+                        <button id="undo-btn" disabled>← Undo</button>
+                        <button id="redo-btn" disabled>→ Redo</button>
+                        <button id="btn-save-layout" style="display:none;">Save Layout</button>
+                    </div>
+                </div>
+            </div>
+            <div class="panel-section">
+                <h2 class="collapsible-header">LAYERS <span id="layer-count">(0 layers)</span> <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div class="component-actions">
+                        <button class="icon-btn" id="layer-toggle-expand">▶</button>
+                        <button class="icon-btn" id="layer-toggle-visible">👁</button>
+                        <button class="icon-btn" id="layer-toggle-lock">🔓</button>
+                        <button class="icon-btn" id="layer-group-btn" style="display:none">G</button>
+                        <button class="icon-btn" id="layer-ungroup-btn" style="display:none">U</button>
+                    </div>
+                    <div id="layer-tree"><div class="empty-message">No JSON loaded</div></div>
+                </div>
+            </div>
+            <div class="panel-section">
+                <h2 class="collapsible-header">OVERLAYS <span id="overlay-count">(0 items)</span> <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div style="display:flex;gap:4px;margin-bottom:4px;">
+                        <button class="icon-btn" id="overlay-add-btn" disabled>+</button>
+                        <button class="icon-btn" id="overlay-toggle-visible">👁</button>
+                        <button class="icon-btn" id="overlay-toggle-lock">🔓</button>
+                    </div>
+                    <div id="overlay-add-hint" style="display:none;"></div>
+                    <div id="overlay-list"><div class="empty-message">No overlays added</div></div>
+                </div>
+            </div>
+            <div class="panel-section">
+                <h2 class="collapsible-header">SELECTION <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div class="action-buttons"><button id="btn-delete" disabled>Delete Selected</button></div>
+                </div>
+            </div>
+            <div class="panel-section" id="properties-section" style="display: none;">
+                <h2 class="collapsible-header">SELECTED <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body"><div id="properties-panel"></div></div>
+            </div>
+            <div class="panel-section">
+                <h2 class="collapsible-header">EXPORT OPTIONS <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div style="margin-bottom:6px;font-size:12px;">
+                        <label><input type="checkbox" id="export-include-hidden"> Export eye close</label>
+                    </div>
+                    <div class="export-buttons">
+                        <button id="btn-export-json" disabled>JSON</button>
+                        <button id="btn-export-pdf" disabled>PDF</button>
+                        <button id="btn-export-ai-editable" disabled>AI E</button>
+                        <button id="btn-export-ai-outlined" disabled>AI O</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script>
+        document.addEventListener('dragover', function(e) { e.preventDefault(); }, false);
+        document.addEventListener('drop', function(e) { e.preventDefault(); }, false);
+
+        (function() {
+            var allTabPanes = document.querySelectorAll('.tab-pane[data-tab-instance]');
+            var currentTabPane = allTabPanes[allTabPanes.length - 1];
+
+            if (typeof jsonInitWithTabPane === 'function') {
+                jsonInitWithTabPane(currentTabPane);
+            } else {
+                var managerScript = document.createElement('script');
+                managerScript.src = "{{ url_for('static', filename='js/json_manager.js') }}";
+                managerScript.onload = function() {
+                    if (currentTabPane && typeof jsonInitWithTabPane === 'function') {
+                        jsonInitWithTabPane(currentTabPane);
+                    }
+                };
+                document.body.appendChild(managerScript);
+            }
+        })();
+    </script>
+
+    <!-- Save Layout Modal (hidden, needed for JS references) -->
+    <div id="save-layout-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content">
+            <div id="save-layout-form-view">
+                <h2>Save Layout</h2>
+                <form id="save-layout-form">
+                    <div class="modal-form-group"><label for="layout-customer">Customer</label><select id="layout-customer"><option value="">Select a customer...</option></select></div>
+                    <div class="modal-form-group"><label for="layout-name">Layout Name</label><input type="text" id="layout-name"></div>
+                    <div class="modal-buttons"><button type="button" class="btn-secondary" onclick="closeSaveModal()">Cancel</button><button type="submit" class="btn-primary">Save</button></div>
+                </form>
+            </div>
+            <div id="save-layout-confirm-view" style="display:none;">
+                <h2>Overwrite Layout?</h2>
+                <p id="overwrite-message"></p>
+                <div class="modal-buttons"><button type="button" class="btn-secondary" onclick="cancelOverwrite()">Cancel</button><button type="button" class="btn-primary" onclick="confirmOverwrite()">Overwrite</button></div>
+            </div>
+        </div>
+    </div>
+    <div id="customer-select-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content">
+            <h2>Select Customer</h2>
+            <div class="modal-form-group"><select id="customer-select-dropdown"><option value="">Select a customer...</option></select></div>
+            <div class="modal-buttons"><button type="button" class="btn-secondary" onclick="closeCustomerSelectModal()">Cancel</button><button type="button" class="btn-primary" onclick="confirmCustomerSelect()">Confirm</button></div>
+        </div>
+    </div>
+    <div id="missing-font-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content">
+            <h2>Missing Fonts</h2>
+            <p>Fonts not available.</p>
+            <ul id="missing-font-list"></ul>
+            <div class="modal-buttons"><button type="button" class="btn-primary" onclick="document.getElementById('missing-font-modal').style.display='none'">OK</button></div>
+        </div>
+    </div>
+
+</div>

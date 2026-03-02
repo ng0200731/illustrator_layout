@@ -15,6 +15,12 @@ def create_json_page():
     layout_id = request.args.get('load', '')
     return render_template('layout/create_json.html', layout_id=layout_id)
 
+@layout_bp.route('/create/json/order', methods=['GET'])
+def create_json_order_page():
+    """Render JSON layout editor in order mode (no right panel)"""
+    layout_id = request.args.get('load', '')
+    return render_template('layout/create_json_order.html', layout_id=layout_id)
+
 @layout_bp.route('/create/pdf', methods=['GET'])
 def create_pdf_page():
     """Render PDF manager page"""

@@ -5,8 +5,8 @@
         <h2>Order: {{ order_id }}</h2>
         <div id="order-info"></div>
 
-        <h3>Lines</h3>
-        <div style="display:flex; gap:6px; margin-bottom:8px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+            <h3 style="margin:0;">Lines</h3>
             <button onclick="exportAll(false)" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">AI E All</button>
             <button onclick="exportAll(true)" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">AI O All</button>
         </div>
@@ -94,7 +94,7 @@
     })();
 
     function previewLayout(layoutId, layoutType, layoutName) {
-        var route = layoutType === 'json' ? '/layout/create/json' : '/layout/create/pdf';
+        var route = layoutType === 'json' ? '/layout/create/json/order' : '/layout/create/pdf';
         var content = document.querySelector('.preview-modal-content');
         content.style.left = '';
         content.style.top = '';
