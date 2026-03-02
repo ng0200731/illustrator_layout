@@ -57,7 +57,8 @@ function getJCanvasState(c) {
             addOverlayDraw: null,
             addOverlaySnapPoint: null,
             addOverlayHoverPoint: null,
-            _addOverlayBRIdx: -1
+            _addOverlayBRIdx: -1,
+            hideGuides: false
         });
     }
     return jCanvasStates.get(c);
@@ -1551,13 +1552,15 @@ function jRenderCanvas() {
             var rot = pbr._rotation || 0;
 
             // Draw bounds rect border (always unrotated for reference)
+            if (!jState.hideGuides) {
             c.save();
             c.strokeStyle = '#000';
-            c.lineWidth = 0.3;
+            c.lineWidth = 0.15;
             c.setLineDash([1.5, 1]);
             c.strokeRect(pbr.x, pbr.y, pbr.w, pbr.h);
             c.setLineDash([]);
             c.restore();
+            }
 
             // Highlight boundsRects during add-overlay mode
             if (jState.addOverlayMode && jState.addOverlayStep === 'selectPanel') {
@@ -1612,11 +1615,13 @@ function jRenderCanvas() {
         var pt = jState.pendingContentType;
         if (pt === 'text') {
             c.save();
+            if (!jState.hideGuides) {
             c.strokeStyle = '#00aa00';
-            c.lineWidth = 0.5;
+            c.lineWidth = 0.15;
             c.setLineDash([1, 1]);
             c.strokeRect(pr.x, pr.y, pr.w, pr.h);
             c.setLineDash([]);
+            }
             var textVal = (_jel('ct-text-value') || {}).value || '';
             if (textVal) {
                 var fontSize = parseFloat((_jel('ct-font-size') || {}).value) || 12;
@@ -1668,8 +1673,9 @@ function jRenderCanvas() {
             c.restore();
         } else if (pt === 'image') {
             c.save();
+            if (!jState.hideGuides) {
             c.strokeStyle = '#00aa00';
-            c.lineWidth = 0.5;
+            c.lineWidth = 0.15;
             c.setLineDash([1, 1]);
             c.strokeRect(pr.x, pr.y, pr.w, pr.h);
             c.setLineDash([]);
@@ -1678,16 +1684,19 @@ function jRenderCanvas() {
             c.beginPath();
             c.moveTo(pr.x, pr.y); c.lineTo(pr.x + pr.w, pr.y + pr.h);
             c.moveTo(pr.x + pr.w, pr.y); c.lineTo(pr.x, pr.y + pr.h);
-            c.lineWidth = 0.3;
+            c.lineWidth = 0.15;
             c.stroke();
+            }
             c.restore();
         } else if (pt === 'qrcode') {
             c.save();
+            if (!jState.hideGuides) {
             c.strokeStyle = '#00aa00';
-            c.lineWidth = 0.5;
+            c.lineWidth = 0.15;
             c.setLineDash([1, 1]);
             c.strokeRect(pr.x, pr.y, pr.w, pr.h);
             c.setLineDash([]);
+            }
             var qrVal = (_jel('ct-qr-data') || {}).value || '';
             if (qrVal && typeof qrcode === 'function') {
                 try {
@@ -1717,11 +1726,13 @@ function jRenderCanvas() {
             c.restore();
         } else if (pt === 'barcode') {
             c.save();
+            if (!jState.hideGuides) {
             c.strokeStyle = '#00aa00';
-            c.lineWidth = 0.5;
+            c.lineWidth = 0.15;
             c.setLineDash([1, 1]);
             c.strokeRect(pr.x, pr.y, pr.w, pr.h);
             c.setLineDash([]);
+            }
             var bcVal = (_jel('ct-barcode-data') || {}).value || '';
             var bcFmt = (_jel('ct-barcode-format') || {}).value || 'CODE128';
             if (bcVal && typeof JsBarcode === 'function') {
@@ -1743,7 +1754,8 @@ function jRenderCanvas() {
             c.restore();
         }
         // Draw resize handles on pending region
-        var hs = 0.8;
+        if (!jState.hideGuides) {
+        var hs = 0.5;
         var prHandles = [
             { x: pr.x, y: pr.y }, { x: pr.x + pr.w, y: pr.y },
             { x: pr.x, y: pr.y + pr.h }, { x: pr.x + pr.w, y: pr.y + pr.h }
@@ -1753,11 +1765,12 @@ function jRenderCanvas() {
             var hh = prHandles[hi];
             c.fillStyle = '#fff';
             c.strokeStyle = '#00aa00';
-            c.lineWidth = 0.3;
+            c.lineWidth = 0.15;
             c.fillRect(hh.x - hs, hh.y - hs, hs * 2, hs * 2);
             c.strokeRect(hh.x - hs, hh.y - hs, hs * 2, hs * 2);
         }
         c.restore();
+        }
     }
 
     // Draw add-overlay region while dragging
@@ -1779,7 +1792,7 @@ function jRenderCanvas() {
         }
         c.save();
         c.strokeStyle = '#00aa00';
-        c.lineWidth = 0.5;
+        c.lineWidth = 0.15;
         c.setLineDash([1.5, 1.5]);
         var rx = Math.min(aod.x1, aod.x2), ry = Math.min(aod.y1, aod.y2);
         var rw = Math.abs(aod.x2 - aod.x1), rh = Math.abs(aod.y2 - aod.y1);
@@ -1841,6 +1854,7 @@ function jRenderCanvas() {
     }
 
     // Highlight selected tree nodes on canvas
+    if (!jState.hideGuides) {
     var selKeys = Object.keys(jState.selectedTreePaths);
     if (selKeys.length > 0) {
         for (var si = 0; si < selKeys.length; si++) {
@@ -1855,7 +1869,7 @@ function jRenderCanvas() {
             var sw = sb.width * PT_TO_MM, sh = sb.height * PT_TO_MM;
             c.save();
             c.strokeStyle = '#0066ff';
-            c.lineWidth = 0.4;
+            c.lineWidth = 0.15;
             c.setLineDash([1, 1]);
             c.strokeRect(sx, sy, sw, sh);
             c.fillStyle = 'rgba(0, 102, 255, 0.08)';
@@ -1863,6 +1877,7 @@ function jRenderCanvas() {
             c.setLineDash([]);
             c.restore();
         }
+    }
     }
 
     // Draw rectangle selection marquee
@@ -1872,7 +1887,7 @@ function jRenderCanvas() {
         var rsw = Math.abs(rs.endX - rs.startX), rsh = Math.abs(rs.endY - rs.startY);
         c.save();
         c.strokeStyle = '#0066ff';
-        c.lineWidth = 0.4;
+        c.lineWidth = 0.15;
         c.setLineDash([1.5, 1.5]);
         c.strokeRect(rsx, rsy, rsw, rsh);
         c.fillStyle = 'rgba(0, 102, 255, 0.06)';
@@ -2270,11 +2285,13 @@ function jRenderOverlayItem(c, ov, idx) {
 
     // Draw region border
     c.save();
+    if (!jState.hideGuides) {
     c.strokeStyle = isSelected ? '#0066ff' : '#00aa00';
-    c.lineWidth = 0.5;
+    c.lineWidth = 0.15;
     c.setLineDash([1, 1]);
     c.strokeRect(x, y, w, h);
     c.setLineDash([]);
+    }
 
     if (ov.type === 'textregion' && ov.content && ov.fontFamily) {
         var tr = ov._resizeTextRect || { x: x, y: y, w: w, h: h };
@@ -2375,16 +2392,18 @@ function jRenderOverlayItem(c, ov, idx) {
     }
 
     // Label
+    if (!jState.hideGuides) {
     c.fillStyle = isSelected ? '#0066ff' : '#00aa00';
     c.font = '3px sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'bottom';
     var label = ov.type === 'textregion' ? 'Text' : ov.type === 'imageregion' ? 'Image' : ov.type === 'qrcoderegion' ? 'QR' : 'Barcode';
     c.fillText(label, x, y - 0.5);
+    }
     c.restore();
 
     // Draw 8 resize handles if this overlay is selected and has bounds constraint
-    if (isSelected && ov._boundsRectIdx >= 0) {
+    if (!jState.hideGuides && isSelected && ov._boundsRectIdx >= 0) {
         jDrawOverlayHandles(c, x, y, w, h);
     }
 
@@ -2416,7 +2435,7 @@ function jDrawOverlayHandles(c, x, y, w, h) {
         c.fillStyle = '#ffffff';
         c.fillRect(handles[i].x, handles[i].y, hs, hs);
         c.strokeStyle = '#0066ff';
-        c.lineWidth = 0.3;
+        c.lineWidth = 0.15;
         c.strokeRect(handles[i].x, handles[i].y, hs, hs);
     }
     c.restore();
@@ -2486,11 +2505,12 @@ function jStartOverlayResize(e, idx, handleId) {
 
 function jRenderEdges(c) {
     if (!jState.edges) return;
+    if (jState.hideGuides) return;
     for (var i = 0; i < jState.edges.length; i++) {
         var edge = jState.edges[i];
         c.save();
         c.strokeStyle = edge.confirmed ? '#00aa00' : '#ff6600';
-        c.lineWidth = 0.3;
+        c.lineWidth = 0.15;
         c.setLineDash(edge.confirmed ? [] : [2, 2]);
         c.strokeRect(edge.x1, edge.y1, edge.x2 - edge.x1, edge.y2 - edge.y1);
         c.setLineDash([]);
@@ -3291,6 +3311,14 @@ function jSetLockAll(nodes, val) {
 
 // __CONTINUE_HERE_9__
 
+function jToggleGuides() {
+    if (!jState) return;
+    jState.hideGuides = !jState.hideGuides;
+    var btn = _jel('toggle-guides-btn');
+    if (btn) btn.textContent = jState.hideGuides ? '◻' : '◼';
+    jRenderCanvas();
+}
+
 // ─── Overlay List Panel ───
 
 function jRenderOverlayList() {
@@ -3645,7 +3673,7 @@ function jCollectTextData(region) {
 
 // ─── Text Node Resize Handles ───
 
-var HANDLE_SIZE_MM = 1.5; // size of each handle square in mm
+var HANDLE_SIZE_MM = 0.6; // size of each handle square in mm
 
 function jGetTextNodeHandles(x, y, w, h) {
     var hs = HANDLE_SIZE_MM;
@@ -3662,6 +3690,7 @@ function jGetTextNodeHandles(x, y, w, h) {
 }
 
 function jDrawTextNodeHandles(c, x, y, w, h) {
+    if (jState && jState.hideGuides) return;
     var handles = jGetTextNodeHandles(x, y, w, h);
     var hs = HANDLE_SIZE_MM;
     c.save();
@@ -3669,7 +3698,7 @@ function jDrawTextNodeHandles(c, x, y, w, h) {
         c.fillStyle = '#ffffff';
         c.fillRect(handles[i].x, handles[i].y, hs, hs);
         c.strokeStyle = '#00cc00';
-        c.lineWidth = 0.3;
+        c.lineWidth = 0.15;
         c.strokeRect(handles[i].x, handles[i].y, hs, hs);
     }
     c.restore();
