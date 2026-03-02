@@ -4,7 +4,8 @@
 
     <div class="pdf-manager-container">
         <div id="canvas-container">
-            <button id="canvas-reset-btn" onclick="resetViewport()" title="Reset View">⌂</button>
+            <button id="canvas-reset-btn" onclick="resetViewport()" title="Reset View">&#x2302;</button>
+            <button id="canvas-reload-btn" onclick="resetPdf()" title="Reset PDF">&#x21ba;</button>
             <canvas id="canvas"></canvas>
             <div id="empty-state">
                 <p>Drag PDF file here</p>
@@ -39,6 +40,7 @@
                         <div class="ts-row">
                             <label>Font</label>
                             <select id="ct-font-select"><option value="">Select a font...</option></select>
+                            <button type="button" id="ct-font-refresh" title="Refresh fonts" style="margin-left:2px;padding:2px 5px;font-size:10px;cursor:pointer;">&#x21bb;</button>
                         </div>
                         <div class="ts-row">
                             <label>Size (pt)</label>
@@ -113,7 +115,7 @@
                     </div>
                     <div id="ct-buttons" class="ts-buttons" style="display: none;">
                         <button type="button" onclick="cancelContentSettings()">Cancel</button>
-                        <button type="button" class="btn-active" onclick="applyContentSettings()">Apply</button>
+                        <button type="button" class="btn-active" onclick="applyContentSettings()">Done</button>
                     </div>
                 </div>
             </div>
@@ -145,6 +147,21 @@
                     </div>
                     <div id="component-list">
                         <div class="empty-message">No PDF loaded</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel-section">
+                <h2 class="collapsible-header">OVERLAYS <span id="overlay-count">(0 items)</span> <span class="collapse-icon">▼</span></h2>
+                <div class="panel-section-body">
+                    <div style="display:flex;gap:4px;margin-bottom:4px;">
+                        <button class="icon-btn" id="overlay-add-btn" onclick="startAddOverlay()" title="Add overlay">+</button>
+                        <button class="icon-btn" id="overlay-toggle-visible" onclick="toggleAllOverlayVisible()" title="Toggle all visibility">👁</button>
+                        <button class="icon-btn" id="overlay-toggle-lock" onclick="toggleAllOverlayLock()" title="Toggle all lock">🔓</button>
+                    </div>
+                    <div id="overlay-add-hint" style="display:none;font-size:11px;color:#666;padding:2px 4px;"></div>
+                    <div id="overlay-list">
+                        <div class="empty-message">No overlays added</div>
                     </div>
                 </div>
             </div>
@@ -218,7 +235,7 @@
                 pdfScript.onload = function() {
                     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
                     var managerScript = document.createElement('script');
-                    managerScript.src = "{{ url_for('static', filename='js/pdf_manager.js') }}?v=20260302c";
+                    managerScript.src = "{{ url_for('static', filename='js/pdf_manager.js') }}?v=20260302e";
                     managerScript.onload = function() {
                         if (currentTabPane && typeof initWithTabPane === 'function') {
                             initWithTabPane(currentTabPane);

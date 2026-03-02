@@ -41,7 +41,8 @@ function getCanvasState(canvas) {
             blockExpanded: {},
             groupNames: {},
             editingComponentIdx: -1,
-            regionResizing: null
+            regionResizing: null,
+            loadedPdfFile: null
         });
     }
     return canvasStates.get(canvas);
@@ -142,6 +143,9 @@ function initWithTabPane(tabPane) {
             btn.addEventListener('click', function() {
                 ctAlignH.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
                 btn.classList.add('active');
+                if (state && state.editingComponentIdx >= 0 && state.editingComponentIdx < components.length) {
+                    components[state.editingComponentIdx].alignH = btn.dataset.val;
+                }
                 renderCanvas();
             });
         });
@@ -152,6 +156,9 @@ function initWithTabPane(tabPane) {
             btn.addEventListener('click', function() {
                 ctAlignV.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
                 btn.classList.add('active');
+                if (state && state.editingComponentIdx >= 0 && state.editingComponentIdx < components.length) {
+                    components[state.editingComponentIdx].alignV = btn.dataset.val;
+                }
                 renderCanvas();
             });
         });
@@ -179,7 +186,18 @@ function initWithTabPane(tabPane) {
             if (ctFontSelect.value && opt && opt.dataset.fontName) {
                 loadFontForCanvas(parseInt(ctFontSelect.value), opt.dataset.fontName);
             }
+            if (state && state.editingComponentIdx >= 0 && state.editingComponentIdx < components.length) {
+                var comp = components[state.editingComponentIdx];
+                comp.fontId = ctFontSelect.value ? parseInt(ctFontSelect.value) : null;
+                comp.fontFamily = (opt && opt.dataset.fontName) ? opt.dataset.fontName : '';
+            }
             renderCanvas();
+        });
+    }
+    var ctFontRefresh = tabPane.querySelector('#ct-font-refresh');
+    if (ctFontRefresh) {
+        ctFontRefresh.addEventListener('click', function() {
+            populateContentFontDropdown();
         });
     }
     ['ct-bold-btn', 'ct-italic-btn'].forEach(function(id) {
@@ -188,6 +206,11 @@ function initWithTabPane(tabPane) {
             btn.removeAttribute('onclick');
             btn.addEventListener('click', function() {
                 btn.classList.toggle('active');
+                if (state && state.editingComponentIdx >= 0 && state.editingComponentIdx < components.length) {
+                    var comp = components[state.editingComponentIdx];
+                    if (id === 'ct-bold-btn') comp.bold = btn.classList.contains('active');
+                    if (id === 'ct-italic-btn') comp.italic = btn.classList.contains('active');
+                }
                 renderCanvas();
             });
         }
@@ -416,6 +439,7 @@ function setupCanvasInteraction() {
 
 function parsePdfFile(file) {
     console.log('parsePdfFile called with:', file.name);
+    if (state) state.loadedPdfFile = file;
     var reader = new FileReader();
 
     reader.onload = function(e) {
@@ -491,6 +515,7 @@ function parsePdfFile(file) {
 
                     renderCanvas();
                     renderComponentList();
+                    renderOverlayList();
                     renderColorPalette();
                     captureState(); // Capture initial state
                 }).catch(function(err) {
@@ -1715,9 +1740,13 @@ function onCanvasDblClick(e) {
     var x = (e.clientX - rect.left) / scale;
     var y = (e.clientY - rect.top) / scale;
 
-    // Check if double-clicking on a content region
+    // Check if double-clicking on a content region or overlay
     for (var i = components.length - 1; i >= 0; i--) {
         var comp = components[i];
+        if (OVERLAY_TYPES && OVERLAY_TYPES.indexOf(comp.type) !== -1 && x >= comp.x && x <= comp.x + comp.w && y >= comp.y && y <= comp.y + comp.h) {
+            editOverlayRegion(i);
+            return;
+        }
         if (comp.snappedEdgeId && x >= comp.x && x <= comp.x + comp.w && y >= comp.y && y <= comp.y + comp.h) {
             editContentRegion(i);
             return;
@@ -1726,6 +1755,9 @@ function onCanvasDblClick(e) {
 }
 
 function onCanvasMouseDown(e) {
+    // Overlay add mode intercept
+    if (onAddOverlayMouseDown(e)) return;
+
     var rect = canvas.getBoundingClientRect();
     var x = (e.clientX - rect.left) / scale;
     var y = (e.clientY - rect.top) / scale;
@@ -1875,6 +1907,9 @@ function onCanvasMouseDown(e) {
 }
 
 function onCanvasMouseMove(e) {
+    // Overlay add mode intercept
+    if (onAddOverlayMouseMove(e)) return;
+
     // Edge resize handle dragging
     if (state && state.resizingEdge) {
         var rect = canvas.getBoundingClientRect();
@@ -2008,8 +2043,8 @@ function onCanvasMouseMove(e) {
         if (h === 'bl' || h === 'bc' || h === 'br') { nh += dy; }
 
         // Minimum size
-        if (nw < 2) { nw = 2; nx = comp.x; }
-        if (nh < 2) { nh = 2; ny = comp.y; }
+        if (nw < 0.5) { nw = 0.5; nx = comp.x; }
+        if (nh < 0.5) { nh = 0.5; ny = comp.y; }
 
         // Clamp to block
         if (block) {
@@ -2060,6 +2095,9 @@ function onCanvasMouseMove(e) {
 }
 
 function onCanvasMouseUp(e) {
+    // Overlay add mode intercept
+    if (onAddOverlayMouseUp(e)) return;
+
     // End pending region drag
     if (state && state.previewDragState && state.previewDragState.active) {
         state.previewDragState.active = false;
@@ -2461,6 +2499,37 @@ function resetViewport() {
     renderCanvas();
 }
 
+function resetPdf() {
+    if (!state || !state.loadedPdfFile) return;
+    state.edges = [];
+    state.edgeMode = false;
+    state.edgeDrawing = null;
+    state.candidateEdges = [];
+    state.highlightedEdge = null;
+    state.snapStart = null;
+    state.snapEnd = null;
+    state.resizingEdge = null;
+    state.contentMode = false;
+    state.contentSelectedBlock = null;
+    state.contentRegionMode = false;
+    state.contentRegionDraw = null;
+    state.contentRegionBlock = null;
+    state.pendingContentRegion = null;
+    state.pendingContentType = null;
+    state.editingComponentIdx = -1;
+    state.regionResizing = null;
+    state.selectedIdx = -1;
+    state.selectedSet = [];
+    state.historyStack = [];
+    state.historyIndex = -1;
+    state.blockExpanded = {};
+    state.groupExpanded = {};
+    state.groupNames = {};
+    hideContentTypePanel();
+    renderEdgeList();
+    parsePdfFile(state.loadedPdfFile);
+}
+
 function centerPdfOnCanvas() {
     var container = _el('canvas-container');
     var containerW = container.clientWidth;
@@ -2587,6 +2656,7 @@ function exportFile(type, outlined) {
                 alignV: c.alignV || 'top',
                 pathData: c.pathData,
                 isEvenOdd: c.isEvenOdd || false,
+                isVariable: c.isVariable || false,
                 visible: c.visible,
                 imageUrl: c.imageUrl,
                 imageFit: c.imageFit,
@@ -3452,6 +3522,9 @@ function editContentRegion(compIdx) {
     var comp = components[compIdx];
     if (!comp) return;
 
+    // Save snapshot for cancel/revert
+    state._editSnapshot = JSON.parse(JSON.stringify(comp));
+
     // Map component type to content type value
     var typeMap = {
         'textregion': 'text',
@@ -3578,6 +3651,11 @@ function resetContentForms() {
 
 function cancelContentSettings() {
     if (state) {
+        // Revert component to snapshot if we were editing
+        if (state.editingComponentIdx >= 0 && state.editingComponentIdx < components.length && state._editSnapshot) {
+            components[state.editingComponentIdx] = state._editSnapshot;
+        }
+        state._editSnapshot = null;
         state.pendingContentRegion = null;
         state.pendingContentType = null;
         state.previewDragState = { active: false, startX: 0, startY: 0 };
@@ -3710,13 +3788,17 @@ function applyContentSettings() {
     // Edit mode: update existing component instead of creating new
     if (state.editingComponentIdx >= 0 && state.editingComponentIdx < components.length) {
         var editIdx = state.editingComponentIdx;
-        // Preserve locked/visible/groupId from original
-        comp.locked = components[editIdx].locked;
-        comp.visible = components[editIdx].visible;
-        comp.groupId = components[editIdx].groupId;
-        components[editIdx] = comp;
+        // For text type, properties are already synced via real-time listeners
+        // For other types, apply form values to the component
+        if (type !== 'text') {
+            comp.locked = components[editIdx].locked;
+            comp.visible = components[editIdx].visible;
+            comp.groupId = components[editIdx].groupId;
+            components[editIdx] = comp;
+        }
         captureState();
 
+        state._editSnapshot = null;
         state.pendingContentRegion = null;
         state.pendingContentType = null;
         state.previewDragState = { active: false, startX: 0, startY: 0 };
@@ -3727,6 +3809,7 @@ function applyContentSettings() {
         selectedIdx = editIdx;
         renderCanvas();
         renderComponentList();
+        renderOverlayList();
         renderEdgeList();
         renderPropertiesPanel();
         updateActionButtons();
@@ -3744,6 +3827,7 @@ function applyContentSettings() {
 
     renderCanvas();
     renderComponentList();
+    renderOverlayList();
     renderEdgeList();
     updateActionButtons();
 
@@ -4000,4 +4084,306 @@ function drawBarcodeRegion(comp, idx) {
         ctx.strokeRect(x - 1, y - 1, w + 2, h + 2);
     }
     ctx.globalAlpha = 1;
+}
+
+// ============================================================
+// OVERLAYS Panel
+// ============================================================
+
+var OVERLAY_TYPES = ['textregion', 'imageregion', 'qrcoderegion', 'barcoderegion'];
+var selectedOverlayIdx = -1;
+var addOverlayMode = false;
+var addOverlayDraw = null;
+
+function getOverlayIndices() {
+    var indices = [];
+    for (var i = 0; i < components.length; i++) {
+        if (OVERLAY_TYPES.indexOf(components[i].type) !== -1) {
+            indices.push(i);
+        }
+    }
+    return indices;
+}
+
+function renderOverlayList() {
+    var list = _el('overlay-list');
+    if (!list) return;
+    list.innerHTML = '';
+    var overlayIndices = getOverlayIndices();
+    var countEl = _el('overlay-count');
+    if (countEl) countEl.textContent = '(' + overlayIndices.length + ' items)';
+
+    if (overlayIndices.length === 0) {
+        list.innerHTML = '<div class="empty-message">No overlays added</div>';
+        return;
+    }
+
+    for (var oi = 0; oi < overlayIndices.length; oi++) {
+        var compIdx = overlayIndices[oi];
+        var comp = components[compIdx];
+        var item = document.createElement('div');
+        item.className = 'component-item';
+        if (compIdx === selectedOverlayIdx) item.classList.add('selected');
+
+        var eyeBtn = document.createElement('button');
+        eyeBtn.className = 'icon-btn';
+        eyeBtn.textContent = comp.visible ? '\ud83d\udc41' : '-';
+        (function(idx) {
+            eyeBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                components[idx].visible = !components[idx].visible;
+                renderCanvas();
+                renderOverlayList();
+            });
+        })(compIdx);
+
+        var lockBtn = document.createElement('button');
+        lockBtn.className = 'icon-btn';
+        lockBtn.textContent = comp.locked ? '\ud83d\udd12' : '\ud83d\udd13';
+        lockBtn.title = comp.locked ? 'Unlock' : 'Lock';
+        (function(idx) {
+            lockBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                components[idx].locked = !components[idx].locked;
+                renderCanvas();
+                renderOverlayList();
+            });
+        })(compIdx);
+
+        var varBtn = document.createElement('button');
+        varBtn.className = 'icon-btn' + (comp.isVariable ? ' var-active' : '');
+        varBtn.textContent = comp.isVariable ? '\u26a1' : '\u25cb';
+        varBtn.title = comp.isVariable ? 'Variable (on)' : 'Variable (off)';
+        varBtn.style.fontSize = '10px';
+        (function(idx) {
+            varBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                components[idx].isVariable = !components[idx].isVariable;
+                captureState();
+                renderCanvas();
+                renderOverlayList();
+            });
+        })(compIdx);
+
+        var label = document.createElement('span');
+        label.className = 'component-label';
+        var labelMap = {
+            'textregion': 'Text: "' + (comp.content || '').substring(0, 20) + '"',
+            'imageregion': 'Image: ' + (comp.imageUrl || '').substring(0, 15),
+            'qrcoderegion': 'QR: ' + (comp.qrData || '').substring(0, 15),
+            'barcoderegion': 'Barcode: ' + (comp.barcodeData || '').substring(0, 15)
+        };
+        var ovRot = comp._rotation || 0;
+        var rotSuffix = ovRot ? ' [' + ovRot + '\u00b0]' : '';
+        label.textContent = (labelMap[comp.type] || comp.type) + rotSuffix;
+
+        var rotCW = document.createElement('button');
+        rotCW.className = 'icon-btn';
+        rotCW.textContent = '\u21bb';
+        rotCW.title = 'Rotate +90\u00b0';
+        rotCW.style.marginLeft = '4px';
+        rotCW.style.fontSize = '12px';
+        (function(idx) {
+            rotCW.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var c = components[idx];
+                c._rotation = ((c._rotation || 0) + 90) % 360;
+                renderCanvas();
+                renderOverlayList();
+            });
+        })(compIdx);
+
+        var rotCCW = document.createElement('button');
+        rotCCW.className = 'icon-btn';
+        rotCCW.textContent = '\u21ba';
+        rotCCW.title = 'Rotate -90\u00b0';
+        rotCCW.style.fontSize = '12px';
+        (function(idx) {
+            rotCCW.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var c = components[idx];
+                c._rotation = ((c._rotation || 0) - 90 + 360) % 360;
+                renderCanvas();
+                renderOverlayList();
+            });
+        })(compIdx);
+
+        item.appendChild(eyeBtn);
+        item.appendChild(lockBtn);
+        item.appendChild(varBtn);
+        item.appendChild(label);
+        item.appendChild(rotCW);
+        item.appendChild(rotCCW);
+
+        (function(idx) {
+            item.addEventListener('click', function() {
+                selectedOverlayIdx = idx;
+                selectedIdx = idx;
+                selectedSet = [idx];
+                renderCanvas();
+                renderOverlayList();
+                renderPropertiesPanel();
+                updateActionButtons();
+            });
+            item.addEventListener('dblclick', function() {
+                editOverlayRegion(idx);
+            });
+        })(compIdx);
+
+        list.appendChild(item);
+    }
+}
+
+function editOverlayRegion(compIdx) {
+    var comp = components[compIdx];
+    if (!comp || comp.locked) return;
+    var typeMap = { 'textregion': 'text', 'imageregion': 'image', 'qrcoderegion': 'qrcode', 'barcoderegion': 'barcode' };
+    var contentType = typeMap[comp.type];
+    if (!contentType) return;
+
+    if (state) {
+        state._editSnapshot = JSON.parse(JSON.stringify(comp));
+        state.pendingContentRegion = { x: comp.x, y: comp.y, w: comp.w, h: comp.h, snappedEdgeId: comp.snappedEdgeId || null };
+        state.pendingContentType = contentType;
+        state.editingComponentIdx = compIdx;
+    }
+
+    var panel = _el('content-type-panel');
+    if (panel) panel.style.display = '';
+    var picker = _el('content-type-picker');
+    if (picker) picker.style.display = '';
+    var typeSelect = _el('ct-type-select');
+    if (typeSelect) { typeSelect.value = contentType; onContentTypeChange(); }
+    var btns = _el('ct-buttons');
+    if (btns) btns.style.display = '';
+
+    if (contentType === 'text') {
+        if (_el('ct-text-value')) _el('ct-text-value').value = comp.content || '';
+        if (_el('ct-font-size')) _el('ct-font-size').value = comp.fontSize || 12;
+        if (_el('ct-color')) _el('ct-color').value = comp.color || '#000000';
+        if (_el('ct-letter-spacing')) _el('ct-letter-spacing').value = comp.letterSpacing || 0;
+        if (_el('ct-bold-btn')) _el('ct-bold-btn').classList.toggle('active', !!comp.bold);
+        if (_el('ct-italic-btn')) _el('ct-italic-btn').classList.toggle('active', !!comp.italic);
+        var alignH = _el('ct-align-h');
+        if (alignH) {
+            alignH.querySelectorAll('button').forEach(function(b) {
+                b.classList.toggle('active', b.dataset.val === (comp.alignH || 'left'));
+            });
+        }
+        var alignV = _el('ct-align-v');
+        if (alignV) {
+            alignV.querySelectorAll('button').forEach(function(b) {
+                b.classList.toggle('active', b.dataset.val === (comp.alignV || 'top'));
+            });
+        }
+        if (_el('ct-font-select') && comp.fontId) {
+            _el('ct-font-select').value = comp.fontId;
+        }
+    } else if (contentType === 'image') {
+        if (_el('ct-image-url')) _el('ct-image-url').value = comp.imageUrl || '';
+        if (_el('ct-image-fit')) _el('ct-image-fit').value = comp.imageFit || 'contain';
+    } else if (contentType === 'qrcode') {
+        if (_el('ct-qr-data')) _el('ct-qr-data').value = comp.qrData || '';
+    } else if (contentType === 'barcode') {
+        if (_el('ct-barcode-data')) _el('ct-barcode-data').value = comp.barcodeData || '';
+        if (_el('ct-barcode-format')) _el('ct-barcode-format').value = comp.barcodeFormat || 'code128';
+    }
+}
+
+function startAddOverlay() {
+    if (addOverlayMode) { cancelAddOverlay(); return; }
+    addOverlayMode = true;
+    addOverlayDraw = null;
+    var btn = _el('overlay-add-btn');
+    if (btn) btn.classList.add('var-active');
+    var hint = _el('overlay-add-hint');
+    if (hint) { hint.style.display = ''; hint.textContent = 'Draw a region on the canvas (click and drag)'; }
+    canvas.style.cursor = 'crosshair';
+}
+
+function cancelAddOverlay() {
+    addOverlayMode = false;
+    addOverlayDraw = null;
+    var btn = _el('overlay-add-btn');
+    if (btn) btn.classList.remove('var-active');
+    var hint = _el('overlay-add-hint');
+    if (hint) hint.style.display = 'none';
+    canvas.style.cursor = '';
+    renderCanvas();
+}
+
+function onAddOverlayMouseDown(e) {
+    if (!addOverlayMode) return false;
+    var rect = canvas.getBoundingClientRect();
+    var mx = (e.clientX - rect.left) / scale;
+    var my = (e.clientY - rect.top) / scale;
+    addOverlayDraw = { x1: mx, y1: my, x2: mx, y2: my };
+    return true;
+}
+
+function onAddOverlayMouseMove(e) {
+    if (!addOverlayMode || !addOverlayDraw) return false;
+    var rect = canvas.getBoundingClientRect();
+    addOverlayDraw.x2 = (e.clientX - rect.left) / scale;
+    addOverlayDraw.y2 = (e.clientY - rect.top) / scale;
+    renderCanvas();
+    var x = Math.min(addOverlayDraw.x1, addOverlayDraw.x2) * scale;
+    var y = Math.min(addOverlayDraw.y1, addOverlayDraw.y2) * scale;
+    var w = Math.abs(addOverlayDraw.x2 - addOverlayDraw.x1) * scale;
+    var h = Math.abs(addOverlayDraw.y2 - addOverlayDraw.y1) * scale;
+    ctx.strokeStyle = '#0066ff';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(x, y, w, h);
+    ctx.setLineDash([]);
+    return true;
+}
+
+function onAddOverlayMouseUp(e) {
+    if (!addOverlayMode || !addOverlayDraw) return false;
+    var rect = canvas.getBoundingClientRect();
+    addOverlayDraw.x2 = (e.clientX - rect.left) / scale;
+    addOverlayDraw.y2 = (e.clientY - rect.top) / scale;
+    var rx = Math.min(addOverlayDraw.x1, addOverlayDraw.x2);
+    var ry = Math.min(addOverlayDraw.y1, addOverlayDraw.y2);
+    var rw = Math.abs(addOverlayDraw.x2 - addOverlayDraw.x1);
+    var rh = Math.abs(addOverlayDraw.y2 - addOverlayDraw.y1);
+    if (rw < 1 || rh < 1) { cancelAddOverlay(); return true; }
+    if (state) {
+        state.pendingContentRegion = { x: rx, y: ry, w: rw, h: rh };
+        state.pendingContentType = null;
+        state.editingComponentIdx = -1;
+    }
+    var panel = _el('content-type-panel');
+    if (panel) panel.style.display = '';
+    var picker = _el('content-type-picker');
+    if (picker) picker.style.display = '';
+    var typeSelect = _el('ct-type-select');
+    if (typeSelect) typeSelect.value = '';
+    var btns = _el('ct-buttons');
+    if (btns) btns.style.display = '';
+    cancelAddOverlay();
+    return true;
+}
+
+function toggleAllOverlayVisible() {
+    var indices = getOverlayIndices();
+    if (indices.length === 0) return;
+    var allVisible = indices.every(function(idx) { return components[idx].visible !== false; });
+    indices.forEach(function(idx) { components[idx].visible = !allVisible; });
+    var btn = _el('overlay-toggle-visible');
+    if (btn) btn.textContent = allVisible ? '-' : '\ud83d\udc41';
+    renderCanvas();
+    renderOverlayList();
+}
+
+function toggleAllOverlayLock() {
+    var indices = getOverlayIndices();
+    if (indices.length === 0) return;
+    var allLocked = indices.every(function(idx) { return components[idx].locked === true; });
+    indices.forEach(function(idx) { components[idx].locked = !allLocked; });
+    var btn = _el('overlay-toggle-lock');
+    if (btn) btn.textContent = allLocked ? '\ud83d\udd13' : '\ud83d\udd12';
+    renderCanvas();
+    renderOverlayList();
 }

@@ -26,9 +26,7 @@ function displayLayouts(layouts) {
         return;
     }
 
-    console.log('Displaying layouts:', layouts);
     tbody.innerHTML = layouts.map(layout => {
-        console.log('Layout ID:', layout.id, 'Type:', typeof layout.id);
 
         // Format dates as dd/mm/yyyy hh:mm:ss
         const formatDateTime = (dateStr) => {
@@ -65,7 +63,6 @@ function displayLayouts(layouts) {
 
 // Open a layout in a new tab
 function openLayout(layoutId, layoutType) {
-    console.log('Opening layout with ID:', layoutId, 'Type:', layoutType);
     var route = layoutType === 'json' ? '/layout/create/json' : '/layout/create/pdf';
     openTab('Layout: ' + layoutId, route + '?load=' + layoutId);
 }

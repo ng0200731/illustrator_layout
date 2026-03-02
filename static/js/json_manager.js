@@ -376,6 +376,7 @@ function jParseJsonFile(file) {
             jCollectBoundsRects(jState.documentTree);
             jAutoCreateTextOverlays(jState.documentTree);
             jLoadOverlayFonts();
+            jPreloadDocumentFonts();
 
             // Hide empty state, enable export
             var emptyState = _jel('empty-state');
@@ -1500,6 +1501,8 @@ function jRenderCanvas() {
     jCanvas.height = container.clientHeight;
     var c = jCtx;
     c.clearRect(0, 0, jCanvas.width, jCanvas.height);
+    c.imageSmoothingEnabled = true;
+    c.imageSmoothingQuality = 'high';
 
     if (!jState.documentTree) return;
 
@@ -1527,18 +1530,18 @@ function jRenderCanvas() {
     // Render document tree with per-panel rotation
     var brs = jState.boundsRects;
     if (brs && brs.length > 0) {
-        // Render nodes grouped by bounds rect, applying rotation per panel
-        var allLeaves = [];
-        jCollectLeafNodes(jState.documentTree, allLeaves);
+        // Collect top-level nodes (preserving group hierarchy for clipping)
+        var allTopNodes = [];
+        jCollectTopNodes(jState.documentTree, allTopNodes);
 
-        // Bucket nodes by bounds rect
+        // Bucket nodes by bounds rect using center point
         var buckets = [];
         var unassigned = [];
         for (var bi = 0; bi < brs.length; bi++) buckets.push([]);
-        for (var ni = 0; ni < allLeaves.length; ni++) {
-            var nd = allLeaves[ni];
+        for (var ni = 0; ni < allTopNodes.length; ni++) {
+            var nd = allTopNodes[ni];
             if (nd._isBoundsRect) continue;
-            var nb = nd.bounds;
+            var nb = nd.bounds || jGetNodeBounds(nd);
             if (!nb) { unassigned.push(nd); continue; }
             var ncx = nb.x * PT_TO_MM + (nb.width * PT_TO_MM) / 2;
             var ncy = nb.y * PT_TO_MM + (nb.height * PT_TO_MM) / 2;
@@ -1597,31 +1600,14 @@ function jRenderCanvas() {
                 c.translate(-cx, -cy);
             }
 
-            for (var bni = 0; bni < buckets[pi].length; bni++) {
-                var bnode = buckets[pi][bni];
-                if (bnode.visible === false) continue;
-                if (bnode._isDoubledText) continue;
-                var bop = (bnode.opacity || 100) / 100;
-                if (bnode.type === 'path') jRenderPath(c, bnode, bop);
-                else if (bnode.type === 'compoundPath') jRenderCompoundPath(c, bnode, bop);
-                else if (bnode.type === 'text') jRenderText(c, bnode, bop);
-                else if (bnode.type === 'image') jRenderImagePlaceholder(c, bnode, bop);
-            }
+            // Use group-aware rendering to preserve clipping
+            jRenderNodes(c, buckets[pi], 1.0);
 
             if (rot !== 0) c.restore();
         }
 
         // Render unassigned nodes without rotation
-        for (var ui = 0; ui < unassigned.length; ui++) {
-            var unode = unassigned[ui];
-            if (unode.visible === false) continue;
-            if (unode._isDoubledText) continue;
-            var uop = (unode.opacity || 100) / 100;
-            if (unode.type === 'path') jRenderPath(c, unode, uop);
-            else if (unode.type === 'compoundPath') jRenderCompoundPath(c, unode, uop);
-            else if (unode.type === 'text') jRenderText(c, unode, uop);
-            else if (unode.type === 'image') jRenderImagePlaceholder(c, unode, uop);
-        }
+        jRenderNodes(c, unassigned, 1.0);
     } else {
         // No bounds rects — render normally
         jRenderNodes(c, jState.documentTree, 1.0);
@@ -1944,8 +1930,22 @@ function jRenderNodes(c, nodes, parentOpacity) {
         if (node.children) {
             // Layer or group
             c.save();
-            c.globalAlpha = opacity;
-            jRenderNodes(c, node.children, 1.0);
+            if (node.clipped && node.children.length > 0) {
+                // Clipped group: last child (bottom in Illustrator) is the clipping mask
+                var clipNode = node.children[node.children.length - 1];
+                if (clipNode.type === 'path' && clipNode.pathData && clipNode.pathData.length > 0) {
+                    jTraceClipPath(c, clipNode);
+                    c.clip();
+                } else if (clipNode.type === 'compoundPath' && clipNode.paths) {
+                    jTraceCompoundClipPath(c, clipNode);
+                    c.clip('evenodd');
+                }
+                // Render all children except the clip mask
+                var clippedChildren = node.children.slice(0, node.children.length - 1);
+                jRenderNodes(c, clippedChildren, opacity);
+            } else {
+                jRenderNodes(c, node.children, opacity);
+            }
             c.restore();
         } else if (node.type === 'path') {
             jRenderPath(c, node, opacity);
@@ -1956,6 +1956,55 @@ function jRenderNodes(c, nodes, parentOpacity) {
         } else if (node.type === 'image') {
             jRenderImagePlaceholder(c, node, opacity);
         }
+    }
+}
+
+function jTraceClipPath(c, node) {
+    var pts = node.pathData;
+    c.beginPath();
+    c.moveTo(pts[0].x * PT_TO_MM, pts[0].y * PT_TO_MM);
+    for (var i = 1; i < pts.length; i++) {
+        var prev = pts[i - 1];
+        var pt = pts[i];
+        var ho = prev.handleOut;
+        var hi = pt.handleIn;
+        if (ho && hi && (ho.x !== prev.x || ho.y !== prev.y || hi.x !== pt.x || hi.y !== pt.y)) {
+            c.bezierCurveTo(ho.x * PT_TO_MM, ho.y * PT_TO_MM, hi.x * PT_TO_MM, hi.y * PT_TO_MM, pt.x * PT_TO_MM, pt.y * PT_TO_MM);
+        } else {
+            c.lineTo(pt.x * PT_TO_MM, pt.y * PT_TO_MM);
+        }
+    }
+    if (node.closed && pts.length > 1) {
+        var last = pts[pts.length - 1];
+        var first = pts[0];
+        var ho = last.handleOut;
+        var hi = first.handleIn;
+        if (ho && hi && (ho.x !== last.x || ho.y !== last.y || hi.x !== first.x || hi.y !== first.y)) {
+            c.bezierCurveTo(ho.x * PT_TO_MM, ho.y * PT_TO_MM, hi.x * PT_TO_MM, hi.y * PT_TO_MM, first.x * PT_TO_MM, first.y * PT_TO_MM);
+        }
+        c.closePath();
+    }
+}
+
+function jTraceCompoundClipPath(c, node) {
+    c.beginPath();
+    for (var p = 0; p < node.paths.length; p++) {
+        var path = node.paths[p];
+        if (!path.pathData || path.pathData.length === 0) continue;
+        var pts = path.pathData;
+        c.moveTo(pts[0].x * PT_TO_MM, pts[0].y * PT_TO_MM);
+        for (var i = 1; i < pts.length; i++) {
+            var prev = pts[i - 1];
+            var pt = pts[i];
+            var ho = prev.handleOut;
+            var hi = pt.handleIn;
+            if (ho && hi && (ho.x !== prev.x || ho.y !== prev.y || hi.x !== pt.x || hi.y !== pt.y)) {
+                c.bezierCurveTo(ho.x * PT_TO_MM, ho.y * PT_TO_MM, hi.x * PT_TO_MM, hi.y * PT_TO_MM, pt.x * PT_TO_MM, pt.y * PT_TO_MM);
+            } else {
+                c.lineTo(pt.x * PT_TO_MM, pt.y * PT_TO_MM);
+            }
+        }
+        if (path.closed) c.closePath();
     }
 }
 
@@ -2597,6 +2646,35 @@ function jCollectLeafNodes(nodes, out) {
             out.push(node);
         }
     }
+}
+
+// Collect top-level nodes preserving group hierarchy (for clipping support)
+function jCollectTopNodes(nodes, out) {
+    if (!nodes) return;
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (node._isBoundsRect) continue;
+        if (node.visible === false) continue;
+        if (node.children && !node.clipped && !node._isUserGroup) {
+            // Non-clipped group: recurse to collect children directly
+            jCollectTopNodes(node.children, out);
+        } else {
+            // Leaf node, clipped group, or user group: keep as-is
+            out.push(node);
+        }
+    }
+}
+
+// Get bounds for a node (works for groups by checking children)
+function jGetNodeBounds(node) {
+    if (node.bounds) return node.bounds;
+    if (node.children && node.children.length > 0) {
+        for (var i = 0; i < node.children.length; i++) {
+            var cb = jGetNodeBounds(node.children[i]);
+            if (cb) return cb;
+        }
+    }
+    return null;
 }
 
 function jRenderBoundsLayerItem(parent, br, layerId, isExpanded, childCount) {
@@ -4046,6 +4124,51 @@ function jShowMissingFontWarning(missingList) {
     modal.style.display = 'flex';
 }
 
+// Preload fonts used in document text nodes by matching against customer font list
+function jPreloadDocumentFonts() {
+    if (!jState || !jState.documentTree) return;
+    // Collect unique font families from text nodes
+    var fontFamilies = {};
+    jCollectTextFonts(jState.documentTree, fontFamilies);
+    var families = Object.keys(fontFamilies);
+    if (families.length === 0) return;
+
+    var url = jState.currentCustomerId ? '/font/list/' + encodeURIComponent(jState.currentCustomerId) : '/font/list';
+    fetch(url).then(function(r) { return r.json(); }).then(function(data) {
+        if (!data.success || !data.fonts) return;
+        var fonts = data.fonts;
+        for (var i = 0; i < families.length; i++) {
+            var family = families[i];
+            var normalizedFamily = family.toLowerCase().replace(/[\s\-_]/g, '');
+            for (var fi = 0; fi < fonts.length; fi++) {
+                var f = fonts[fi];
+                var normalizedF = f.font_name.toLowerCase().replace(/[\s\-_]/g, '');
+                if (normalizedF === normalizedFamily || normalizedF.indexOf(normalizedFamily) >= 0 || normalizedFamily.indexOf(normalizedF) >= 0) {
+                    jLoadFontForCanvas(f.id, f.font_name);
+                    break;
+                }
+            }
+        }
+    }).catch(function() {});
+}
+
+function jCollectTextFonts(nodes, out) {
+    if (!nodes) return;
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (node.type === 'text' && node.paragraphs) {
+            for (var pi = 0; pi < node.paragraphs.length; pi++) {
+                var runs = node.paragraphs[pi].runs;
+                if (!runs) continue;
+                for (var ri = 0; ri < runs.length; ri++) {
+                    if (runs[ri].fontFamily) out[runs[ri].fontFamily] = true;
+                }
+            }
+        }
+        if (node.children) jCollectTextFonts(node.children, out);
+    }
+}
+
 function jLoadFontList(forceReload) {
     var sel = _jel('ct-font-select');
     if (!sel) return Promise.resolve();
@@ -4271,6 +4394,7 @@ function jLoadLayoutFromDatabase(layoutId) {
             // Mark document tree text nodes that have overlay replacements
             jMarkDoubledTextNodes(jState.documentTree);
         }
+        jPreloadDocumentFonts();
 
         var emptyState = _jel('empty-state');
         if (emptyState) emptyState.style.display = 'none';
@@ -4449,6 +4573,7 @@ function jLoadLayoutFromExport(data) {
         }
         jMarkDoubledTextNodes(jState.documentTree);
     }
+    jPreloadDocumentFonts();
 
     var emptyState = _jel('empty-state');
     if (emptyState) emptyState.style.display = 'none';
