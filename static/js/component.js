@@ -1545,6 +1545,7 @@ function exportFile(type, outlined) {
                 fontFamily: c.fontFamily,
                 fontSize: c.fontSize,
                 pathData: c.pathData,
+                isCompound: c.isCompound || false,
                 visible: c.visible,
                 page: 0
             };

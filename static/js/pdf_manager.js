@@ -454,6 +454,7 @@ function parsePdfFile(file) {
                                 stroke: pathObj.stroke,
                                 lw: pathObj.lw
                             },
+                            isCompound: pathObj.isCompound || false,
                             visible: true,
                             locked: false,
                             groupId: null
@@ -658,30 +659,23 @@ function extractPdfObjects(page, pdfW, pdfH) {
                     var strokeColor = (fn === OPS.stroke || fn === OPS.fillStroke || fn === OPS.eoFillStroke) ? currentState.stroke : null;
                     var lwMm = currentState.lineWidth / 72 * 25.4;
 
-                    // Split into separate sub-paths at each M that follows a Z
-                    var subPaths = [];
-                    var current = [];
+                    // Count sub-paths (number of M ops)
+                    var mCount = 0;
                     for (var sp = 0; sp < currentPath.length; sp++) {
-                        if (currentPath[sp].o === 'M' && current.length > 0) {
-                            subPaths.push(current);
-                            current = [];
-                        }
-                        current.push(currentPath[sp]);
+                        if (currentPath[sp].o === 'M') mCount++;
                     }
-                    if (current.length > 0) subPaths.push(current);
 
-                    // Each closed sub-path becomes its own object
-                    for (var si = 0; si < subPaths.length; si++) {
-                        var spOps = subPaths[si];
-                        var bbox = calculateBBox(spOps);
-                        objects.push({
-                            ops: spOps,
-                            fill: fillColor,
-                            stroke: strokeColor,
-                            lw: lwMm,
-                            bbox: bbox
-                        });
-                    }
+                    // Keep all sub-paths from one fill operation together
+                    // Splitting breaks compound glyphs (A, D, O, 0 lose their holes)
+                    var bbox = calculateBBox(currentPath);
+                    objects.push({
+                        ops: currentPath.slice(),
+                        fill: fillColor,
+                        stroke: strokeColor,
+                        lw: lwMm,
+                        bbox: bbox,
+                        isCompound: mCount > 1
+                    });
                     currentPath = [];
                 }
             }
@@ -1092,7 +1086,7 @@ function drawPdfPath(comp, idx) {
 
     if (comp.pathData.fill) {
         ctx.fillStyle = rgbToString(comp.pathData.fill);
-        ctx.fill();
+        ctx.fill(comp.isCompound ? 'evenodd' : 'nonzero');
     }
 
     if (comp.pathData.stroke) {
@@ -2534,6 +2528,7 @@ function exportFile(type, outlined) {
                 alignH: c.alignH || 'left',
                 alignV: c.alignV || 'top',
                 pathData: c.pathData,
+                isCompound: c.isCompound || false,
                 visible: c.visible,
                 imageUrl: c.imageUrl,
                 imageFit: c.imageFit,

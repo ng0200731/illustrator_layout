@@ -2048,7 +2048,12 @@ function jRenderCompoundPath(c, node, opacity) {
                 c.lineTo(pt.x * PT_TO_MM, pt.y * PT_TO_MM);
             }
         }
-        if (path.closed) c.closePath();
+        // Close path if flagged closed, or if first/last points coincide
+        if (path.closed) {
+            c.closePath();
+        } else if (pts.length >= 3 && pts[0].x === pts[pts.length - 1].x && pts[0].y === pts[pts.length - 1].y) {
+            c.closePath();
+        }
     }
     // Use evenodd for compound paths
     var fillCSS = jColorToCSS(node.fill || (node.paths[0] && node.paths[0].fill));
@@ -4651,7 +4656,12 @@ function jPathToExportComponent(node, opacity, parent) {
             ops.push({ o: 'L', a: [pt.x * PT_TO_MM, pt.y * PT_TO_MM] });
         }
     }
-    if (node.closed) ops.push({ o: 'Z', a: [] });
+    // Close path if flagged closed, or if first/last points coincide (common in AI exports)
+    var isClosed = node.closed;
+    if (!isClosed && pts.length >= 3 && pts[0].x === pts[pts.length - 1].x && pts[0].y === pts[pts.length - 1].y) {
+        isClosed = true;
+    }
+    if (isClosed) ops.push({ o: 'Z', a: [] });
 
     var fill = node.fill || (parent && parent.fill);
     var stroke = node.stroke || (parent && parent.stroke);

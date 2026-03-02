@@ -56,19 +56,22 @@ def _draw_pdfpath(c, comp, page_h):
     fill = path_data.get('fill')
     stroke = path_data.get('stroke')
     lw = path_data.get('lw', 0.5)
-
     if not ops:
         return
 
     # Create path
     p = c.beginPath()
 
+    sub_path_open = False
     for op in ops:
         o = op.get('o')
         a = op.get('a', [])
 
         if o == 'M' and len(a) >= 2:
+            if sub_path_open:
+                p.close()
             p.moveTo(a[0] * mm, page_h - (a[1] * mm))
+            sub_path_open = True
         elif o == 'L' and len(a) >= 2:
             p.lineTo(a[0] * mm, page_h - (a[1] * mm))
         elif o == 'C' and len(a) >= 6:
@@ -79,6 +82,10 @@ def _draw_pdfpath(c, comp, page_h):
             )
         elif o == 'Z':
             p.close()
+            sub_path_open = False
+
+    if sub_path_open:
+        p.close()
 
     # Set colors
     if fill:
@@ -88,13 +95,11 @@ def _draw_pdfpath(c, comp, page_h):
         c.setStrokeColorRGB(stroke[0], stroke[1], stroke[2])
         c.setLineWidth(lw * mm)
 
-    # Draw path (use even-odd fill for compound paths to preserve holes)
-    is_compound = comp.get('isCompound', False)
-    fill_mode = 0 if is_compound else None
+    # Always use even-odd fill rule to preserve holes in glyphs (A, D, O, 0, etc.)
     if fill and stroke:
-        c.drawPath(p, fill=1, stroke=1, fillMode=fill_mode)
+        c.drawPath(p, fill=1, stroke=1, fillMode=0)
     elif fill:
-        c.drawPath(p, fill=1, stroke=0, fillMode=fill_mode)
+        c.drawPath(p, fill=1, stroke=0, fillMode=0)
     elif stroke:
         c.drawPath(p, fill=0, stroke=1)
 

@@ -174,7 +174,12 @@ def _path_to_component(node, opacity, parent=None):
             ]})
         else:
             ops.append({'o': 'L', 'a': [pt['x'] * PT_TO_MM, pt['y'] * PT_TO_MM]})
-    if node.get('closed'):
+    # Close path if flagged closed, or if first/last points coincide (common in AI exports)
+    is_closed = node.get('closed')
+    if not is_closed and len(pts) >= 3:
+        if pts[0]['x'] == pts[-1]['x'] and pts[0]['y'] == pts[-1]['y']:
+            is_closed = True
+    if is_closed:
         ops.append({'o': 'Z', 'a': []})
 
     fill = node.get('fill') or (parent.get('fill') if parent else None)
