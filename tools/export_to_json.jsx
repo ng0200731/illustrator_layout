@@ -15,24 +15,10 @@
     var artboardTop = abRect[1];
     var artboardLeft = abRect[0];
 
-    // Detect panels read-only (no document modification)
+    // Detect panels from compound paths (read-only)
     var detectedPanels = [];
     for (var li = 0; li < doc.layers.length; li++) {
-        var rects = [];
-        findLargeRects(doc.layers[li], rects);
-        var panels = filterNonOverlapping(rects);
-        for (var pi = 0; pi < panels.length; pi++) {
-            var gb = panels[pi];
-            detectedPanels.push({
-                name: "Panel" + (pi + 1),
-                bounds: {
-                    x: gb.left - artboardLeft,
-                    y: artboardTop - gb.top,
-                    width: gb.right - gb.left,
-                    height: gb.top - gb.bottom
-                }
-            });
-        }
+        findCompoundPathPanels(doc.layers[li], detectedPanels);
     }
 
     var result = {
@@ -48,6 +34,9 @@
     for (var i = 0; i < doc.layers.length; i++) {
         result.layers.push(processLayer(doc.layers[i]));
     }
+
+    // Inject __bounds__ path nodes for compound path panels
+    injectBoundsNodes(result.layers);
 
     var savePath = doc.fullName.toString().replace(/\.[^.]+$/, "") + ".json";
     var file = new File(savePath);
@@ -88,56 +77,161 @@
         return sw;
     }
 
-    // ─── Panel Detection (read-only) ───
+    // ─── Compound Path Panel Detection (read-only) ───
 
-    function findLargeRects(container, results) {
+    // Check if two bounding rects overlap or touch (within tolerance).
+    // Illustrator coords: top > bottom (Y increases upward).
+    function boundsOverlap(a, b, tolerance) {
+        if (typeof tolerance === "undefined") tolerance = 2;
+        return !(a.right + tolerance < b.left ||
+                 b.right + tolerance < a.left ||
+                 a.bottom - tolerance > b.top ||
+                 b.bottom - tolerance > a.top);
+    }
+
+    // Cluster sub-paths of a CompoundPathItem by spatial overlap.
+    // Returns array of cluster bounding rects in artboard-relative coords.
+    function clusterSubPaths(cp) {
+        var n = cp.pathItems.length;
+        if (n === 0) return [];
+
+        // Gather bounds and assign initial cluster IDs
+        var subs = [];
+        for (var i = 0; i < n; i++) {
+            var gb = cp.pathItems[i].geometricBounds; // [left, top, right, bottom]
+            subs.push({ left: gb[0], top: gb[1], right: gb[2], bottom: gb[3], cluster: i });
+        }
+
+        // Iterative merge: merge clusters whose sub-path bounds overlap
+        var changed = true;
+        while (changed) {
+            changed = false;
+            for (var i = 0; i < n; i++) {
+                for (var j = i + 1; j < n; j++) {
+                    if (subs[i].cluster !== subs[j].cluster && boundsOverlap(subs[i], subs[j])) {
+                        var oldC = subs[j].cluster;
+                        var newC = subs[i].cluster;
+                        for (var k = 0; k < n; k++) {
+                            if (subs[k].cluster === oldC) subs[k].cluster = newC;
+                        }
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        // Group by cluster ID, compute union bounding rect per cluster
+        var clusters = {};
+        for (var i = 0; i < n; i++) {
+            var cid = subs[i].cluster;
+            if (!clusters[cid]) {
+                clusters[cid] = { left: subs[i].left, top: subs[i].top, right: subs[i].right, bottom: subs[i].bottom };
+            } else {
+                var c = clusters[cid];
+                if (subs[i].left < c.left) c.left = subs[i].left;
+                if (subs[i].top > c.top) c.top = subs[i].top;
+                if (subs[i].right > c.right) c.right = subs[i].right;
+                if (subs[i].bottom < c.bottom) c.bottom = subs[i].bottom;
+            }
+        }
+
+        // Convert to artboard-relative coords array
+        var result = [];
+        for (var cid in clusters) {
+            if (!clusters.hasOwnProperty(cid)) continue;
+            var c = clusters[cid];
+            result.push({
+                x: c.left - artboardLeft,
+                y: artboardTop - c.top,
+                width: c.right - c.left,
+                height: c.top - c.bottom
+            });
+        }
+        return result;
+    }
+
+    // Check if a compound path qualifies for panel detection
+    function shouldAnalyzeForPanels(cp) {
+        try {
+            if (cp.pathItems.length < 2) return false;
+            var gb = cp.geometricBounds;
+            var w = gb[2] - gb[0];
+            var h = gb[1] - gb[3];
+            return (w >= 30 && h >= 30);
+        } catch(e) { return false; }
+    }
+
+    // Find compound paths in a container and detect panels from them
+    function findCompoundPathPanels(container, results) {
         var items;
         try { items = container.pageItems; } catch(e) { return; }
         for (var i = 0; i < items.length; i++) {
             var item = items[i];
             if (item.hidden) continue;
-            if (item.typename === "PathItem" && isLargeRect(item)) {
-                var gb = item.geometricBounds;
-                results.push({ left: gb[0], top: gb[1], right: gb[2], bottom: gb[3] });
-            }
-            if (item.typename === "GroupItem") {
-                findLargeRects(item, results);
-            }
-        }
-    }
-
-    function isLargeRect(path) {
-        if (!path.closed) return false;
-        var gb = path.geometricBounds;
-        var w = gb[2] - gb[0];
-        var h = gb[1] - gb[3];
-        if (w < 30 || h < 30) return false;
-        try {
-            var pathArea = Math.abs(path.area);
-            var bboxArea = w * h;
-            return pathArea > bboxArea * 0.9;
-        } catch(e) {
-            return false;
-        }
-    }
-
-    function filterNonOverlapping(rects) {
-        if (rects.length < 2) return rects;
-        rects.sort(function(a, b) { return b.top - a.top; });
-        var unique = [rects[0]];
-        for (var i = 1; i < rects.length; i++) {
-            var dominated = false;
-            for (var j = 0; j < unique.length; j++) {
-                if (Math.abs(rects[i].left - unique[j].left) < 2 &&
-                    Math.abs(rects[i].right - unique[j].right) < 2 &&
-                    Math.abs(rects[i].top - unique[j].top) < 2 &&
-                    Math.abs(rects[i].bottom - unique[j].bottom) < 2) {
-                    dominated = true; break;
+            if (item.typename === "CompoundPathItem" && shouldAnalyzeForPanels(item)) {
+                var clusters = clusterSubPaths(item);
+                for (var ci = 0; ci < clusters.length; ci++) {
+                    results.push(clusters[ci]);
                 }
             }
-            if (!dominated) unique.push(rects[i]);
+            if (item.typename === "GroupItem") {
+                findCompoundPathPanels(item, results);
+            }
         }
-        return unique;
+    }
+
+    // Create a synthetic __bounds__ path node from panel bounds
+    function makeBoundsNode(name, b) {
+        return {
+            type: "path",
+            name: "__bounds__" + name,
+            visible: true,
+            locked: false,
+            opacity: 100,
+            closed: true,
+            pathData: [
+                { x: b.x, y: b.y, handleIn: null, handleOut: null },
+                { x: b.x + b.width, y: b.y, handleIn: null, handleOut: null },
+                { x: b.x + b.width, y: b.y + b.height, handleIn: null, handleOut: null },
+                { x: b.x, y: b.y + b.height, handleIn: null, handleOut: null }
+            ],
+            fill: { type: "none" },
+            stroke: { type: "none" },
+            strokeWidth: 0,
+            bounds: { x: b.x, y: b.y, width: b.width, height: b.height }
+        };
+    }
+
+    // Walk the document tree and inject __bounds__ nodes for compound path panels
+    function injectBoundsNodes(layers) {
+        for (var li = 0; li < layers.length; li++) {
+            injectBoundsInChildren(layers[li].children);
+        }
+    }
+
+    function injectBoundsInChildren(children) {
+        if (!children) return;
+        var toInsert = [];
+        for (var i = 0; i < children.length; i++) {
+            var child = children[i];
+            if (child._panelClusters) {
+                for (var ci = 0; ci < child._panelClusters.length; ci++) {
+                    var panelName = child.name || "Panel";
+                    if (child._panelClusters.length > 1) {
+                        panelName += "_" + (ci + 1);
+                    }
+                    toInsert.push({ insertAfter: i, node: makeBoundsNode(panelName, child._panelClusters[ci]) });
+                }
+                delete child._panelClusters;
+            }
+            if (child.children) {
+                injectBoundsInChildren(child.children);
+            }
+        }
+        // Insert in reverse order to preserve indices
+        for (var j = toInsert.length - 1; j >= 0; j--) {
+            children.splice(toInsert[j].insertAfter + 1, 0, toInsert[j].node);
+        }
     }
 
     // ─── Panel Index Assignment ───
@@ -152,7 +246,7 @@
             var cxAB = cx - artboardLeft;
             var cyAB = artboardTop - cy;
             for (var pi = 0; pi < detectedPanels.length; pi++) {
-                var pb = detectedPanels[pi].bounds;
+                var pb = detectedPanels[pi];
                 if (cxAB >= pb.x && cxAB <= pb.x + pb.width && cyAB >= pb.y && cyAB <= pb.y + pb.height) {
                     return pi;
                 }
@@ -256,7 +350,7 @@
             paths.push(processPath(cp.pathItems[i]));
         }
         var gb = cp.geometricBounds;
-        return {
+        var obj = {
             type: "compoundPath",
             name: cp.name || "",
             visible: !cp.hidden,
@@ -265,6 +359,13 @@
             paths: paths,
             bounds: { x: gb[0] - artboardLeft, y: artboardTop - gb[1], width: gb[2] - gb[0], height: gb[1] - gb[3] }
         };
+
+        // Attach panel clusters for __bounds__ injection
+        if (shouldAnalyzeForPanels(cp)) {
+            obj._panelClusters = clusterSubPaths(cp);
+        }
+
+        return obj;
     }
 
     function processTextFrame(tf) {
