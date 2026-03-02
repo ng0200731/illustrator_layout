@@ -1243,8 +1243,8 @@ function jScreenToDoc(clientX, clientY) {
     var rect = jCanvas.getBoundingClientRect();
     var pan = jState.pan;
     var s = jState.scale * pan.zoom;
-    var offsetX = (jCanvas.width - jState.docWidth * jState.scale) / 2;
-    var offsetY = (jCanvas.height - jState.docHeight * jState.scale) / 2;
+    var offsetX = (rect.width - jState.docWidth * jState.scale) / 2;
+    var offsetY = (rect.height - jState.docHeight * jState.scale) / 2;
     return {
         x: (clientX - rect.left - pan.x - offsetX) / s,
         y: (clientY - rect.top - pan.y - offsetY) / s
@@ -1497,10 +1497,16 @@ function jRenderCanvas() {
     if (!jCanvas || !jCtx) return;
     var container = _jel('canvas-container');
     if (!container) return;
-    jCanvas.width = container.clientWidth;
-    jCanvas.height = container.clientHeight;
+    var dpr = Math.max(window.devicePixelRatio || 1, 2);
+    var cssW = container.clientWidth;
+    var cssH = container.clientHeight;
+    jCanvas.width = cssW * dpr;
+    jCanvas.height = cssH * dpr;
+    jCanvas.style.width = cssW + 'px';
+    jCanvas.style.height = cssH + 'px';
     var c = jCtx;
-    c.clearRect(0, 0, jCanvas.width, jCanvas.height);
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, cssW, cssH);
     c.imageSmoothingEnabled = true;
     c.imageSmoothingQuality = 'high';
 
@@ -1510,8 +1516,8 @@ function jRenderCanvas() {
     var s = jState.scale * pan.zoom;
     var docW = jState.docWidth * jState.scale;
     var docH = jState.docHeight * jState.scale;
-    var offsetX = (jCanvas.width - docW) / 2 + pan.x;
-    var offsetY = (jCanvas.height - docH) / 2 + pan.y;
+    var offsetX = (cssW - docW) / 2 + pan.x;
+    var offsetY = (cssH - docH) / 2 + pan.y;
 
     c.save();
     c.translate(offsetX, offsetY);
@@ -2097,10 +2103,15 @@ function jRenderCompoundPath(c, node, opacity) {
                 c.lineTo(pt.x * PT_TO_MM, pt.y * PT_TO_MM);
             }
         }
-        // Close path if flagged closed, or if first/last points coincide
-        if (path.closed) {
-            c.closePath();
-        } else if (pts.length >= 3 && pts[0].x === pts[pts.length - 1].x && pts[0].y === pts[pts.length - 1].y) {
+        // Close path: draw the closing bezier curve from last point back to first
+        if (path.closed && pts.length > 1) {
+            var last = pts[pts.length - 1];
+            var first = pts[0];
+            var ho = last.handleOut;
+            var hi = first.handleIn;
+            if (ho && hi && (ho.x !== last.x || ho.y !== last.y || hi.x !== first.x || hi.y !== first.y)) {
+                c.bezierCurveTo(ho.x * PT_TO_MM, ho.y * PT_TO_MM, hi.x * PT_TO_MM, hi.y * PT_TO_MM, first.x * PT_TO_MM, first.y * PT_TO_MM);
+            }
             c.closePath();
         }
     }
@@ -4059,13 +4070,23 @@ function jUpdateUndoRedo() {
 
 var jLoadedFonts = {};
 
-function jLoadFontForCanvas(fontId, fontName) {
-    if (jLoadedFonts[fontId]) return;
-    jLoadedFonts[fontId] = true;
+function jLoadFontForCanvas(fontId, fontName, aliasList) {
+    var key = fontId + ':' + fontName;
+    if (jLoadedFonts[key]) return;
+    jLoadedFonts[key] = true;
     var url = '/font/file/' + fontId;
     var font = new FontFace(fontName, 'url(' + url + ')');
     font.load().then(function(loaded) {
         document.fonts.add(loaded);
+        // Also register under alias names (e.g. Illustrator family name)
+        if (aliasList) {
+            for (var i = 0; i < aliasList.length; i++) {
+                if (aliasList[i] !== fontName) {
+                    var alias = new FontFace(aliasList[i], 'url(' + url + ')');
+                    alias.load().then(function(a) { document.fonts.add(a); });
+                }
+            }
+        }
         jRenderCanvas();
     }).catch(function(err) {
         console.error('Font load error:', err);
@@ -4144,7 +4165,7 @@ function jPreloadDocumentFonts() {
                 var f = fonts[fi];
                 var normalizedF = f.font_name.toLowerCase().replace(/[\s\-_]/g, '');
                 if (normalizedF === normalizedFamily || normalizedF.indexOf(normalizedFamily) >= 0 || normalizedFamily.indexOf(normalizedF) >= 0) {
-                    jLoadFontForCanvas(f.id, f.font_name);
+                    jLoadFontForCanvas(f.id, f.font_name, [family]);
                     break;
                 }
             }

@@ -417,7 +417,7 @@
         } catch(e) { return "left"; }
     }
 
-    function round3(n) { return Math.round(n * 1000) / 1000; }
+    function round3(n) { return Math.round(n * 100000) / 100000; }
 
     // ─── JSON Serializer (ExtendScript lacks JSON.stringify) ───
 

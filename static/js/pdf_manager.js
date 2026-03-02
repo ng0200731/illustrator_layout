@@ -878,6 +878,8 @@ function renderCanvas() {
     var containerW = container.clientWidth;
     var containerH = container.clientHeight;
 
+    var dpr = Math.max(window.devicePixelRatio || 1, 2);
+
     if (pdfWidth > 0 && pdfHeight > 0) {
         // Add padding to prevent canvas from touching edges
         var padding = 40;
@@ -888,29 +890,38 @@ function renderCanvas() {
         var fitScale = Math.min(availableW / pdfWidth, availableH / pdfHeight, 6);
         scale = fitScale * pan.zoom;
 
-        canvas.width = pdfWidth * scale;
-        canvas.height = pdfHeight * scale;
+        var cssW = pdfWidth * scale;
+        var cssH = pdfHeight * scale;
+        canvas.width = cssW * dpr;
+        canvas.height = cssH * dpr;
+        canvas.style.width = cssW + 'px';
+        canvas.style.height = cssH + 'px';
 
         // Apply pan transform
         canvas.style.transform = 'translate(' + pan.x + 'px, ' + pan.y + 'px)';
     } else {
-        canvas.width = containerW;
-        canvas.height = containerH;
+        canvas.width = containerW * dpr;
+        canvas.height = containerH * dpr;
+        canvas.style.width = containerW + 'px';
+        canvas.style.height = containerH + 'px';
         canvas.style.transform = 'none';
     }
 
+    // Scale context for HiDPI
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
     // Fill canvas background with grey
     ctx.fillStyle = '#cccccc';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
     // Draw white PDF page background with black border
     if (pdfWidth > 0 && pdfHeight > 0) {
         ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
         ctx.strokeStyle = '#000000';
         ctx.lineWidth = 1;
-        ctx.strokeRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeRect(0, 0, canvas.width / dpr, canvas.height / dpr);
     }
 
     if (components.length === 0) return;
