@@ -350,11 +350,12 @@ def _draw_pdfpath(c, comp, page_h):
         c.setStrokeColorRGB(stroke[0], stroke[1], stroke[2])
         c.setLineWidth(lw * mm)
 
-    # Always use even-odd fill rule to preserve holes in glyphs (A, D, O, 0, etc.)
+    # Use the original fill rule from the PDF (even-odd vs non-zero winding)
+    fill_mode = 0 if comp.get('isEvenOdd', False) else None
     if fill and stroke:
-        c.drawPath(p, fill=1, stroke=1, fillMode=0)
+        c.drawPath(p, fill=1, stroke=1, fillMode=fill_mode)
     elif fill:
-        c.drawPath(p, fill=1, stroke=0, fillMode=0)
+        c.drawPath(p, fill=1, stroke=0, fillMode=fill_mode)
     elif stroke:
         c.drawPath(p, fill=0, stroke=1)
 

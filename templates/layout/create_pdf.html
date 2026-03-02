@@ -200,6 +200,8 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
     <script>
         document.addEventListener('dragover', function(e) { e.preventDefault(); }, false);
         document.addEventListener('drop', function(e) { e.preventDefault(); }, false);
@@ -216,7 +218,7 @@
                 pdfScript.onload = function() {
                     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
                     var managerScript = document.createElement('script');
-                    managerScript.src = "{{ url_for('static', filename='js/pdf_manager.js') }}";
+                    managerScript.src = "{{ url_for('static', filename='js/pdf_manager.js') }}?v=20260302c";
                     managerScript.onload = function() {
                         if (currentTabPane && typeof initWithTabPane === 'function') {
                             initWithTabPane(currentTabPane);

@@ -454,7 +454,7 @@ function parsePdfFile(file) {
                                 stroke: pathObj.stroke,
                                 lw: pathObj.lw
                             },
-                            isCompound: pathObj.isCompound || false,
+                            isEvenOdd: pathObj.isEvenOdd || false,
                             visible: true,
                             locked: false,
                             groupId: null
@@ -577,22 +577,26 @@ function extractPdfObjects(page, pdfW, pdfH) {
                 var ops = args[0];
                 var points = args[1];
                 var pointIdx = 0;
+                var lastPtX = 0, lastPtY = 0;
 
                 for (var j = 0; j < ops.length; j++) {
                     var op = ops[j];
 
                     if (op === OPS.moveTo) {
-                        var pt = txPt(currentState.ctm, points[pointIdx], points[pointIdx + 1]);
+                        lastPtX = points[pointIdx]; lastPtY = points[pointIdx + 1];
+                        var pt = txPt(currentState.ctm, lastPtX, lastPtY);
                         currentPath.push({ o: 'M', a: [pt[0] / 72 * 25.4, pdfH - (pt[1] / 72 * 25.4)] });
                         pointIdx += 2;
                     } else if (op === OPS.lineTo) {
-                        var pt = txPt(currentState.ctm, points[pointIdx], points[pointIdx + 1]);
+                        lastPtX = points[pointIdx]; lastPtY = points[pointIdx + 1];
+                        var pt = txPt(currentState.ctm, lastPtX, lastPtY);
                         currentPath.push({ o: 'L', a: [pt[0] / 72 * 25.4, pdfH - (pt[1] / 72 * 25.4)] });
                         pointIdx += 2;
                     } else if (op === OPS.curveTo) {
                         var pt1 = txPt(currentState.ctm, points[pointIdx], points[pointIdx + 1]);
                         var pt2 = txPt(currentState.ctm, points[pointIdx + 2], points[pointIdx + 3]);
-                        var pt3 = txPt(currentState.ctm, points[pointIdx + 4], points[pointIdx + 5]);
+                        lastPtX = points[pointIdx + 4]; lastPtY = points[pointIdx + 5];
+                        var pt3 = txPt(currentState.ctm, lastPtX, lastPtY);
                         currentPath.push({
                             o: 'C',
                             a: [
@@ -602,6 +606,35 @@ function extractPdfObjects(page, pdfW, pdfH) {
                             ]
                         });
                         pointIdx += 6;
+                    } else if (op === OPS.curveTo2) {
+                        // v: cp1=current point, cp2=(x2,y2), end=(x3,y3)
+                        var pt1 = txPt(currentState.ctm, lastPtX, lastPtY);
+                        var pt2 = txPt(currentState.ctm, points[pointIdx], points[pointIdx + 1]);
+                        lastPtX = points[pointIdx + 2]; lastPtY = points[pointIdx + 3];
+                        var pt3 = txPt(currentState.ctm, lastPtX, lastPtY);
+                        currentPath.push({
+                            o: 'C',
+                            a: [
+                                pt1[0] / 72 * 25.4, pdfH - (pt1[1] / 72 * 25.4),
+                                pt2[0] / 72 * 25.4, pdfH - (pt2[1] / 72 * 25.4),
+                                pt3[0] / 72 * 25.4, pdfH - (pt3[1] / 72 * 25.4)
+                            ]
+                        });
+                        pointIdx += 4;
+                    } else if (op === OPS.curveTo3) {
+                        // y: cp1=(x1,y1), cp2=endpoint=(x3,y3)
+                        var pt1 = txPt(currentState.ctm, points[pointIdx], points[pointIdx + 1]);
+                        lastPtX = points[pointIdx + 2]; lastPtY = points[pointIdx + 3];
+                        var pt3 = txPt(currentState.ctm, lastPtX, lastPtY);
+                        currentPath.push({
+                            o: 'C',
+                            a: [
+                                pt1[0] / 72 * 25.4, pdfH - (pt1[1] / 72 * 25.4),
+                                pt3[0] / 72 * 25.4, pdfH - (pt3[1] / 72 * 25.4),
+                                pt3[0] / 72 * 25.4, pdfH - (pt3[1] / 72 * 25.4)
+                            ]
+                        });
+                        pointIdx += 4;
                     } else if (op === OPS.rectangle) {
                         var x = points[pointIdx], y = points[pointIdx + 1];
                         var w = points[pointIdx + 2], h = points[pointIdx + 3];
@@ -620,12 +653,15 @@ function extractPdfObjects(page, pdfW, pdfH) {
                     }
                 }
             } else if (fn === OPS.moveTo) {
+                currentState._lastX = args[0]; currentState._lastY = args[1];
                 var pt = txPt(currentState.ctm, args[0], args[1]);
                 currentPath.push({ o: 'M', a: [pt[0] / 72 * 25.4, pdfH - (pt[1] / 72 * 25.4)] });
             } else if (fn === OPS.lineTo) {
+                currentState._lastX = args[0]; currentState._lastY = args[1];
                 var pt = txPt(currentState.ctm, args[0], args[1]);
                 currentPath.push({ o: 'L', a: [pt[0] / 72 * 25.4, pdfH - (pt[1] / 72 * 25.4)] });
             } else if (fn === OPS.curveTo) {
+                currentState._lastX = args[4]; currentState._lastY = args[5];
                 var pt1 = txPt(currentState.ctm, args[0], args[1]);
                 var pt2 = txPt(currentState.ctm, args[2], args[3]);
                 var pt3 = txPt(currentState.ctm, args[4], args[5]);
@@ -634,6 +670,33 @@ function extractPdfObjects(page, pdfW, pdfH) {
                     a: [
                         pt1[0] / 72 * 25.4, pdfH - (pt1[1] / 72 * 25.4),
                         pt2[0] / 72 * 25.4, pdfH - (pt2[1] / 72 * 25.4),
+                        pt3[0] / 72 * 25.4, pdfH - (pt3[1] / 72 * 25.4)
+                    ]
+                });
+            } else if (fn === OPS.curveTo2) {
+                // v: cp1=current point, cp2=(x2,y2), end=(x3,y3)
+                var pt1 = txPt(currentState.ctm, currentState._lastX || 0, currentState._lastY || 0);
+                var pt2 = txPt(currentState.ctm, args[0], args[1]);
+                currentState._lastX = args[2]; currentState._lastY = args[3];
+                var pt3 = txPt(currentState.ctm, args[2], args[3]);
+                currentPath.push({
+                    o: 'C',
+                    a: [
+                        pt1[0] / 72 * 25.4, pdfH - (pt1[1] / 72 * 25.4),
+                        pt2[0] / 72 * 25.4, pdfH - (pt2[1] / 72 * 25.4),
+                        pt3[0] / 72 * 25.4, pdfH - (pt3[1] / 72 * 25.4)
+                    ]
+                });
+            } else if (fn === OPS.curveTo3) {
+                // y: cp1=(x1,y1), cp2=endpoint=(x3,y3)
+                var pt1 = txPt(currentState.ctm, args[0], args[1]);
+                currentState._lastX = args[2]; currentState._lastY = args[3];
+                var pt3 = txPt(currentState.ctm, args[2], args[3]);
+                currentPath.push({
+                    o: 'C',
+                    a: [
+                        pt1[0] / 72 * 25.4, pdfH - (pt1[1] / 72 * 25.4),
+                        pt3[0] / 72 * 25.4, pdfH - (pt3[1] / 72 * 25.4),
                         pt3[0] / 72 * 25.4, pdfH - (pt3[1] / 72 * 25.4)
                     ]
                 });
@@ -658,15 +721,10 @@ function extractPdfObjects(page, pdfW, pdfH) {
                     var fillColor = (fn === OPS.fill || fn === OPS.eoFill || fn === OPS.fillStroke || fn === OPS.eoFillStroke) ? currentState.fill : null;
                     var strokeColor = (fn === OPS.stroke || fn === OPS.fillStroke || fn === OPS.eoFillStroke) ? currentState.stroke : null;
                     var lwMm = currentState.lineWidth / 72 * 25.4;
+                    var isEvenOdd = (fn === OPS.eoFill || fn === OPS.eoFillStroke);
 
-                    // Count sub-paths (number of M ops)
-                    var mCount = 0;
-                    for (var sp = 0; sp < currentPath.length; sp++) {
-                        if (currentPath[sp].o === 'M') mCount++;
-                    }
-
-                    // Keep all sub-paths from one fill operation together
-                    // Splitting breaks compound glyphs (A, D, O, 0 lose their holes)
+                    // Keep all sub-paths from one fill operation together.
+                    // The PDF's own fill rule (non-zero winding vs even-odd) handles holes correctly.
                     var bbox = calculateBBox(currentPath);
                     objects.push({
                         ops: currentPath.slice(),
@@ -674,7 +732,7 @@ function extractPdfObjects(page, pdfW, pdfH) {
                         stroke: strokeColor,
                         lw: lwMm,
                         bbox: bbox,
-                        isCompound: mCount > 1
+                        isEvenOdd: isEvenOdd
                     });
                     currentPath = [];
                 }
@@ -1086,7 +1144,7 @@ function drawPdfPath(comp, idx) {
 
     if (comp.pathData.fill) {
         ctx.fillStyle = rgbToString(comp.pathData.fill);
-        ctx.fill(comp.isCompound ? 'evenodd' : 'nonzero');
+        ctx.fill(comp.isEvenOdd ? 'evenodd' : 'nonzero');
     }
 
     if (comp.pathData.stroke) {
@@ -2528,7 +2586,7 @@ function exportFile(type, outlined) {
                 alignH: c.alignH || 'left',
                 alignV: c.alignV || 'top',
                 pathData: c.pathData,
-                isCompound: c.isCompound || false,
+                isEvenOdd: c.isEvenOdd || false,
                 visible: c.visible,
                 imageUrl: c.imageUrl,
                 imageFit: c.imageFit,
@@ -3866,28 +3924,38 @@ function drawQrCodeRegion(comp, idx) {
     var x = comp.x * scale, y = comp.y * scale;
     var w = comp.w * scale, h = comp.h * scale;
 
-    ctx.fillStyle = 'rgba(0, 200, 0, 0.05)';
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = '#00cc00';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.strokeRect(x, y, w, h);
-    ctx.setLineDash([]);
-
-    // Placeholder grid pattern
-    ctx.fillStyle = 'rgba(0, 200, 0, 0.2)';
-    var cellSize = Math.min(w, h) / 5;
-    for (var r = 0; r < 5; r++) {
-        for (var c = 0; c < 5; c++) {
-            if ((r + c) % 2 === 0) {
-                ctx.fillRect(x + c * cellSize, y + r * cellSize, cellSize, cellSize);
+    if (comp.qrData && typeof qrcode === 'function') {
+        try {
+            var qr = qrcode(0, 'M');
+            qr.addData(comp.qrData);
+            qr.make();
+            var mc = qr.getModuleCount();
+            var cw = w / mc, ch = h / mc;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(x, y, w, h);
+            ctx.fillStyle = '#000000';
+            for (var r = 0; r < mc; r++) {
+                for (var c = 0; c < mc; c++) {
+                    if (qr.isDark(r, c)) {
+                        ctx.fillRect(x + c * cw, y + r * ch, cw, ch);
+                    }
+                }
             }
+        } catch(e) {
+            ctx.fillStyle = '#999';
+            ctx.font = '9px sans-serif';
+            ctx.fillText('QR Error', x + 2, y + h / 2);
         }
+    } else {
+        ctx.strokeStyle = '#ccc';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#999';
+        ctx.font = '9px sans-serif';
+        ctx.fillText('QR Code', x + 2, y + h / 2);
     }
-
-    ctx.font = '9px sans-serif';
-    ctx.fillStyle = '#00cc00';
-    ctx.fillText('QR Code', x + 2, y - 3);
 
     if (selectedSet.indexOf(idx) !== -1) {
         ctx.strokeStyle = '#0066ff';
@@ -3902,25 +3970,29 @@ function drawBarcodeRegion(comp, idx) {
     var x = comp.x * scale, y = comp.y * scale;
     var w = comp.w * scale, h = comp.h * scale;
 
-    ctx.fillStyle = 'rgba(0, 200, 0, 0.05)';
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = '#00cc00';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([3, 3]);
-    ctx.strokeRect(x, y, w, h);
-    ctx.setLineDash([]);
-
-    // Placeholder vertical bars
-    ctx.fillStyle = 'rgba(0, 200, 0, 0.25)';
-    var barW = Math.max(1, w / 20);
-    for (var i = 0; i < 10; i++) {
-        var bx = x + (i * 2) * barW;
-        ctx.fillRect(bx, y + 2, barW, h - 4);
+    if (comp.barcodeData && typeof JsBarcode === 'function') {
+        try {
+            var bcCanvas = document.createElement('canvas');
+            JsBarcode(bcCanvas, comp.barcodeData, {
+                format: comp.barcodeFormat || 'CODE128',
+                displayValue: false, margin: 0, width: 2, height: 100
+            });
+            ctx.drawImage(bcCanvas, x, y, w, h);
+        } catch(e) {
+            ctx.fillStyle = '#999';
+            ctx.font = '9px sans-serif';
+            ctx.fillText('Barcode Error', x + 2, y + h / 2);
+        }
+    } else {
+        ctx.strokeStyle = '#ccc';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#999';
+        ctx.font = '9px sans-serif';
+        ctx.fillText('Barcode', x + 2, y + h / 2);
     }
-
-    ctx.font = '9px sans-serif';
-    ctx.fillStyle = '#00cc00';
-    ctx.fillText('Barcode', x + 2, y - 3);
 
     if (selectedSet.indexOf(idx) !== -1) {
         ctx.strokeStyle = '#0066ff';
