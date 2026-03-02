@@ -4,6 +4,7 @@
     <div class="order-view">
         <h2>Orders</h2>
         <div style="display:flex; gap:6px; margin-bottom:8px;">
+            <button onclick="refreshOrders()" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">Refresh</button>
             <button onclick="selectAll()" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">Select All</button>
             <button onclick="deleteSelected()" style="padding:3px 10px;border:1px solid #c00;background:#fff;color:#c00;cursor:pointer;font-size:10px;">Delete Selected</button>
             <button onclick="exportAllSelected(false)" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">AI E All</button>
@@ -48,10 +49,16 @@
     }
 
     (function() {
+        refreshOrders();
+    })();
+
+    function refreshOrders() {
         fetch('/order/api/list')
             .then(function(r) { return r.json(); })
             .then(function(orders) {
                 allOrders = orders;
+                document.getElementById('orders-table').style.display = '';
+                document.getElementById('empty-orders').style.display = 'none';
                 if (orders.length === 0) {
                     document.getElementById('orders-table').style.display = 'none';
                     document.getElementById('empty-orders').style.display = 'block';
@@ -59,7 +66,7 @@
                 }
                 renderOrders(orders);
             });
-    })();
+    }
 
     function renderOrders(orders) {
         var tbody = document.querySelector('#orders-table tbody');
