@@ -1312,29 +1312,6 @@ function jHitTestOverlay(x, y) {
     return -1;
 }
 
-function jGetBoundsSnapPoints(br) {
-    if (!br) return [];
-    return [
-        { x: br.x, y: br.y }, { x: br.x + br.w, y: br.y },
-        { x: br.x, y: br.y + br.h }, { x: br.x + br.w, y: br.y + br.h },
-        { x: br.x + br.w / 2, y: br.y }, { x: br.x + br.w / 2, y: br.y + br.h },
-        { x: br.x, y: br.y + br.h / 2 }, { x: br.x + br.w, y: br.y + br.h / 2 },
-        { x: br.x + br.w / 2, y: br.y + br.h / 2 }
-    ];
-}
-
-function jSnapOverlayToPoints(x, y, w, h, snaps) {
-    var THRESH = 1;
-    for (var i = 0; i < snaps.length; i++) {
-        var s = snaps[i];
-        if (Math.abs(x - s.x) < THRESH) x = s.x;
-        else if (Math.abs(x + w - s.x) < THRESH) x = s.x - w;
-        if (Math.abs(y - s.y) < THRESH) y = s.y;
-        else if (Math.abs(y + h - s.y) < THRESH) y = s.y - h;
-    }
-    return { x: x, y: y };
-}
-
 function jStartOverlayDrag(e, idx) {
     var ov = jState.overlays[idx];
     if (ov.locked) return;
@@ -1343,10 +1320,8 @@ function jStartOverlayDrag(e, idx) {
     var offX = pos.x - ov.x;
     var offY = pos.y - ov.y;
     var constraint = null;
-    var snaps = [];
     if (ov._boundsRectIdx >= 0 && jState.boundsRects) {
         constraint = jState.boundsRects[ov._boundsRectIdx];
-        snaps = jGetBoundsSnapPoints(constraint);
     }
     var brIdx = ov._boundsRectIdx;
     var onMove = function(ev) {
@@ -1359,8 +1334,6 @@ function jStartOverlayDrag(e, idx) {
             if (newY < constraint.y) newY = constraint.y;
             if (newX + ov.w > constraint.x + constraint.w) newX = constraint.x + constraint.w - ov.w;
             if (newY + ov.h > constraint.y + constraint.h) newY = constraint.y + constraint.h - ov.h;
-            var snapped = jSnapOverlayToPoints(newX, newY, ov.w, ov.h, snaps);
-            newX = snapped.x; newY = snapped.y;
         }
         ov.x = newX;
         ov.y = newY;
@@ -1397,7 +1370,6 @@ function jStartPendingDrag(e) {
     var rawPos = jScreenToDoc(e.clientX, e.clientY);
     var pos = (brIdx >= 0) ? jUnrotatePoint(rawPos.x, rawPos.y, brIdx) : rawPos;
     var offX = pos.x - pr.x, offY = pos.y - pr.y;
-    var snaps = br ? jGetBoundsSnapPoints(br) : [];
     var onMove = function(ev) {
         var rawP = jScreenToDoc(ev.clientX, ev.clientY);
         var p = (brIdx >= 0) ? jUnrotatePoint(rawP.x, rawP.y, brIdx) : rawP;
@@ -1407,8 +1379,6 @@ function jStartPendingDrag(e) {
             if (ny < br.y) ny = br.y;
             if (nx + pr.w > br.x + br.w) nx = br.x + br.w - pr.w;
             if (ny + pr.h > br.y + br.h) ny = br.y + br.h - pr.h;
-            var snapped = jSnapOverlayToPoints(nx, ny, pr.w, pr.h, snaps);
-            nx = snapped.x; ny = snapped.y;
         }
         pr.x = nx; pr.y = ny;
         jRenderCanvas();
@@ -4807,7 +4777,17 @@ function jPathToExportComponent(node, opacity, parent) {
     if (!isClosed && pts.length >= 3 && pts[0].x === pts[pts.length - 1].x && pts[0].y === pts[pts.length - 1].y) {
         isClosed = true;
     }
-    if (isClosed) ops.push({ o: 'Z', a: [] });
+    if (isClosed && pts.length > 1) {
+        // Draw the closing bezier curve from last point back to first (matches canvas rendering)
+        var last = pts[pts.length - 1];
+        var first = pts[0];
+        var ho = last.handleOut;
+        var hi = first.handleIn;
+        if (ho && hi && (ho.x !== last.x || ho.y !== last.y || hi.x !== first.x || hi.y !== first.y)) {
+            ops.push({ o: 'C', a: [ho.x * PT_TO_MM, ho.y * PT_TO_MM, hi.x * PT_TO_MM, hi.y * PT_TO_MM, first.x * PT_TO_MM, first.y * PT_TO_MM] });
+        }
+        ops.push({ o: 'Z', a: [] });
+    }
 
     var fill = node.fill || (parent && parent.fill);
     var stroke = node.stroke || (parent && parent.stroke);

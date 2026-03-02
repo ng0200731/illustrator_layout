@@ -179,7 +179,20 @@ def _path_to_component(node, opacity, parent=None):
     if not is_closed and len(pts) >= 3:
         if pts[0]['x'] == pts[-1]['x'] and pts[0]['y'] == pts[-1]['y']:
             is_closed = True
-    if is_closed:
+    if is_closed and len(pts) > 1:
+        # Draw the closing bezier curve from last point back to first (matches canvas rendering)
+        last = pts[-1]
+        first = pts[0]
+        ho = last.get('handleOut')
+        hi = first.get('handleIn')
+        if (ho and hi and
+                (ho['x'] != last['x'] or ho['y'] != last['y'] or
+                 hi['x'] != first['x'] or hi['y'] != first['y'])):
+            ops.append({'o': 'C', 'a': [
+                ho['x'] * PT_TO_MM, ho['y'] * PT_TO_MM,
+                hi['x'] * PT_TO_MM, hi['y'] * PT_TO_MM,
+                first['x'] * PT_TO_MM, first['y'] * PT_TO_MM,
+            ]})
         ops.append({'o': 'Z', 'a': []})
 
     fill = node.get('fill') or (parent.get('fill') if parent else None)
