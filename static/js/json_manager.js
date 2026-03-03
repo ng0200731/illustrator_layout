@@ -17,6 +17,7 @@ function getJCanvasState(c) {
             selectedTreePanelId: null,
             scale: 1,
             pan: { x: 0, y: 0, zoom: 1, dragging: false, startX: 0, startY: 0, spaceDown: false },
+            shiftMode: false,
             dragState: { active: false, startX: 0, startY: 0, overlayIdx: -1 },
             rectSelect: { active: false, startX: 0, startY: 0, endX: 0, endY: 0 },
             layerExpanded: {},
@@ -384,7 +385,7 @@ function jParseJsonFile(file) {
             jState.boundsRects = [];
             jCollectBoundsRects(jState.documentTree);
             jAutoCreateTextOverlays(jState.documentTree);
-            jLoadOverlayFonts();
+            jLoadOverlayFonts(true);
             jPreloadDocumentFonts();
 
             // Hide empty state, enable export
@@ -574,9 +575,31 @@ function jAutoCreateTextOverlays(nodes) {
         if (node.children) jAutoCreateTextOverlays(node.children);
         if (node.type !== 'text' || !node.paragraphs || node.paragraphs.length === 0) continue;
         var b = node.bounds;
+
+        // Extract actual text content to detect descenders
+        var textContent = '';
+        for (var pi = 0; pi < node.paragraphs.length; pi++) {
+            var runs = node.paragraphs[pi].runs || [];
+            for (var ri = 0; ri < runs.length; ri++) {
+                textContent += runs[ri].text || '';
+            }
+        }
+
+        // Check if text contains descender characters (g, j, p, q, y, Q)
+        var hasDescenders = /[gjpqyQ]/.test(textContent);
+
+        // Uniform visual padding - adjust bottom based on descender presence
+        var paddingLeft = 0.5;
+        var paddingRight = 0.5;
+        var paddingTop = 0.5;
+        // Illustrator includes ~0.7mm descender space, so subtract it for non-descender text
+        var paddingBottom = hasDescenders ? 0.1 : -0.2;
+
         var region = {
-            x: b.x * PT_TO_MM, y: b.y * PT_TO_MM,
-            w: b.width * PT_TO_MM, h: b.height * PT_TO_MM
+            x: b.x * PT_TO_MM - paddingLeft,
+            y: b.y * PT_TO_MM - paddingTop,
+            w: b.width * PT_TO_MM + paddingLeft + paddingRight,
+            h: b.height * PT_TO_MM + paddingTop + paddingBottom
         };
         var boundsRect = jFindContainingBoundsRect(region);
         var content = '', fontFamily = 'Arial', fontStyle = '';
@@ -1296,7 +1319,7 @@ function jOnMouseDown(e) {
         var onRSUp = function() {
             document.removeEventListener('mousemove', onRSMove);
             document.removeEventListener('mouseup', onRSUp);
-            jFinishRectSelect(e.ctrlKey || e.metaKey);
+            jFinishRectSelect(e.ctrlKey || e.metaKey || jState.shiftMode);
         };
         document.addEventListener('mousemove', onRSMove);
         document.addEventListener('mouseup', onRSUp);
@@ -1325,13 +1348,54 @@ function jFinishRectSelect(additive) {
     var rw = Math.abs(rs.endX - rs.startX), rh = Math.abs(rs.endY - rs.startY);
     rs.active = false;
 
-    // If drag was too small, treat as a click (clear selection)
+    // If drag was too small, treat as a click - check if we hit a tree node
     if (rw < 0.5 && rh < 0.5) {
-        if (!additive) {
-            jState.selectedTreePaths = {};
-            jState.selectedTreePath = null;
-            jState.lastClickedTreePath = null;
-            jState.selectedTreePanelId = null;
+        var clickX = rs.startX;
+        var clickY = rs.startY;
+        var allNodes = [];
+        jCollectDisplayNodes(jState.documentTree, allNodes);
+        var hitNode = null;
+        // Find topmost node at click position
+        for (var i = allNodes.length - 1; i >= 0; i--) {
+            var node = allNodes[i];
+            if (node._isBoundsRect) continue;
+            if (node.visible === false) continue;
+            if (node.locked) continue;
+            var b = node.bounds;
+            if (!b && node._isUserGroup && node.children && node.children.length > 0) {
+                b = node.children[0].bounds;
+            }
+            if (!b) continue;
+            var nx = b.x * PT_TO_MM, ny = b.y * PT_TO_MM;
+            var nw = b.width * PT_TO_MM, nh = b.height * PT_TO_MM;
+            if (clickX >= nx && clickX <= nx + nw && clickY >= ny && clickY <= ny + nh) {
+                hitNode = node;
+                break;
+            }
+        }
+        if (hitNode) {
+            // Select the clicked node
+            if (additive) {
+                if (jState.selectedTreePaths[hitNode._id]) {
+                    delete jState.selectedTreePaths[hitNode._id];
+                } else {
+                    jState.selectedTreePaths[hitNode._id] = true;
+                }
+            } else {
+                jState.selectedTreePaths = {};
+                jState.selectedTreePaths[hitNode._id] = true;
+            }
+            var keys = Object.keys(jState.selectedTreePaths);
+            jState.selectedTreePath = keys.length === 1 ? keys[0] : null;
+            jState.lastClickedTreePath = keys.length > 0 ? keys[keys.length - 1] : null;
+        } else {
+            // No node hit, clear selection
+            if (!additive) {
+                jState.selectedTreePaths = {};
+                jState.selectedTreePath = null;
+                jState.lastClickedTreePath = null;
+                jState.selectedTreePanelId = null;
+            }
         }
         jRenderCanvas();
         jRenderLayerTree();
@@ -1536,6 +1600,7 @@ function jResetToInitialState() {
     jAssignNodeIds(jState.documentTree, '');
     jMarkDoubledTextNodes(jState.documentTree);
     jPreloadDocumentFonts();
+    jLoadOverlayFonts(false);
 
     // Reset viewport
     var container = _jel('canvas-container');
@@ -1566,10 +1631,22 @@ document.addEventListener('keydown', function(e) {
     if (jState && e.code === 'Escape' && jState.addOverlayMode) {
         jCancelAddOverlay();
     }
+    // Show Shift button when Shift key is held
+    if (e.shiftKey && !e.target.matches('input,textarea,select')) {
+        if (jState) jState.shiftMode = true;
+        var btn = _jel('shift-mode-btn');
+        if (btn) btn.classList.add('active');
+    }
 });
 document.addEventListener('keyup', function(e) {
     if (jState && e.code === 'Space') {
         jState.pan.spaceDown = false;
+    }
+    // Hide Shift button when Shift key is released
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') {
+        if (jState) jState.shiftMode = false;
+        var btn = _jel('shift-mode-btn');
+        if (btn) btn.classList.remove('active');
     }
 });
 
@@ -1956,7 +2033,6 @@ function jRenderCanvas() {
     }
 
     // Highlight selected tree nodes on canvas
-    if (!jState.hideGuides) {
     var selKeys = Object.keys(jState.selectedTreePaths);
     if (selKeys.length > 0) {
         for (var si = 0; si < selKeys.length; si++) {
@@ -1979,7 +2055,6 @@ function jRenderCanvas() {
             c.setLineDash([]);
             c.restore();
         }
-    }
     }
 
     // Draw rectangle selection marquee
@@ -2387,7 +2462,7 @@ function jRenderOverlayItem(c, ov, idx) {
 
     // Draw region border
     c.save();
-    if (!jState.hideGuides) {
+    if (!jState.hideGuides || isSelected) {
     c.strokeStyle = isSelected ? '#0066ff' : '#00aa00';
     c.lineWidth = 0.15;
     c.setLineDash([1, 1]);
@@ -2422,14 +2497,9 @@ function jRenderOverlayItem(c, ov, idx) {
         if (ov.alignV === 'center') startY = tr.y + (tr.h - totalH) / 2;
         else if (ov.alignV === 'bottom') startY = tr.y + tr.h - totalH;
 
-        c.save();
-        c.beginPath();
-        c.rect(tr.x, tr.y, tr.w, tr.h);
-        c.clip();
         for (var li = 0; li < lines.length; li++) {
             c.fillText(lines[li], tx, startY + li * lineHeight);
         }
-        c.restore();
         c.textAlign = 'left';
     } else if (ov.type === 'imageregion') {
         // X-cross placeholder
@@ -4166,6 +4236,7 @@ function undo() {
     jState.overlays = JSON.parse(JSON.stringify(snap.overlays));
     jState.edges = JSON.parse(JSON.stringify(snap.edges));
     jState.selectedOverlayIdx = -1;
+    jLoadOverlayFonts(false);
     jRenderCanvas();
     jRenderOverlayList();
     jRenderEdgeList();
@@ -4179,6 +4250,7 @@ function redo() {
     jState.overlays = JSON.parse(JSON.stringify(snap.overlays));
     jState.edges = JSON.parse(JSON.stringify(snap.edges));
     jState.selectedOverlayIdx = -1;
+    jLoadOverlayFonts(false);
     jRenderCanvas();
     jRenderOverlayList();
     jRenderEdgeList();
@@ -4221,7 +4293,7 @@ function jLoadFontForCanvas(fontId, fontName, aliasList) {
 
 // Load font list into select (filtered by customer if selected)
 // Returns a promise that resolves when fonts are loaded
-function jLoadOverlayFonts() {
+function jLoadOverlayFonts(updateOverlayData) {
     if (!jState || !jState.overlays || jState.overlays.length === 0) return;
     var url = jState.currentCustomerId ? '/font/list/' + encodeURIComponent(jState.currentCustomerId) : '/font/list';
     fetch(url).then(function(r) { return r.json(); }).then(function(data) {
@@ -4242,8 +4314,11 @@ function jLoadOverlayFonts() {
                 var f = fonts[fi];
                 var normalizedF = f.font_name.toLowerCase().replace(/[\s\-_]/g, '');
                 if (normalizedF === normalizedOv || normalizedF === normalizedOvWithStyle) {
-                    ov.fontFamily = f.font_name;
-                    ov.fontId = f.id;
+                    // Update overlay data only on initial load
+                    if (updateOverlayData) {
+                        ov.fontFamily = f.font_name;
+                        ov.fontId = f.id;
+                    }
                     jLoadFontForCanvas(f.id, f.font_name);
                     found = true;
                     break;

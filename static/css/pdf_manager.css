@@ -85,6 +85,35 @@
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
+.pdf-manager-container #shift-mode-btn {
+    position: absolute;
+    top: 10px;
+    left: 94px;
+    width: 50px;
+    height: 36px;
+    background: #000;
+    color: #fff;
+    border: 1px solid #000;
+    border-radius: 4px;
+    cursor: default;
+    font-size: 11px;
+    font-weight: bold;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    padding: 0;
+}
+
+.pdf-manager-container #shift-mode-btn:hover {
+    background: #000;
+    box-shadow: none;
+}
+
+.pdf-manager-container #shift-mode-btn.active {
+    display: flex;
+}
+
 .pdf-manager-container #zoom-controls {
     position: absolute;
     bottom: 10px;
@@ -133,7 +162,7 @@
 .pdf-manager-container #canvas-reload-json-btn {
     position: absolute;
     top: 10px;
-    left: 94px;
+    left: 150px;
     width: 36px;
     height: 36px;
     background: rgba(255, 255, 255, 0.9);
