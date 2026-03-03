@@ -409,7 +409,7 @@
     }
 
     function processTextFrame(tf) {
-        // Simplified text processing - avoid accessing font properties that cause crashes
+        // Simplified text processing - get text content first, then try to get font info safely
         var gb = [0, 0, 0, 0];
         var mat = null;
         var kind = "point";
@@ -418,6 +418,10 @@
         var locked = false;
         var opacity = 100;
         var textContent = "";
+        var fontFamily = "Unknown";
+        var fontStyle = "Regular";
+        var fontSize = 12;
+        var textColor = { type: "rgb", r: 0, g: 0, b: 0 };
 
         // Extract only safe, basic properties
         try { gb = tf.geometricBounds; } catch(e) {}
@@ -433,14 +437,55 @@
             mat = { a: m.mValueA, b: m.mValueB, c: m.mValueC, d: m.mValueD, tx: m.mValueTX - artboardLeft, ty: artboardTop - m.mValueTY };
         } catch(e) {}
 
-        // Get text content using the safest method - just the plain text
+        // Get text content using the safest method
         try {
             textContent = tf.contents || "";
         } catch(e) {
             textContent = "[Text]";
         }
 
-        // Return simplified text object with just the content, no font details
+        // Try to get font information from the first character only (safer than iterating all)
+        try {
+            if (tf.textRange && tf.textRange.characterAttributes) {
+                var attrs = tf.textRange.characterAttributes;
+                try {
+                    fontFamily = attrs.textFont.family;
+                } catch(e) {}
+                try {
+                    fontStyle = attrs.textFont.style;
+                } catch(e) {}
+                try {
+                    fontSize = attrs.size;
+                } catch(e) {}
+                try {
+                    textColor = extractColor(attrs.fillColor);
+                } catch(e) {}
+            }
+        } catch(e) {
+            // If textRange approach fails, try getting from first paragraph/character
+            try {
+                if (tf.paragraphs && tf.paragraphs.length > 0 && tf.paragraphs[0].characters && tf.paragraphs[0].characters.length > 0) {
+                    var firstChar = tf.paragraphs[0].characters[0];
+                    var attrs = firstChar.characterAttributes;
+                    try {
+                        fontFamily = attrs.textFont.family;
+                    } catch(e) {}
+                    try {
+                        fontStyle = attrs.textFont.style;
+                    } catch(e) {}
+                    try {
+                        fontSize = attrs.size;
+                    } catch(e) {}
+                    try {
+                        textColor = extractColor(attrs.fillColor);
+                    } catch(e) {}
+                }
+            } catch(e) {
+                // Use defaults if all font extraction methods fail
+            }
+        }
+
+        // Return text object with captured font info
         return {
             type: "text",
             name: name,
@@ -451,15 +496,14 @@
             bounds: { x: gb[0] - artboardLeft, y: artboardTop - gb[1], width: gb[2] - gb[0], height: gb[1] - gb[3] },
             matrix: mat,
             content: textContent,
-            // Include a simple paragraph structure for compatibility
             paragraphs: [{
                 alignment: "left",
                 runs: [{
                     text: textContent,
-                    fontFamily: "Unknown",
-                    fontStyle: "Regular",
-                    fontSize: 12,
-                    color: { type: "rgb", r: 0, g: 0, b: 0 },
+                    fontFamily: fontFamily,
+                    fontStyle: fontStyle,
+                    fontSize: fontSize,
+                    color: textColor,
                     leading: "auto",
                     tracking: 0,
                     baselineShift: 0,
