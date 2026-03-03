@@ -404,6 +404,19 @@ function jParseJsonFile(file) {
             jState.historyStack = [];
             jState.historyIndex = -1;
             jCaptureState();
+
+            // Store initial snapshot for reset
+            jState._initialSnapshot = JSON.parse(JSON.stringify({
+                documentTree: jState.documentTree,
+                docWidth: jState.docWidth,
+                docHeight: jState.docHeight,
+                docMetadata: jState.docMetadata,
+                docSwatches: jState.docSwatches,
+                overlays: jState.overlays,
+                edges: jState.edges,
+                boundsRects: jState.boundsRects
+            }));
+
             jRenderCanvas();
             jRenderLayerTree();
             jRenderOverlayList();
@@ -588,6 +601,8 @@ function jAutoCreateTextOverlays(nodes) {
         }
         var bold = fontStyle.toLowerCase().indexOf('bold') >= 0;
         var italic = fontStyle.toLowerCase().indexOf('italic') >= 0;
+        // Default to Regular if no style specified
+        if (!fontStyle) fontStyle = 'Regular';
         jState.overlays.push({
             type: 'textregion',
             x: region.x, y: region.y, w: region.w, h: region.h,
@@ -597,7 +612,9 @@ function jAutoCreateTextOverlays(nodes) {
             alignH: alignment, alignV: 'top',
             content: content, visible: true, locked: false, isVariable: false,
             _boundsRectIdx: boundsRect ? jState.boundsRects.indexOf(boundsRect) : -1,
-            _autoFromText: true
+            _autoFromText: true,
+            aiFontName: fontFamily,
+            aiFontStyle: fontStyle
         });
         node._isDoubledText = true;
     }
@@ -818,7 +835,10 @@ function jEditOverlayRegion(ovIdx) {
     });
     jAttachContentPreviewListeners();
     var aiFontRow = _jel('ct-ai-font-row');
-    if (aiFontRow) aiFontRow.style.display = 'none';
+    if (aiFontRow) {
+        if (ov.aiFontName) aiFontRow.style.display = '';
+        else aiFontRow.style.display = 'none';
+    }
     jRenderCanvas();
 }
 
@@ -858,6 +878,9 @@ function jEditTextNode(node) {
 
     bold = fontStyle.toLowerCase().indexOf('bold') >= 0;
     italic = fontStyle.toLowerCase().indexOf('italic') >= 0;
+
+    // Default to Regular if no style specified
+    if (!fontStyle) fontStyle = 'Regular';
 
     var b = node.bounds;
     var region = { x: b.x * PT_TO_MM, y: b.y * PT_TO_MM, w: b.width * PT_TO_MM, h: b.height * PT_TO_MM };
@@ -998,9 +1021,14 @@ function jPrefillContentForm(type, data) {
             // Fallback: match by fontFamily name (exact normalized match only)
             if (!found && data.fontFamily) {
                 var normalizedName = data.fontFamily.toLowerCase().replace(/[\s\-_]/g, '');
+                // Also try fontFamily+fontStyle combined
+                var normalizedWithStyle = normalizedName;
+                if (data.aiFontStyle) {
+                    normalizedWithStyle = normalizedName + data.aiFontStyle.toLowerCase().replace(/[\s\-_]/g, '');
+                }
                 for (var fi = 0; fi < fontSelect.options.length; fi++) {
                     var optName = (fontSelect.options[fi].dataset.fontName || '').toLowerCase().replace(/[\s\-_]/g, '');
-                    if (optName && optName === normalizedName) {
+                    if (optName && (optName === normalizedName || optName === normalizedWithStyle)) {
                         fontSelect.selectedIndex = fi;
                         found = true;
                         break;
@@ -1028,7 +1056,7 @@ function jPrefillContentForm(type, data) {
             if (aiFontSpan) aiFontSpan.textContent = displayName;
             if (aiFontRow) aiFontRow.style.display = '';
             // Check if font exists in web app after font list loads
-            jCheckAiFontAvailability(data.aiFontName);
+            jCheckAiFontAvailability(data.aiFontName, data.aiFontStyle);
         } else {
             if (aiFontRow) aiFontRow.style.display = 'none';
             if (aiFontSpan) { aiFontSpan.textContent = ''; aiFontSpan.style.color = ''; aiFontSpan.style.borderColor = ''; }
@@ -1046,7 +1074,7 @@ function jPrefillContentForm(type, data) {
     }
 }
 
-function jCheckAiFontAvailability(aiFontName) {
+function jCheckAiFontAvailability(aiFontName, aiFontStyle) {
     var aiFontSpan = _jel('ct-ai-font-name');
     if (!aiFontSpan) return;
     var fontSelect = _jel('ct-font-select');
@@ -1056,10 +1084,15 @@ function jCheckAiFontAvailability(aiFontName) {
         var found = false;
         var matchIdx = -1;
         var normalizedAi = aiFontName.toLowerCase().replace(/[\s\-_]/g, '');
+        // Also try fontName+style combined
+        var normalizedAiWithStyle = normalizedAi;
+        if (aiFontStyle) {
+            normalizedAiWithStyle = normalizedAi + aiFontStyle.toLowerCase().replace(/[\s\-_]/g, '');
+        }
         for (var i = 0; i < fontSelect.options.length; i++) {
             var opt = fontSelect.options[i];
             var optName = (opt.dataset.fontName || opt.textContent || '').toLowerCase().replace(/[\s\-_]/g, '');
-            if (optName && optName === normalizedAi) {
+            if (optName && (optName === normalizedAi || optName === normalizedAiWithStyle)) {
                 found = true;
                 matchIdx = i;
                 break;
@@ -1117,6 +1150,27 @@ function jOnWheel(e) {
     pan.x = mx - (mx - pan.x) * (pan.zoom / oldZoom);
     pan.y = my - (my - pan.y) * (pan.zoom / oldZoom);
     jRenderCanvas();
+}
+
+function jZoomStep(direction) {
+    if (!jState || !jCanvas) return;
+    var pan = jState.pan;
+    var rect = jCanvas.getBoundingClientRect();
+    var mx = rect.width / 2;
+    var my = rect.height / 2;
+    var oldZoom = pan.zoom;
+    var delta = direction > 0 ? 1.15 : (1 / 1.15);
+    pan.zoom = Math.max(0.1, Math.min(20, pan.zoom * delta));
+    pan.x = mx - (mx - pan.x) * (pan.zoom / oldZoom);
+    pan.y = my - (my - pan.y) * (pan.zoom / oldZoom);
+    jRenderCanvas();
+}
+
+function jUpdateZoomLabel() {
+    var el = _jel('zoom-level');
+    if (!el || !jState) return;
+    var pct = Math.round(jState.pan.zoom * 100);
+    el.textContent = pct + '%';
 }
 
 function jOnMouseDown(e) {
@@ -1456,6 +1510,53 @@ function resetViewport() {
     jRenderCanvas();
 }
 
+function jResetToInitialState() {
+    if (!jState || !jState._initialSnapshot) return;
+    if (!confirm('Reset to initial state? All changes will be lost.')) return;
+    var snap = JSON.parse(JSON.stringify(jState._initialSnapshot));
+    jState.documentTree = snap.documentTree;
+    jState.docWidth = snap.docWidth;
+    jState.docHeight = snap.docHeight;
+    jState.docMetadata = snap.docMetadata;
+    jState.docSwatches = snap.docSwatches;
+    jState.overlays = snap.overlays;
+    jState.edges = snap.edges;
+    jState.boundsRects = snap.boundsRects;
+    jState.selectedOverlayIdx = -1;
+    jState.selectedTreePath = null;
+    jState.selectedTreePaths = {};
+    jState.lastClickedTreePath = null;
+    jState.selectedTreePanelId = null;
+    jState._editingTextNode = null;
+    jState._selectedTextNode = null;
+    jState.pendingContentRegion = null;
+    jState.pendingContentType = null;
+    jState.addOverlayMode = false;
+
+    jAssignNodeIds(jState.documentTree, '');
+    jMarkDoubledTextNodes(jState.documentTree);
+    jPreloadDocumentFonts();
+
+    // Reset viewport
+    var container = _jel('canvas-container');
+    var cw = container.clientWidth - 40;
+    var ch = container.clientHeight - 40;
+    jState.scale = Math.min(cw / jState.docWidth, ch / jState.docHeight);
+    jState.pan = { x: 0, y: 0, zoom: 1, dragging: false, startX: 0, startY: 0, spaceDown: false };
+
+    jState.historyStack = [];
+    jState.historyIndex = -1;
+    jCaptureState();
+
+    // Hide content type panel
+    var panel = _jel('content-type-panel');
+    if (panel) panel.style.display = 'none';
+
+    jRenderCanvas();
+    jRenderLayerTree();
+    jRenderOverlayList();
+}
+
 // Space key for pan
 document.addEventListener('keydown', function(e) {
     if (jState && e.code === 'Space' && !e.target.matches('input,textarea,select')) {
@@ -1478,6 +1579,7 @@ document.addEventListener('keyup', function(e) {
 
 function jRenderCanvas() {
     if (!jCanvas || !jCtx) return;
+    jUpdateZoomLabel();
     var container = _jel('canvas-container');
     if (!container) return;
     var dpr = Math.max(window.devicePixelRatio || 1, 2);
@@ -2203,7 +2305,7 @@ function jRenderText(c, node, opacity) {
     c.setLineDash([]);
     // Label with font name
     c.fillStyle = '#00aa00';
-    c.font = '2.5px sans-serif';
+    c.font = '1.25px sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'bottom';
     var fontLabel = 'Text';
@@ -2394,11 +2496,11 @@ function jRenderOverlayItem(c, ov, idx) {
     // Label
     if (!jState.hideGuides) {
     c.fillStyle = isSelected ? '#0066ff' : '#00aa00';
-    c.font = '3px sans-serif';
+    c.font = '1.5px sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'bottom';
     var label = ov.type === 'textregion' ? 'Text' : ov.type === 'imageregion' ? 'Image' : ov.type === 'qrcoderegion' ? 'QR' : 'Barcode';
-    c.fillText(label, x, y - 0.5);
+    c.fillText(label, x, y - 0.3);
     }
     c.restore();
 
@@ -3381,7 +3483,7 @@ function jRenderOverlayList() {
         var label = document.createElement('span');
         label.className = 'component-label';
         var labelMap = {
-            'textregion': 'Text: "' + (ov.content || '').substring(0, 20) + '"',
+            'textregion': 'Text: "' + (ov.content || '').substring(0, 20) + '"' + (ov.aiFontStyle && ov.aiFontStyle !== 'Regular' ? ' [' + ov.aiFontStyle + ']' : ''),
             'imageregion': 'Image: ' + (ov.imageUrl || '').substring(0, 15),
             'qrcoderegion': 'QR: ' + (ov.qrData || '').substring(0, 15),
             'barcoderegion': 'Barcode: ' + (ov.barcodeData || '').substring(0, 15)
@@ -4130,11 +4232,16 @@ function jLoadOverlayFonts() {
             var ov = jState.overlays[i];
             if (ov.type !== 'textregion' || !ov.fontFamily) continue;
             var normalizedOv = ov.fontFamily.toLowerCase().replace(/[\s\-_]/g, '');
+            // Also try fontFamily + fontStyle combined (e.g. "Mango New" + "SemiBold" = "mangonewsemibold")
+            var normalizedOvWithStyle = normalizedOv;
+            if (ov.aiFontStyle) {
+                normalizedOvWithStyle = normalizedOv + ov.aiFontStyle.toLowerCase().replace(/[\s\-_]/g, '');
+            }
             var found = false;
             for (var fi = 0; fi < fonts.length; fi++) {
                 var f = fonts[fi];
                 var normalizedF = f.font_name.toLowerCase().replace(/[\s\-_]/g, '');
-                if (normalizedF === normalizedOv) {
+                if (normalizedF === normalizedOv || normalizedF === normalizedOvWithStyle) {
                     ov.fontFamily = f.font_name;
                     ov.fontId = f.id;
                     jLoadFontForCanvas(f.id, f.font_name);
@@ -4143,7 +4250,11 @@ function jLoadOverlayFonts() {
                 }
             }
             if (!found) {
-                missingFonts[ov.fontFamily] = true;
+                var missingKey = ov.fontFamily;
+                if (ov.aiFontStyle && ov.aiFontStyle !== 'Regular') {
+                    missingKey += ' - ' + ov.aiFontStyle;
+                }
+                missingFonts[missingKey] = true;
             }
         }
         var missingList = Object.keys(missingFonts);
@@ -4206,7 +4317,13 @@ function jCollectTextFonts(nodes, out) {
                 var runs = node.paragraphs[pi].runs;
                 if (!runs) continue;
                 for (var ri = 0; ri < runs.length; ri++) {
-                    if (runs[ri].fontFamily) out[runs[ri].fontFamily] = true;
+                    if (runs[ri].fontFamily) {
+                        out[runs[ri].fontFamily] = true;
+                        // Also collect fontFamily+fontStyle combined for better matching
+                        if (runs[ri].fontStyle && runs[ri].fontStyle.toLowerCase() !== 'regular') {
+                            out[runs[ri].fontFamily + runs[ri].fontStyle] = true;
+                        }
+                    }
                 }
             }
         }
@@ -4638,6 +4755,19 @@ function jLoadLayoutFromExport(data) {
     jState.historyStack = [];
     jState.historyIndex = -1;
     jCaptureState();
+
+    // Store initial snapshot for reset
+    jState._initialSnapshot = JSON.parse(JSON.stringify({
+        documentTree: jState.documentTree,
+        docWidth: jState.docWidth,
+        docHeight: jState.docHeight,
+        docMetadata: jState.docMetadata,
+        docSwatches: jState.docSwatches,
+        overlays: jState.overlays,
+        edges: jState.edges,
+        boundsRects: jState.boundsRects
+    }));
+
     jRenderCanvas();
     jRenderLayerTree();
     jRenderOverlayList();

@@ -6,6 +6,11 @@
         <div id="canvas-container" style="width:100%;">
             <button id="canvas-reset-btn" onclick="resetViewport()" title="Reset View">⌂</button>
             <button id="toggle-guides-btn" onclick="jToggleGuides()" title="Toggle guides">◼</button>
+            <div id="zoom-controls">
+                <button id="zoom-out-btn" onclick="jZoomStep(-1)" title="Zoom Out">−</button>
+                <span id="zoom-level">100%</span>
+                <button id="zoom-in-btn" onclick="jZoomStep(1)" title="Zoom In">+</button>
+            </div>
             <canvas id="canvas"></canvas>
             <div id="empty-state">
                 <p>Loading layout...</p>

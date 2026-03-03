@@ -1,7 +1,7 @@
 // Font Upload JavaScript — Two-step flow: preview locally, then upload to database
+// Supports multiple file upload
 
-let pendingFile = null;
-let pendingFontName = null;
+let pendingFiles = []; // Array of { file, fontName }
 
 // Initialize immediately when script loads
 (function() {
@@ -38,7 +38,7 @@ function initializeUpload() {
 
     fontInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-            previewFont(e.target.files[0]);
+            previewFonts(Array.from(e.target.files));
         }
     });
 
@@ -59,7 +59,7 @@ function initializeUpload() {
         e.stopPropagation();
         uploadArea.style.background = 'white';
         if (e.dataTransfer.files.length > 0) {
-            previewFont(e.dataTransfer.files[0]);
+            previewFonts(Array.from(e.dataTransfer.files));
         }
     });
 
@@ -73,30 +73,56 @@ function initializeUpload() {
     btnUploadToDb.addEventListener('click', showUploadModal);
 }
 
-async function previewFont(file) {
-    const ext = file.name.split('.').pop().toLowerCase();
-    if (ext !== 'ttf' && ext !== 'otf') {
+async function previewFonts(files) {
+    // Filter valid font files
+    const validFiles = files.filter(f => {
+        const ext = f.name.split('.').pop().toLowerCase();
+        return ext === 'ttf' || ext === 'otf';
+    });
+
+    if (validFiles.length === 0) {
         alert('Only .ttf and .otf files are allowed');
         return;
     }
 
-    pendingFile = file;
-    pendingFontName = file.name.replace(/\.(ttf|otf)$/i, '');
+    pendingFiles = [];
 
-    try {
-        const objectUrl = URL.createObjectURL(file);
-        const fontFace = new FontFace(pendingFontName, `url(${objectUrl})`);
-        await fontFace.load();
-        document.fonts.add(fontFace);
-    } catch (error) {
-        alert('Error loading font: ' + error.message);
+    for (const file of validFiles) {
+        const fontName = file.name.replace(/\.(ttf|otf)$/i, '');
+
+        try {
+            const objectUrl = URL.createObjectURL(file);
+            const fontFace = new FontFace(fontName, `url(${objectUrl})`);
+            await fontFace.load();
+            document.fonts.add(fontFace);
+            pendingFiles.push({ file, fontName });
+        } catch (error) {
+            console.warn('Error loading font ' + file.name + ': ' + error.message);
+        }
+    }
+
+    if (pendingFiles.length === 0) {
+        alert('No valid fonts could be loaded');
         return;
     }
 
     const reviewSection = document.getElementById('review-section');
     const previewContent = document.getElementById('font-preview-content');
-    previewContent.innerHTML = renderCharacterPreview(pendingFontName);
+
+    let html = '';
+    for (const pf of pendingFiles) {
+        html += '<div class="font-preview-item">';
+        html += '<h3 style="margin:8px 0 4px;font-size:13px;border-bottom:1px solid #000;padding-bottom:4px;">' + escapeHtml(pf.fontName) + '</h3>';
+        html += renderCharacterPreview(pf.fontName);
+        html += '</div>';
+    }
+
+    previewContent.innerHTML = html;
     reviewSection.style.display = 'block';
+}
+
+function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function renderCharacterPreview(fontName) {
@@ -127,8 +153,8 @@ function renderCharacterPreview(fontName) {
 }
 
 function showUploadModal() {
-    if (!pendingFile) {
-        alert('No font file to upload');
+    if (pendingFiles.length === 0) {
+        alert('No font files to upload');
         return;
     }
 
@@ -162,12 +188,12 @@ function showUploadModal() {
 
     customerSelect.onchange = function() {
         if (this.value) {
-            doUpload(this.value);
+            doUploadAll(this.value);
         }
     };
 
     btnPublic.onclick = function() {
-        doUpload(null);
+        doUploadAll(null);
     };
 
     btnCancel.onclick = function() {
@@ -175,35 +201,45 @@ function showUploadModal() {
     };
 }
 
-async function doUpload(customerId) {
+async function doUploadAll(customerId) {
     const modal = document.getElementById('font-upload-modal');
+    const total = pendingFiles.length;
+    let successCount = 0;
+    let errors = [];
 
-    const formData = new FormData();
-    formData.append('font', pendingFile);
-    formData.append('font_name', pendingFontName);
-    formData.append('customer_id', customerId || '');
+    for (const pf of pendingFiles) {
+        const formData = new FormData();
+        formData.append('font', pf.file);
+        formData.append('font_name', pf.fontName);
+        formData.append('customer_id', customerId || '');
 
-    try {
-        const response = await fetch('/font/upload', {
-            method: 'POST',
-            body: formData
-        });
+        try {
+            const response = await fetch('/font/upload', {
+                method: 'POST',
+                body: formData
+            });
 
-        const result = await response.json();
+            const result = await response.json();
 
-        if (result.success) {
-            const label = customerId ? 'customer' : 'public';
-            alert('Font "' + pendingFontName + '" uploaded as ' + label + ' successfully');
-            pendingFile = null;
-            pendingFontName = null;
-
-            modal.classList.remove('active');
-            document.getElementById('review-section').style.display = 'none';
-            document.getElementById('font-preview-content').innerHTML = '';
-        } else {
-            alert('Upload failed: ' + result.error);
+            if (result.success) {
+                successCount++;
+            } else {
+                errors.push(pf.fontName + ': ' + result.error);
+            }
+        } catch (error) {
+            errors.push(pf.fontName + ': ' + error.message);
         }
-    } catch (error) {
-        alert('Upload error: ' + error.message);
     }
+
+    const label = customerId ? 'customer' : 'public';
+    let msg = successCount + ' of ' + total + ' font(s) uploaded as ' + label + ' successfully.';
+    if (errors.length > 0) {
+        msg += '\n\nFailed:\n' + errors.join('\n');
+    }
+    alert(msg);
+
+    pendingFiles = [];
+    modal.classList.remove('active');
+    document.getElementById('review-section').style.display = 'none';
+    document.getElementById('font-preview-content').innerHTML = '';
 }
