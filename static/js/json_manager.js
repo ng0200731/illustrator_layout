@@ -593,12 +593,12 @@ function jAutoCreateTextOverlays(nodes) {
         // Check if text contains descender characters (g, j, p, q, y, Q)
         var hasDescenders = /[gjpqyQ]/.test(textContent);
 
-        // Uniform visual padding - adjust bottom based on descender presence
+        // Uniform visual padding - compensate for Illustrator's built-in descender space
         var paddingLeft = 0.5;
         var paddingRight = 0.5;
         var paddingTop = 0.5;
-        // Illustrator includes ~0.7mm descender space, so subtract it for non-descender text
-        var paddingBottom = hasDescenders ? 0.1 : -0.2;
+        // Illustrator bounds include ~0.7mm descender space, so reduce bottom padding to visually center text
+        var paddingBottom = hasDescenders ? -0.2 : -0.7;
 
         var region = {
             x: b.x * PT_TO_MM - paddingLeft,
@@ -1924,6 +1924,9 @@ function jRenderCanvas() {
 
     c.restore();
 
+    // Render edges
+    jRenderEdges(c);
+
     // Render overlays on top (with per-panel rotation)
     jRenderOverlays(c);
 
@@ -2595,12 +2598,12 @@ function jRenderGroupBoundingBoxes(c) {
         // Find all visible overlays in this group
         var groupOverlays = [];
         for (var i = 0; i < jState.overlays.length; i++) {
-            if (jState.overlays[i].groupId === gid && jState.overlays[i].visible) {
+            if (jState.overlays[i].groupId === gid && jState.overlays[i].visible !== false) {
                 groupOverlays.push(jState.overlays[i]);
             }
         }
 
-        if (groupOverlays.length < 2) continue;
+        if (groupOverlays.length === 0) continue;
 
         // Calculate bounding box for the group
         var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -3709,6 +3712,24 @@ function jRenderOverlayList() {
         for (var gi = 0; gi < layerIndices.length; gi++) {
             var layerIdx = layerIndices[gi];
             var layerGroup = groupedOverlays[layerIdx];
+
+            // Sort overlays spatially: top-to-bottom, then left-to-right
+            layerGroup.sort(function(a, b) {
+                var ovA = a.overlay;
+                var ovB = b.overlay;
+
+                // Primary sort: Y coordinate (top to bottom)
+                var yDiff = ovA.y - ovB.y;
+                var yTolerance = 2; // mm - treat overlays within 2mm as same row
+
+                if (Math.abs(yDiff) > yTolerance) {
+                    return yDiff;
+                }
+
+                // Secondary sort: X coordinate (left to right)
+                return ovA.x - ovB.x;
+            });
+
             var layerGroupId = '__ov_layer_' + layerIdx;
             var isLayerExpanded = jState.overlayExpanded[layerGroupId] !== false;
 
@@ -5018,6 +5039,8 @@ function saveLayoutToDatabase() {
                     docMetadata: jState.docMetadata,
                     docSwatches: jState.docSwatches,
                     overlays: jState.overlays,
+                    overlayGroups: jState.overlayGroups,
+                    nextOverlayGroupId: jState.nextOverlayGroupId,
                     docWidth: jState.docWidth,
                     docHeight: jState.docHeight,
                     scale: jState.scale,
@@ -5132,10 +5155,13 @@ function jLoadLayoutFromDatabase(layoutId) {
         jState.docMetadata = data.docMetadata || null;
         jState.docSwatches = data.docSwatches || [];
         jState.overlays = data.overlays || [];
+        jState.overlayGroups = data.overlayGroups || {};
+        jState.nextOverlayGroupId = data.nextOverlayGroupId || 1;
         jState.docWidth = data.docWidth || 0;
         jState.docHeight = data.docHeight || 0;
         jState.scale = data.scale || 1;
         jState.edges = data.edges || [];
+        jState.selectedOverlayIndices = {};
         jState.currentLayoutId = layout.id;
         jState.currentLayoutName = layout.name;
         jState.currentCustomerId = layout.customer_id;
