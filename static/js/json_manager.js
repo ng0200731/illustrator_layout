@@ -159,15 +159,24 @@ function jsonInitWithTabPane(tabPane) {
                     var newW = parseFloat(el.value) || 0;
                     if (newW > 0) {
                         comp.w = newW;
-                        if (jState.pendingContentRegion) jState.pendingContentRegion.w = newW;
                     }
                 }
                 else if (id === 'ct-height') {
                     var newH = parseFloat(el.value) || 0;
                     if (newH > 0) {
                         comp.h = newH;
-                        if (jState.pendingContentRegion) jState.pendingContentRegion.h = newH;
                     }
+                }
+            }
+            // Update pending region for new overlays
+            if (jState && jState.pendingContentRegion) {
+                if (id === 'ct-width') {
+                    var newW = parseFloat(el.value) || 0;
+                    if (newW > 0) jState.pendingContentRegion.w = newW;
+                }
+                else if (id === 'ct-height') {
+                    var newH = parseFloat(el.value) || 0;
+                    if (newH > 0) jState.pendingContentRegion.h = newH;
                 }
             }
             // Live update text node in document tree
@@ -191,17 +200,22 @@ function jsonInitWithTabPane(tabPane) {
                 else if (id === 'ct-qr-color' || id === 'ct-barcode-color') comp.color = el.value;
                 else if (id === 'ct-image-width' || id === 'ct-qr-width' || id === 'ct-barcode-width') {
                     var newW = parseFloat(el.value) || 0;
-                    if (newW > 0) {
-                        comp.w = newW;
-                        if (jState.pendingContentRegion) jState.pendingContentRegion.w = newW;
-                    }
+                    if (newW > 0) comp.w = newW;
                 }
                 else if (id === 'ct-image-height' || id === 'ct-qr-height' || id === 'ct-barcode-height') {
                     var newH = parseFloat(el.value) || 0;
-                    if (newH > 0) {
-                        comp.h = newH;
-                        if (jState.pendingContentRegion) jState.pendingContentRegion.h = newH;
-                    }
+                    if (newH > 0) comp.h = newH;
+                }
+            }
+            // Update pending region for new overlays
+            if (jState && jState.pendingContentRegion) {
+                if (id === 'ct-image-width' || id === 'ct-qr-width' || id === 'ct-barcode-width') {
+                    var newW = parseFloat(el.value) || 0;
+                    if (newW > 0) jState.pendingContentRegion.w = newW;
+                }
+                else if (id === 'ct-image-height' || id === 'ct-qr-height' || id === 'ct-barcode-height') {
+                    var newH = parseFloat(el.value) || 0;
+                    if (newH > 0) jState.pendingContentRegion.h = newH;
                 }
             }
             jRenderCanvas();
@@ -4223,7 +4237,8 @@ function rotateSelectedOverlay(deg) {
 
 function jAttachContentPreviewListeners() {
     var ids = ['ct-text-value','ct-font-size','ct-color','ct-letter-spacing',
-               'ct-qr-data','ct-barcode-data','ct-barcode-format','ct-image-url','ct-image-fit'];
+               'ct-qr-data','ct-barcode-data','ct-barcode-format','ct-image-url','ct-image-fit',
+               'ct-width','ct-height','ct-image-width','ct-image-height','ct-qr-width','ct-qr-height','ct-barcode-width','ct-barcode-height'];
     ids.forEach(function(id) {
         var el = _jel(id);
         if (el && !el._ctPreviewBound) {
