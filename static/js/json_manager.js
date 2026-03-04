@@ -1886,6 +1886,9 @@ function jRenderCanvas() {
     c.rect(0, 0, jState.docWidth, jState.docHeight);
     c.clip();
 
+    // Render overlays first (so layers appear on top)
+    jRenderOverlays(c);
+
     // Render document tree with per-panel rotation
     var brs = jState.boundsRects;
     if (brs && brs.length > 0) {
@@ -1978,9 +1981,6 @@ function jRenderCanvas() {
 
     // Render edges
     jRenderEdges(c);
-
-    // Render overlays on top (with per-panel rotation)
-    jRenderOverlays(c);
 
     // Live preview for pending content region (image/QR/barcode)
     if (jState.pendingContentRegion && jState.pendingContentType) {
@@ -2146,85 +2146,6 @@ function jRenderCanvas() {
         }
     }
 
-    // Draw add-overlay region while dragging
-    if (jState.addOverlayDraw) {
-        var aod = jState.addOverlayDraw;
-        var brIdx = jState.addOverlaySelectedBRIdx;
-        var aRot = 0;
-        if (jState.boundsRects && brIdx >= 0 && brIdx < jState.boundsRects.length) {
-            aRot = jState.boundsRects[brIdx]._rotation || 0;
-        }
-        if (aRot !== 0) {
-            var abr = jState.boundsRects[brIdx];
-            var acx = abr.x + abr.w / 2;
-            var acy = abr.y + abr.h / 2;
-            c.save();
-            c.translate(acx, acy);
-            c.rotate(aRot * Math.PI / 180);
-            c.translate(-acx, -acy);
-        }
-        c.save();
-        c.strokeStyle = '#00aa00';
-        c.lineWidth = 0.15;
-        c.setLineDash([1.5, 1.5]);
-        var rx = Math.min(aod.x1, aod.x2), ry = Math.min(aod.y1, aod.y2);
-        var rw = Math.abs(aod.x2 - aod.x1), rh = Math.abs(aod.y2 - aod.y1);
-        c.strokeRect(rx, ry, rw, rh);
-        c.fillStyle = 'rgba(0, 170, 0, 0.05)';
-        c.fillRect(rx, ry, rw, rh);
-        c.setLineDash([]);
-        c.restore();
-        if (aRot !== 0) c.restore();
-
-        // Snap indicator dot
-        if (jState.addOverlaySnapPoint) {
-            var sp = jState.addOverlaySnapPoint;
-            var spRot = 0;
-            if (jState.boundsRects && brIdx >= 0 && brIdx < jState.boundsRects.length) {
-                spRot = jState.boundsRects[brIdx]._rotation || 0;
-            }
-            if (spRot !== 0) {
-                var sbr = jState.boundsRects[brIdx];
-                var scx = sbr.x + sbr.w / 2, scy = sbr.y + sbr.h / 2;
-                c.save();
-                c.translate(scx, scy);
-                c.rotate(spRot * Math.PI / 180);
-                c.translate(-scx, -scy);
-            }
-            c.save();
-            c.beginPath();
-            c.arc(sp.x, sp.y, 1, 0, Math.PI * 2);
-            c.fillStyle = sp.type === 'corner' ? '#0066ff' : '#ff0000';
-            c.fill();
-            c.restore();
-            if (spRot !== 0) c.restore();
-        }
-    }
-
-    // Hover indicator dot (when not dragging, just hovering over mother panel)
-    if (jState.addOverlayHoverPoint && !jState.addOverlayDraw) {
-        var hp = jState.addOverlayHoverPoint;
-        var hpBrIdx = jState.addOverlaySelectedBRIdx;
-        var hpRot = 0;
-        if (jState.boundsRects && hpBrIdx >= 0 && hpBrIdx < jState.boundsRects.length) {
-            hpRot = jState.boundsRects[hpBrIdx]._rotation || 0;
-        }
-        if (hpRot !== 0) {
-            var hbr = jState.boundsRects[hpBrIdx];
-            var hcx = hbr.x + hbr.w / 2, hcy = hbr.y + hbr.h / 2;
-            c.save();
-            c.translate(hcx, hcy);
-            c.rotate(hpRot * Math.PI / 180);
-            c.translate(-hcx, -hcy);
-        }
-        c.save();
-        c.beginPath();
-        c.arc(hp.x, hp.y, 1, 0, Math.PI * 2);
-        c.fillStyle = hp.type === 'corner' ? '#0066ff' : '#ff0000';
-        c.fill();
-        c.restore();
-        if (hpRot !== 0) c.restore();
-    }
 
     // Highlight selected tree nodes on canvas
     var selKeys = Object.keys(jState.selectedTreePaths);
@@ -2640,6 +2561,86 @@ function jRenderOverlays(c) {
 
     // Draw group bounding boxes
     jRenderGroupBoundingBoxes(c);
+
+    // Draw add-overlay region while dragging (before document tree so layers appear on top)
+    if (jState.addOverlayDraw) {
+        var aod = jState.addOverlayDraw;
+        var brIdx = jState.addOverlaySelectedBRIdx;
+        var aRot = 0;
+        if (jState.boundsRects && brIdx >= 0 && brIdx < jState.boundsRects.length) {
+            aRot = jState.boundsRects[brIdx]._rotation || 0;
+        }
+        if (aRot !== 0) {
+            var abr = jState.boundsRects[brIdx];
+            var acx = abr.x + abr.w / 2;
+            var acy = abr.y + abr.h / 2;
+            c.save();
+            c.translate(acx, acy);
+            c.rotate(aRot * Math.PI / 180);
+            c.translate(-acx, -acy);
+        }
+        c.save();
+        c.strokeStyle = '#00aa00';
+        c.lineWidth = 0.15;
+        c.setLineDash([1.5, 1.5]);
+        var rx = Math.min(aod.x1, aod.x2), ry = Math.min(aod.y1, aod.y2);
+        var rw = Math.abs(aod.x2 - aod.x1), rh = Math.abs(aod.y2 - aod.y1);
+        c.strokeRect(rx, ry, rw, rh);
+        c.fillStyle = 'rgba(0, 170, 0, 0.05)';
+        c.fillRect(rx, ry, rw, rh);
+        c.setLineDash([]);
+        c.restore();
+        if (aRot !== 0) c.restore();
+
+        // Snap indicator dot
+        if (jState.addOverlaySnapPoint) {
+            var sp = jState.addOverlaySnapPoint;
+            var spRot = 0;
+            if (jState.boundsRects && brIdx >= 0 && brIdx < jState.boundsRects.length) {
+                spRot = jState.boundsRects[brIdx]._rotation || 0;
+            }
+            if (spRot !== 0) {
+                var sbr = jState.boundsRects[brIdx];
+                var scx = sbr.x + sbr.w / 2, scy = sbr.y + sbr.h / 2;
+                c.save();
+                c.translate(scx, scy);
+                c.rotate(spRot * Math.PI / 180);
+                c.translate(-scx, -scy);
+            }
+            c.save();
+            c.beginPath();
+            c.arc(sp.x, sp.y, 1, 0, Math.PI * 2);
+            c.fillStyle = sp.type === 'corner' ? '#0066ff' : '#ff0000';
+            c.fill();
+            c.restore();
+            if (spRot !== 0) c.restore();
+        }
+    }
+
+    // Hover indicator dot (when not dragging, just hovering over mother panel)
+    if (jState.addOverlayHoverPoint && !jState.addOverlayDraw) {
+        var hp = jState.addOverlayHoverPoint;
+        var hpBrIdx = jState.addOverlaySelectedBRIdx;
+        var hpRot = 0;
+        if (jState.boundsRects && hpBrIdx >= 0 && hpBrIdx < jState.boundsRects.length) {
+            hpRot = jState.boundsRects[hpBrIdx]._rotation || 0;
+        }
+        if (hpRot !== 0) {
+            var hbr = jState.boundsRects[hpBrIdx];
+            var hcx = hbr.x + hbr.w / 2, hcy = hbr.y + hbr.h / 2;
+            c.save();
+            c.translate(hcx, hcy);
+            c.rotate(hpRot * Math.PI / 180);
+            c.translate(-hcx, -hcy);
+        }
+        c.save();
+        c.beginPath();
+        c.arc(hp.x, hp.y, 1, 0, Math.PI * 2);
+        c.fillStyle = hp.type === 'corner' ? '#0066ff' : '#ff0000';
+        c.fill();
+        c.restore();
+        if (hpRot !== 0) c.restore();
+    }
 }
 
 function jRenderGroupBoundingBoxes(c) {
