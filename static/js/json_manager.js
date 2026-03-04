@@ -48,6 +48,9 @@ function getJCanvasState(c) {
             blockExpanded: {},
             overlayExpanded: {},
             overlayGroupView: true,
+            selectedOverlayIndices: {},
+            overlayGroups: {},
+            nextOverlayGroupId: 1,
             editingComponentIdx: -1,
             _editingTextNode: null,
             _selectedTextNode: null,
@@ -1285,6 +1288,19 @@ function jOnMouseDown(e) {
     // Check if clicking on an overlay
     var hitIdx = jHitTestOverlay(pos.x, pos.y);
     if (hitIdx >= 0) {
+        // Multi-select support with Ctrl+Click
+        if (e.ctrlKey || e.metaKey) {
+            // Toggle selection
+            if (jState.selectedOverlayIndices[hitIdx]) {
+                delete jState.selectedOverlayIndices[hitIdx];
+            } else {
+                jState.selectedOverlayIndices[hitIdx] = true;
+            }
+        } else {
+            // Single select (clear previous selections)
+            jState.selectedOverlayIndices = {};
+            jState.selectedOverlayIndices[hitIdx] = true;
+        }
         jState.selectedOverlayIdx = hitIdx;
         jState.selectedTreePath = null;
         jState.selectedTreePaths = {};
@@ -1296,8 +1312,39 @@ function jOnMouseDown(e) {
         jState._editingTextNode = null;
         jStartOverlayDrag(e, hitIdx);
     } else {
+        // Check if clicking on a tree node
+        var hitNodeId = jHitTestNode(pos.x, pos.y);
+        if (hitNodeId) {
+            // Multi-select support with Ctrl+Click for tree nodes
+            if (e.ctrlKey || e.metaKey) {
+                // Toggle selection
+                if (jState.selectedTreePaths[hitNodeId]) {
+                    delete jState.selectedTreePaths[hitNodeId];
+                } else {
+                    jState.selectedTreePaths[hitNodeId] = true;
+                }
+            } else {
+                // Single select (clear previous selections)
+                jState.selectedTreePaths = {};
+                jState.selectedTreePaths[hitNodeId] = true;
+            }
+            jState.selectedTreePath = hitNodeId;
+            jState.lastClickedTreePath = hitNodeId;
+            jState.selectedOverlayIdx = -1;
+            jState.selectedOverlayIndices = {};
+            jState.pendingContentRegion = null;
+            jState.pendingContentType = null;
+            jState.editingComponentIdx = -1;
+            jState._editingTextNode = null;
+            jRenderCanvas();
+            jRenderLayerTree();
+            jRenderOverlayList();
+            return;
+        }
+
         // Start rectangle selection drag on empty canvas
         jState.selectedOverlayIdx = -1;
+        jState.selectedOverlayIndices = {};
         jState._selectedTextNode = null;
         jState.pendingContentRegion = null;
         jState.pendingContentType = null;
@@ -1404,13 +1451,17 @@ function jFinishRectSelect(additive) {
         return;
     }
 
-    // Collect all display nodes and test intersection
+    // Rectangle selection - select both tree nodes and overlays
     var allNodes = [];
     jCollectDisplayNodes(jState.documentTree, allNodes);
+
     if (!additive) {
         jState.selectedTreePaths = {};
         jState.selectedTreePanelId = null;
+        jState.selectedOverlayIndices = {};
     }
+
+    // Select tree nodes within rectangle
     for (var i = 0; i < allNodes.length; i++) {
         var node = allNodes[i];
         if (node._isBoundsRect) continue;
@@ -1423,16 +1474,37 @@ function jFinishRectSelect(additive) {
         if (!b) continue;
         var nx = b.x * PT_TO_MM, ny = b.y * PT_TO_MM;
         var nw = b.width * PT_TO_MM, nh = b.height * PT_TO_MM;
-        // Check AABB overlap
-        if (nx + nw > rx && nx < rx + rw && ny + nh > ry && ny < ry + rh) {
+        // Check if node intersects with selection rectangle
+        if (!(nx + nw < rx || nx > rx + rw || ny + nh < ry || ny > ry + rh)) {
             jState.selectedTreePaths[node._id] = true;
         }
     }
+
+    // Select overlays within rectangle
+    for (var j = 0; j < jState.overlays.length; j++) {
+        var ov = jState.overlays[j];
+        if (!ov.visible) continue;
+        if (ov.locked) continue;
+
+        // Unrotate the rectangle corners to overlay's coordinate space
+        var tp = jUnrotatePoint(rx, ry, ov._boundsRectIdx);
+        var ox = ov.x, oy = ov.y, ow = ov.w, oh = ov.h;
+
+        // Simple bounding box intersection check
+        // Check if overlay intersects with selection rectangle
+        if (!(ox + ow < rx || ox > rx + rw || oy + oh < ry || oy > ry + rh)) {
+            jState.selectedOverlayIndices[j] = true;
+        }
+    }
+
     var keys = Object.keys(jState.selectedTreePaths);
     jState.selectedTreePath = keys.length === 1 ? keys[0] : null;
     jState.lastClickedTreePath = keys.length > 0 ? keys[keys.length - 1] : null;
+
     jRenderCanvas();
     jRenderLayerTree();
+    jRenderOverlayList();
+    jUpdateOverlayActionButtons();
 }
 
 function jHitTestOverlay(x, y) {
@@ -1445,31 +1517,96 @@ function jHitTestOverlay(x, y) {
     return -1;
 }
 
+function jHitTestNode(x, y) {
+    // Collect all display nodes
+    var allNodes = [];
+    jCollectDisplayNodes(jState.documentTree, allNodes);
+
+    // Test nodes in reverse order (top to bottom in rendering)
+    for (var i = allNodes.length - 1; i >= 0; i--) {
+        var node = allNodes[i];
+        if (node.visible === false) continue;
+        if (node.locked === true) continue;
+
+        var bounds = jGetNodeBounds(node);
+        if (!bounds) continue;
+
+        var bx = bounds.x * PT_TO_MM;
+        var by = bounds.y * PT_TO_MM;
+        var bw = bounds.width * PT_TO_MM;
+        var bh = bounds.height * PT_TO_MM;
+
+        // Check if click is within node bounds
+        if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
+            return node._id;
+        }
+    }
+    return null;
+}
+
 function jStartOverlayDrag(e, idx) {
     var ov = jState.overlays[idx];
     if (ov.locked) return;
+
+    // Get all selected overlays for multi-drag
+    var selectedIndices = Object.keys(jState.selectedOverlayIndices);
+    var isDraggingMultiple = selectedIndices.length > 1;
+
     var rawPos = jScreenToDoc(e.clientX, e.clientY);
     var pos = jUnrotatePoint(rawPos.x, rawPos.y, ov._boundsRectIdx);
-    var offX = pos.x - ov.x;
-    var offY = pos.y - ov.y;
-    var constraint = null;
-    if (ov._boundsRectIdx >= 0 && jState.boundsRects) {
-        constraint = jState.boundsRects[ov._boundsRectIdx];
+
+    // Store initial offsets for all selected overlays
+    var dragData = [];
+    if (isDraggingMultiple) {
+        for (var i = 0; i < selectedIndices.length; i++) {
+            var dragIdx = parseInt(selectedIndices[i]);
+            var dragOv = jState.overlays[dragIdx];
+            if (dragOv.locked) continue;
+
+            var dragPos = jUnrotatePoint(rawPos.x, rawPos.y, dragOv._boundsRectIdx);
+            dragData.push({
+                index: dragIdx,
+                overlay: dragOv,
+                offX: dragPos.x - dragOv.x,
+                offY: dragPos.y - dragOv.y,
+                brIdx: dragOv._boundsRectIdx
+            });
+        }
+    } else {
+        // Single overlay drag
+        dragData.push({
+            index: idx,
+            overlay: ov,
+            offX: pos.x - ov.x,
+            offY: pos.y - ov.y,
+            brIdx: ov._boundsRectIdx
+        });
     }
-    var brIdx = ov._boundsRectIdx;
+
     var onMove = function(ev) {
         var rawP = jScreenToDoc(ev.clientX, ev.clientY);
-        var p = jUnrotatePoint(rawP.x, rawP.y, brIdx);
-        var newX = p.x - offX;
-        var newY = p.y - offY;
-        if (constraint) {
-            if (newX < constraint.x) newX = constraint.x;
-            if (newY < constraint.y) newY = constraint.y;
-            if (newX + ov.w > constraint.x + constraint.w) newX = constraint.x + constraint.w - ov.w;
-            if (newY + ov.h > constraint.y + constraint.h) newY = constraint.y + constraint.h - ov.h;
+
+        for (var i = 0; i < dragData.length; i++) {
+            var dd = dragData[i];
+            var p = jUnrotatePoint(rawP.x, rawP.y, dd.brIdx);
+            var newX = p.x - dd.offX;
+            var newY = p.y - dd.offY;
+
+            // Apply constraints if overlay is within a bounds rect
+            var constraint = null;
+            if (dd.brIdx >= 0 && jState.boundsRects) {
+                constraint = jState.boundsRects[dd.brIdx];
+            }
+            if (constraint) {
+                if (newX < constraint.x) newX = constraint.x;
+                if (newY < constraint.y) newY = constraint.y;
+                if (newX + dd.overlay.w > constraint.x + constraint.w) newX = constraint.x + constraint.w - dd.overlay.w;
+                if (newY + dd.overlay.h > constraint.y + constraint.h) newY = constraint.y + constraint.h - dd.overlay.h;
+            }
+
+            dd.overlay.x = newX;
+            dd.overlay.y = newY;
         }
-        ov.x = newX;
-        ov.y = newY;
         jRenderCanvas();
     };
     var onUp = function() {
@@ -2445,11 +2582,64 @@ function jRenderOverlays(c) {
         jRenderOverlayItem(c, ov, i);
         if (rot !== 0) c.restore();
     }
+
+    // Draw group bounding boxes
+    jRenderGroupBoundingBoxes(c);
+}
+
+function jRenderGroupBoundingBoxes(c) {
+    var drawnGroups = {};
+    for (var gid in jState.overlayGroups) {
+        if (drawnGroups[gid]) continue;
+
+        // Find all visible overlays in this group
+        var groupOverlays = [];
+        for (var i = 0; i < jState.overlays.length; i++) {
+            if (jState.overlays[i].groupId === gid && jState.overlays[i].visible) {
+                groupOverlays.push(jState.overlays[i]);
+            }
+        }
+
+        if (groupOverlays.length < 2) continue;
+
+        // Calculate bounding box for the group
+        var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (var j = 0; j < groupOverlays.length; j++) {
+            var ov = groupOverlays[j];
+            minX = Math.min(minX, ov.x);
+            minY = Math.min(minY, ov.y);
+            maxX = Math.max(maxX, ov.x + ov.w);
+            maxY = Math.max(maxY, ov.y + ov.h);
+        }
+
+        // Add padding
+        var padding = 1;
+        minX -= padding;
+        minY -= padding;
+        maxX += padding;
+        maxY += padding;
+
+        // Draw group bounding box
+        c.save();
+        c.strokeStyle = jState.overlayGroups[gid].color;
+        c.lineWidth = 0.3;
+        c.setLineDash([2, 2]);
+        c.strokeRect(minX, minY, maxX - minX, maxY - minY);
+        c.setLineDash([]);
+
+        // Draw group label
+        c.fillStyle = jState.overlayGroups[gid].color;
+        c.font = '2px sans-serif';
+        c.fillText(jState.overlayGroups[gid].name, minX + 0.5, minY - 0.5);
+        c.restore();
+
+        drawnGroups[gid] = true;
+    }
 }
 
 function jRenderOverlayItem(c, ov, idx) {
     var x = ov.x, y = ov.y, w = ov.w, h = ov.h;
-    var isSelected = idx === jState.selectedOverlayIdx;
+    var isSelected = jState.selectedOverlayIndices[idx] === true;
     var ovRot = ov._rotation || 0;
 
     // Apply overlay's own rotation around its center
@@ -2465,11 +2655,19 @@ function jRenderOverlayItem(c, ov, idx) {
     // Draw region border
     c.save();
     if (!jState.hideGuides || isSelected) {
-    c.strokeStyle = isSelected ? '#0066ff' : '#00aa00';
-    c.lineWidth = 0.15;
-    c.setLineDash([1, 1]);
-    c.strokeRect(x, y, w, h);
-    c.setLineDash([]);
+        // Use group color if overlay belongs to a group
+        var strokeColor = '#00aa00';
+        if (ov.groupId && jState.overlayGroups[ov.groupId]) {
+            strokeColor = jState.overlayGroups[ov.groupId].color;
+        }
+        if (isSelected) {
+            strokeColor = '#0066ff';
+        }
+        c.strokeStyle = strokeColor;
+        c.lineWidth = isSelected ? 0.25 : 0.15;
+        c.setLineDash([1, 1]);
+        c.strokeRect(x, y, w, h);
+        c.setLineDash([]);
     }
 
     if (ov.type === 'textregion' && ov.content && ov.fontFamily) {
@@ -3510,51 +3708,123 @@ function jRenderOverlayList() {
         var layerIndices = Object.keys(groupedOverlays).sort(function(a, b) { return parseInt(a) - parseInt(b); });
         for (var gi = 0; gi < layerIndices.length; gi++) {
             var layerIdx = layerIndices[gi];
-            var group = groupedOverlays[layerIdx];
-            var groupId = '__ov_group_' + layerIdx;
-            var isExpanded = jState.overlayExpanded[groupId] !== false;
+            var layerGroup = groupedOverlays[layerIdx];
+            var layerGroupId = '__ov_layer_' + layerIdx;
+            var isLayerExpanded = jState.overlayExpanded[layerGroupId] !== false;
 
-            var groupHeader = document.createElement('div');
-            groupHeader.className = 'layer-tree-item';
-            groupHeader.style.paddingLeft = '4px';
-            groupHeader.style.fontWeight = 'bold';
-            groupHeader.style.cursor = 'pointer';
+            // Render layer header
+            var layerHeader = document.createElement('div');
+            layerHeader.className = 'layer-tree-item';
+            layerHeader.style.paddingLeft = '4px';
+            layerHeader.style.fontWeight = 'bold';
+            layerHeader.style.cursor = 'pointer';
 
-            var toggle = document.createElement('span');
-            toggle.className = 'layer-toggle';
-            toggle.textContent = isExpanded ? '▼' : '▶';
-            toggle.style.cursor = 'pointer';
-            toggle.style.marginRight = '4px';
-            toggle.style.fontSize = '10px';
+            var layerToggle = document.createElement('span');
+            layerToggle.className = 'layer-toggle';
+            layerToggle.textContent = isLayerExpanded ? '▼' : '▶';
+            layerToggle.style.cursor = 'pointer';
+            layerToggle.style.marginRight = '4px';
+            layerToggle.style.fontSize = '10px';
             (function(gid) {
-                toggle.addEventListener('click', function(e) {
+                layerToggle.addEventListener('click', function(e) {
                     e.stopPropagation();
                     var currentState = jState.overlayExpanded[gid];
                     jState.overlayExpanded[gid] = !currentState;
                     jRenderOverlayList();
                 });
-            })(groupId);
+            })(layerGroupId);
 
-            var label = document.createElement('span');
-            label.className = 'component-label';
+            var layerLabel = document.createElement('span');
+            layerLabel.className = 'component-label';
             var layerName = parseInt(layerIdx) >= 0 ? 'Layer ' + (parseInt(layerIdx) + 1) : 'Unassigned';
-            label.textContent = '[Input] ' + layerName + ' (' + group.length + ')';
-            label.style.color = '#00aa00';
+            layerLabel.textContent = '[Input] ' + layerName + ' (' + layerGroup.length + ')';
+            layerLabel.style.color = '#00aa00';
 
-            groupHeader.appendChild(toggle);
-            groupHeader.appendChild(label);
+            layerHeader.appendChild(layerToggle);
+            layerHeader.appendChild(layerLabel);
             (function(gid) {
-                groupHeader.addEventListener('click', function() {
+                layerHeader.addEventListener('click', function() {
                     var currentState = jState.overlayExpanded[gid];
                     jState.overlayExpanded[gid] = !currentState;
                     jRenderOverlayList();
                 });
-            })(groupId);
-            list.appendChild(groupHeader);
+            })(layerGroupId);
+            list.appendChild(layerHeader);
 
-            if (isExpanded) {
-                for (var j = 0; j < group.length; j++) {
-                    jRenderOverlayListItem(list, group[j].overlay, group[j].index, '20px');
+            if (isLayerExpanded) {
+                // Group overlays within this layer by their groupId
+                var userGroups = {};
+                var ungrouped = [];
+
+                for (var j = 0; j < layerGroup.length; j++) {
+                    var ovData = layerGroup[j];
+                    if (ovData.overlay.groupId) {
+                        if (!userGroups[ovData.overlay.groupId]) {
+                            userGroups[ovData.overlay.groupId] = [];
+                        }
+                        userGroups[ovData.overlay.groupId].push(ovData);
+                    } else {
+                        ungrouped.push(ovData);
+                    }
+                }
+
+                // Render user-created groups
+                for (var ugid in userGroups) {
+                    var ugMembers = userGroups[ugid];
+                    var ugExpanded = jState.overlayExpanded[ugid] !== false;
+                    var ugInfo = jState.overlayGroups[ugid];
+
+                    // Render user group header
+                    var ugHeader = document.createElement('div');
+                    ugHeader.className = 'layer-tree-item';
+                    ugHeader.style.paddingLeft = '20px';
+                    ugHeader.style.fontWeight = 'bold';
+                    ugHeader.style.cursor = 'pointer';
+
+                    var ugToggle = document.createElement('span');
+                    ugToggle.className = 'layer-toggle';
+                    ugToggle.textContent = ugExpanded ? '▼' : '▶';
+                    ugToggle.style.cursor = 'pointer';
+                    ugToggle.style.marginRight = '4px';
+                    ugToggle.style.fontSize = '10px';
+                    (function(gid) {
+                        ugToggle.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            var currentState = jState.overlayExpanded[gid];
+                            jState.overlayExpanded[gid] = !currentState;
+                            jRenderOverlayList();
+                        });
+                    })(ugid);
+
+                    var ugLabel = document.createElement('span');
+                    ugLabel.className = 'component-label';
+                    ugLabel.textContent = '⊞ ' + (ugInfo ? ugInfo.name : 'Group') + ' (' + ugMembers.length + ')';
+                    if (ugInfo && ugInfo.color) {
+                        ugLabel.style.color = ugInfo.color;
+                    }
+
+                    ugHeader.appendChild(ugToggle);
+                    ugHeader.appendChild(ugLabel);
+                    (function(gid) {
+                        ugHeader.addEventListener('click', function() {
+                            var currentState = jState.overlayExpanded[gid];
+                            jState.overlayExpanded[gid] = !currentState;
+                            jRenderOverlayList();
+                        });
+                    })(ugid);
+                    list.appendChild(ugHeader);
+
+                    // Render group members if expanded
+                    if (ugExpanded) {
+                        for (var k = 0; k < ugMembers.length; k++) {
+                            jRenderOverlayListItem(list, ugMembers[k].overlay, ugMembers[k].index, '40px');
+                        }
+                    }
+                }
+
+                // Render ungrouped overlays
+                for (var u = 0; u < ungrouped.length; u++) {
+                    jRenderOverlayListItem(list, ungrouped[u].overlay, ungrouped[u].index, '20px');
                 }
             }
         }
@@ -3575,7 +3845,8 @@ function jRenderOverlayListItem(parent, ov, idx, paddingLeft) {
     var item = document.createElement('div');
     item.className = 'component-item';
     item.style.paddingLeft = paddingLeft;
-    if (idx === jState.selectedOverlayIdx) item.classList.add('selected');
+    // Show selected state if in multi-select
+    if (jState.selectedOverlayIndices[idx]) item.classList.add('selected');
 
     var eyeBtn = document.createElement('button');
     eyeBtn.className = 'icon-btn';
@@ -3669,7 +3940,20 @@ function jRenderOverlayListItem(parent, ov, idx, paddingLeft) {
     item.appendChild(rotCW);
     item.appendChild(rotCCW);
     (function(index) {
-        item.addEventListener('click', function() {
+        item.addEventListener('click', function(e) {
+            // Multi-select support with Ctrl+Click
+            if (e.ctrlKey || e.metaKey) {
+                // Toggle selection
+                if (jState.selectedOverlayIndices[index]) {
+                    delete jState.selectedOverlayIndices[index];
+                } else {
+                    jState.selectedOverlayIndices[index] = true;
+                }
+            } else {
+                // Single select (clear previous selections)
+                jState.selectedOverlayIndices = {};
+                jState.selectedOverlayIndices[index] = true;
+            }
             jState.selectedOverlayIdx = index;
             jState.selectedTreePath = null;
             jState.selectedTreePaths = {};
@@ -3677,7 +3961,7 @@ function jRenderOverlayListItem(parent, ov, idx, paddingLeft) {
             jState.selectedTreePanelId = null;
             jRenderCanvas();
             jRenderOverlayList();
-            jUpdateActionButtons();
+            jUpdateOverlayActionButtons();
         });
     })(idx);
     parent.appendChild(item);
@@ -3719,6 +4003,99 @@ function jToggleOverlayGroupView() {
 function jUpdateActionButtons() {
     var deleteBtn = _jel('btn-delete');
     if (deleteBtn) deleteBtn.disabled = jState.selectedOverlayIdx < 0;
+}
+
+function jUpdateOverlayActionButtons() {
+    var selectedCount = Object.keys(jState.selectedOverlayIndices).length;
+    var groupBtn = _jel('overlay-group-btn');
+    var ungroupBtn = _jel('overlay-ungroup-btn');
+
+    if (groupBtn) groupBtn.disabled = selectedCount < 2;
+    if (ungroupBtn) ungroupBtn.disabled = selectedCount === 0;
+}
+
+function jShowGroupModal() {
+    var modal = _jel('group-name-modal');
+    if (modal) modal.style.display = 'block';
+    var input = _jel('group-name-input');
+    if (input) {
+        input.value = '';
+        input.focus();
+    }
+}
+
+function jConfirmGroup() {
+    var input = _jel('group-name-input');
+    var name = input ? input.value.trim() : '';
+    if (!name) name = 'Group ' + jState.nextOverlayGroupId;
+
+    jGroupSelectedOverlays(name);
+    jCancelGroup();
+}
+
+function jCancelGroup() {
+    var modal = _jel('group-name-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function jGroupSelectedOverlays(groupName) {
+    var selectedIndices = Object.keys(jState.selectedOverlayIndices);
+    if (selectedIndices.length < 2) {
+        alert('Please select at least 2 overlays to group');
+        return;
+    }
+
+    var groupId = 'ovg_' + jState.nextOverlayGroupId++;
+    jState.overlayGroups[groupId] = {
+        name: groupName,
+        color: jGenerateRandomColor(),
+        expanded: true
+    };
+
+    for (var i = 0; i < selectedIndices.length; i++) {
+        var idx = parseInt(selectedIndices[i]);
+        jState.overlays[idx].groupId = groupId;
+    }
+
+    jCaptureState();
+    jRenderCanvas();
+    jRenderOverlayList();
+}
+
+function jUngroupSelectedOverlays() {
+    var selectedIndices = Object.keys(jState.selectedOverlayIndices);
+    if (selectedIndices.length === 0) return;
+
+    var groupIds = {};
+    for (var i = 0; i < selectedIndices.length; i++) {
+        var idx = parseInt(selectedIndices[i]);
+        var ov = jState.overlays[idx];
+        if (ov.groupId) {
+            groupIds[ov.groupId] = true;
+            ov.groupId = null;
+        }
+    }
+
+    // Clean up empty groups
+    for (var gid in groupIds) {
+        var hasMembers = false;
+        for (var j = 0; j < jState.overlays.length; j++) {
+            if (jState.overlays[j].groupId === gid) {
+                hasMembers = true;
+                break;
+            }
+        }
+        if (!hasMembers) delete jState.overlayGroups[gid];
+    }
+
+    jCaptureState();
+    jRenderCanvas();
+    jRenderOverlayList();
+}
+
+function jGenerateRandomColor() {
+    var colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#6c5ce7', '#a29bfe', '#fd79a8', '#fdcb6e'];
+    return colors[Math.floor(Math.random() * colors.length)];
 }
 
 function jDeleteSelected() {

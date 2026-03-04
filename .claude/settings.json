@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -c \"d:\\\\project\\\\illustrator-layout\\\\static\\\\js\\\\json_manager.js\")"
+    ]
+  }
+}
