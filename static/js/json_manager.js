@@ -1122,12 +1122,18 @@ function jPrefillContentForm(type, data) {
             if (aiFontSpan) { aiFontSpan.textContent = ''; aiFontSpan.style.color = ''; aiFontSpan.style.borderColor = ''; }
         }
     } else if (type === 'image') {
+        var iw = _jel('ct-image-width'); if (iw) iw.value = (data.w || 0).toFixed(1);
+        var ih = _jel('ct-image-height'); if (ih) ih.value = (data.h || 0).toFixed(1);
         var iu = _jel('ct-image-url'); if (iu) iu.value = data.imageUrl || '';
         var imf = _jel('ct-image-fit'); if (imf) imf.value = data.imageFit || 'contain';
     } else if (type === 'qrcode') {
+        var qw = _jel('ct-qr-width'); if (qw) qw.value = (data.w || 0).toFixed(1);
+        var qh = _jel('ct-qr-height'); if (qh) qh.value = (data.h || 0).toFixed(1);
         var qd = _jel('ct-qr-data'); if (qd) qd.value = data.qrData || '';
         var qc = _jel('ct-qr-color'); if (qc) qc.value = data.color || '#000000';
     } else if (type === 'barcode') {
+        var bw = _jel('ct-barcode-width'); if (bw) bw.value = (data.w || 0).toFixed(1);
+        var bh = _jel('ct-barcode-height'); if (bh) bh.value = (data.h || 0).toFixed(1);
         var bd = _jel('ct-barcode-data'); if (bd) bd.value = data.barcodeData || '';
         var bf = _jel('ct-barcode-format'); if (bf) bf.value = data.barcodeFormat || 'code128';
         var bc = _jel('ct-barcode-color'); if (bc) bc.value = data.color || '#000000';
