@@ -3796,6 +3796,44 @@ function jRenderOverlayList() {
                         });
                     })(ugid);
 
+                    // Add visibility toggle for the group
+                    var ugEyeBtn = document.createElement('button');
+                    ugEyeBtn.className = 'icon-btn';
+                    var allVisible = ugMembers.every(function(m) { return jState.overlays[m.index].visible !== false; });
+                    ugEyeBtn.textContent = allVisible ? '👁' : '-';
+                    ugEyeBtn.style.marginRight = '2px';
+                    ugEyeBtn.title = allVisible ? 'Hide group' : 'Show group';
+                    (function(members) {
+                        ugEyeBtn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            var allVis = members.every(function(m) { return jState.overlays[m.index].visible !== false; });
+                            for (var i = 0; i < members.length; i++) {
+                                jState.overlays[members[i].index].visible = !allVis;
+                            }
+                            jRenderCanvas();
+                            jRenderOverlayList();
+                        });
+                    })(ugMembers);
+
+                    // Add lock toggle for the group
+                    var ugLockBtn = document.createElement('button');
+                    ugLockBtn.className = 'icon-btn';
+                    var allLocked = ugMembers.every(function(m) { return jState.overlays[m.index].locked === true; });
+                    ugLockBtn.textContent = allLocked ? '🔒' : '🔓';
+                    ugLockBtn.style.marginRight = '2px';
+                    ugLockBtn.title = allLocked ? 'Unlock group' : 'Lock group';
+                    (function(members) {
+                        ugLockBtn.addEventListener('click', function(e) {
+                            e.stopPropagation();
+                            var allLck = members.every(function(m) { return jState.overlays[m.index].locked === true; });
+                            for (var i = 0; i < members.length; i++) {
+                                jState.overlays[members[i].index].locked = !allLck;
+                            }
+                            jRenderCanvas();
+                            jRenderOverlayList();
+                        });
+                    })(ugMembers);
+
                     var ugLabel = document.createElement('span');
                     ugLabel.className = 'component-label';
                     ugLabel.textContent = '⊞ ' + (ugInfo ? ugInfo.name : 'Group') + ' (' + ugMembers.length + ')';
@@ -3804,6 +3842,8 @@ function jRenderOverlayList() {
                     }
 
                     ugHeader.appendChild(ugToggle);
+                    ugHeader.appendChild(ugEyeBtn);
+                    ugHeader.appendChild(ugLockBtn);
                     ugHeader.appendChild(ugLabel);
                     (function(gid) {
                         ugHeader.addEventListener('click', function() {
@@ -5245,6 +5285,8 @@ function jExportJson() {
         docMetadata: jState.docMetadata,
         docSwatches: jState.docSwatches,
         overlays: overlays,
+        overlayGroups: jState.overlayGroups,
+        nextOverlayGroupId: jState.nextOverlayGroupId,
         docWidth: jState.docWidth,
         docHeight: jState.docHeight,
         scale: jState.scale,
@@ -5272,11 +5314,14 @@ function jLoadLayoutFromExport(data) {
     jState.docMetadata = data.docMetadata || null;
     jState.docSwatches = data.docSwatches || [];
     jState.overlays = data.overlays || [];
+    jState.overlayGroups = data.overlayGroups || {};
+    jState.nextOverlayGroupId = data.nextOverlayGroupId || 1;
     jState.docWidth = data.docWidth || 0;
     jState.docHeight = data.docHeight || 0;
     jState.scale = data.scale || 1;
     jState.edges = data.edges || [];
     jState.selectedOverlayIdx = -1;
+    jState.selectedOverlayIndices = {};
     jState.selectedTreePath = null;
     jState.selectedTreePaths = {};
     jState.lastClickedTreePath = null;
