@@ -146,7 +146,7 @@ function jsonInitWithTabPane(tabPane) {
         });
     }
 
-    ['ct-text-value', 'ct-font-size', 'ct-color', 'ct-letter-spacing'].forEach(function(id) {
+    ['ct-text-value', 'ct-font-size', 'ct-color', 'ct-letter-spacing', 'ct-width', 'ct-height'].forEach(function(id) {
         var el = tabPane.querySelector('#' + id);
         if (el) el.addEventListener('input', function() {
             if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
@@ -155,6 +155,20 @@ function jsonInitWithTabPane(tabPane) {
                 else if (id === 'ct-font-size') comp.fontSize = parseFloat(el.value) || 12;
                 else if (id === 'ct-color') comp.color = el.value;
                 else if (id === 'ct-text-value') comp.content = el.value;
+                else if (id === 'ct-width') {
+                    var newW = parseFloat(el.value) || 0;
+                    if (newW > 0) {
+                        comp.w = newW;
+                        if (jState.pendingContentRegion) jState.pendingContentRegion.w = newW;
+                    }
+                }
+                else if (id === 'ct-height') {
+                    var newH = parseFloat(el.value) || 0;
+                    if (newH > 0) {
+                        comp.h = newH;
+                        if (jState.pendingContentRegion) jState.pendingContentRegion.h = newH;
+                    }
+                }
             }
             // Live update text node in document tree
             if (jState && jState._editingTextNode) {
@@ -167,7 +181,7 @@ function jsonInitWithTabPane(tabPane) {
     var ctFontSelect = tabPane.querySelector('#ct-font-select');
 
     // Live preview for QR/barcode inputs
-    ['ct-qr-data', 'ct-barcode-data', 'ct-qr-color', 'ct-barcode-color'].forEach(function(id) {
+    ['ct-qr-data', 'ct-barcode-data', 'ct-qr-color', 'ct-barcode-color', 'ct-image-width', 'ct-image-height', 'ct-qr-width', 'ct-qr-height', 'ct-barcode-width', 'ct-barcode-height'].forEach(function(id) {
         var el = tabPane.querySelector('#' + id);
         if (el) el.addEventListener('input', function() {
             if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
@@ -175,6 +189,20 @@ function jsonInitWithTabPane(tabPane) {
                 if (id === 'ct-qr-data') comp.qrData = el.value;
                 else if (id === 'ct-barcode-data') comp.barcodeData = el.value;
                 else if (id === 'ct-qr-color' || id === 'ct-barcode-color') comp.color = el.value;
+                else if (id === 'ct-image-width' || id === 'ct-qr-width' || id === 'ct-barcode-width') {
+                    var newW = parseFloat(el.value) || 0;
+                    if (newW > 0) {
+                        comp.w = newW;
+                        if (jState.pendingContentRegion) jState.pendingContentRegion.w = newW;
+                    }
+                }
+                else if (id === 'ct-image-height' || id === 'ct-qr-height' || id === 'ct-barcode-height') {
+                    var newH = parseFloat(el.value) || 0;
+                    if (newH > 0) {
+                        comp.h = newH;
+                        if (jState.pendingContentRegion) jState.pendingContentRegion.h = newH;
+                    }
+                }
             }
             jRenderCanvas();
         });
@@ -1010,6 +1038,10 @@ function jUpdateTextNodeFromForm(node) {
 }
 
 function jPrefillContentForm(type, data) {
+    // Populate width and height for all types
+    var cw = _jel('ct-width'); if (cw) cw.value = (data.w || 0).toFixed(1);
+    var ch = _jel('ct-height'); if (ch) ch.value = (data.h || 0).toFixed(1);
+
     if (type === 'text') {
         var tv = _jel('ct-text-value'); if (tv) tv.value = data.content || '';
         var fs = _jel('ct-font-size'); if (fs) fs.value = data.fontSize || 12;
@@ -2766,13 +2798,14 @@ function jRenderOverlayItem(c, ov, idx) {
         c.textAlign = 'left';
     }
 
-    // Label
+    // Label with dimensions
     if (!jState.hideGuides) {
     c.fillStyle = isSelected ? '#0066ff' : '#00aa00';
     c.font = '1.5px sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'bottom';
     var label = ov.type === 'textregion' ? 'Text' : ov.type === 'imageregion' ? 'Image' : ov.type === 'qrcoderegion' ? 'QR' : 'Barcode';
+    label += ' [' + ov.w.toFixed(1) + ' x ' + ov.h.toFixed(1) + ' mm]';
     c.fillText(label, x, y - 0.3);
     }
     c.restore();
