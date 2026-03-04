@@ -32,7 +32,9 @@
     result.metadata.panels = detectedPanels;
 
     for (var i = 0; i < doc.layers.length; i++) {
-        result.layers.push(processLayer(doc.layers[i]));
+        if (doc.layers[i].visible) {
+            result.layers.push(processLayer(doc.layers[i]));
+        }
     }
 
     // Inject __bounds__ path nodes for compound path panels
@@ -258,6 +260,9 @@
     // ─── Layer Processing ───
 
     function processLayer(layer) {
+        // Skip invisible layers
+        if (!layer.visible) return null;
+
         var obj = {
             name: layer.name,
             visible: layer.visible,
@@ -265,9 +270,12 @@
             opacity: layer.opacity,
             children: []
         };
-        // Sublayers
+        // Sublayers - only process visible ones
         for (var i = 0; i < layer.layers.length; i++) {
-            obj.children.push(processLayer(layer.layers[i]));
+            if (layer.layers[i].visible) {
+                var sublayer = processLayer(layer.layers[i]);
+                if (sublayer) obj.children.push(sublayer);
+            }
         }
         // Direct page items (skip items belonging to sublayers)
         try {
@@ -275,6 +283,8 @@
                 try {
                     var item = layer.pageItems[i];
                     if (item.parent !== layer) continue;
+                    // Skip hidden items
+                    if (item.hidden) continue;
 
                     // Extra safety check for text frames with potential font issues
                     if (item.typename === "TextFrame") {
@@ -337,6 +347,9 @@
     }
 
     function processGroup(grp) {
+        // Skip hidden groups
+        if (grp.hidden) return null;
+
         var obj = {
             type: "group",
             name: grp.name || "Group",
@@ -347,8 +360,11 @@
             children: []
         };
         for (var i = 0; i < grp.pageItems.length; i++) {
-            var child = processPageItem(grp.pageItems[i]);
-            if (child) obj.children.push(child);
+            // Only process visible items
+            if (!grp.pageItems[i].hidden) {
+                var child = processPageItem(grp.pageItems[i]);
+                if (child) obj.children.push(child);
+            }
         }
         return obj;
     }
