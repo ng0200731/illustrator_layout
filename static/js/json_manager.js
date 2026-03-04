@@ -46,6 +46,8 @@ function getJCanvasState(c) {
             pendingContentType: null,
             previewDragState: { active: false, startX: 0, startY: 0 },
             blockExpanded: {},
+            overlayExpanded: {},
+            overlayGroupView: true,
             editingComponentIdx: -1,
             _editingTextNode: null,
             _selectedTextNode: null,
@@ -2790,24 +2792,12 @@ function jRenderLayerTree() {
             var isExpanded = jState.layerExpanded[layerId] === true;
             var childCount = buckets[li].length;
 
-            // Count overlays for this layer
-            for (var oi2 = 0; oi2 < jState.overlays.length; oi2++) {
-                if (jState.overlays[oi2]._boundsRectIdx === li) childCount++;
-            }
-
             jRenderBoundsLayerItem(tree, br, layerId, isExpanded, childCount);
 
             if (isExpanded) {
                 // Render contained nodes
                 for (var ci = 0; ci < buckets[li].length; ci++) {
                     jRenderTreeNode(tree, buckets[li][ci], 1, false, layerId);
-                }
-                // Render overlays belonging to this layer
-                for (var oi = 0; oi < jState.overlays.length; oi++) {
-                    var ov = jState.overlays[oi];
-                    if (ov._boundsRectIdx === li) {
-                        jRenderOverlayTreeItem(tree, ov, oi, 1);
-                    }
                 }
             }
         }
@@ -2878,7 +2868,8 @@ function jRenderBoundsLayerItem(parent, br, layerId, isExpanded, childCount) {
     (function(lid) {
         toggle.addEventListener('click', function(e) {
             e.stopPropagation();
-            jState.layerExpanded[lid] = !isExpanded;
+            var currentState = jState.layerExpanded[lid];
+            jState.layerExpanded[lid] = !currentState;
             jRenderLayerTree();
         });
     })(layerId);
@@ -3504,117 +3495,192 @@ function jRenderOverlayList() {
         list.innerHTML = '<div class="empty-message">No overlays added</div>';
         return;
     }
-    for (var i = 0; i < jState.overlays.length; i++) {
-        var ov = jState.overlays[i];
-        var item = document.createElement('div');
-        item.className = 'component-item';
-        if (i === jState.selectedOverlayIdx) item.classList.add('selected');
 
-        var eyeBtn = document.createElement('button');
-        eyeBtn.className = 'icon-btn';
-        eyeBtn.textContent = ov.visible ? '👁' : '-';
-        (function(idx) {
-            eyeBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                jState.overlays[idx].visible = !jState.overlays[idx].visible;
-                jRenderCanvas();
-                jRenderOverlayList();
-            });
-        })(i);
+    // Check if we should render in grouped or flat view
+    if (jState.overlayGroupView) {
+        // Grouped view by layer
+        var groupedOverlays = {};
+        for (var i = 0; i < jState.overlays.length; i++) {
+            var ov = jState.overlays[i];
+            var layerIdx = ov._boundsRectIdx !== undefined ? ov._boundsRectIdx : -1;
+            if (!groupedOverlays[layerIdx]) groupedOverlays[layerIdx] = [];
+            groupedOverlays[layerIdx].push({overlay: ov, index: i});
+        }
 
-        var lockBtn = document.createElement('button');
-        lockBtn.className = 'icon-btn';
-        lockBtn.textContent = ov.locked ? '🔒' : '🔓';
-        lockBtn.title = ov.locked ? 'Unlock' : 'Lock';
-        (function(idx) {
-            lockBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                jState.overlays[idx].locked = !jState.overlays[idx].locked;
-                jRenderCanvas();
-                jRenderOverlayList();
-            });
-        })(i);
+        var layerIndices = Object.keys(groupedOverlays).sort(function(a, b) { return parseInt(a) - parseInt(b); });
+        for (var gi = 0; gi < layerIndices.length; gi++) {
+            var layerIdx = layerIndices[gi];
+            var group = groupedOverlays[layerIdx];
+            var groupId = '__ov_group_' + layerIdx;
+            var isExpanded = jState.overlayExpanded[groupId] !== false;
 
-        var varBtn = document.createElement('button');
-        varBtn.className = 'icon-btn' + (ov.isVariable ? ' var-active' : '');
-        varBtn.textContent = ov.isVariable ? '⚡' : '○';
-        varBtn.title = ov.isVariable ? 'Variable (on)' : 'Variable (off)';
-        varBtn.style.fontSize = '10px';
-        (function(idx) {
-            varBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                jState.overlays[idx].isVariable = !jState.overlays[idx].isVariable;
-                jCaptureState();
-                jRenderCanvas();
-                jRenderOverlayList();
-            });
-        })(i);
+            var groupHeader = document.createElement('div');
+            groupHeader.className = 'layer-tree-item';
+            groupHeader.style.paddingLeft = '4px';
+            groupHeader.style.fontWeight = 'bold';
+            groupHeader.style.cursor = 'pointer';
 
-        var label = document.createElement('span');
-        label.className = 'component-label';
-        var labelMap = {
-            'textregion': 'Text: "' + (ov.content || '').substring(0, 20) + '"' + (ov.aiFontStyle && ov.aiFontStyle !== 'Regular' ? ' [' + ov.aiFontStyle + ']' : ''),
-            'imageregion': 'Image: ' + (ov.imageUrl || '').substring(0, 15),
-            'qrcoderegion': 'QR: ' + (ov.qrData || '').substring(0, 15),
-            'barcoderegion': 'Barcode: ' + (ov.barcodeData || '').substring(0, 15)
-        };
-        var ovRot = ov._rotation || 0;
-        var rotSuffix = ovRot ? ' [' + ovRot + '°]' : '';
-        label.textContent = (labelMap[ov.type] || ov.type) + rotSuffix;
+            var toggle = document.createElement('span');
+            toggle.className = 'layer-toggle';
+            toggle.textContent = isExpanded ? '▼' : '▶';
+            toggle.style.cursor = 'pointer';
+            toggle.style.marginRight = '4px';
+            toggle.style.fontSize = '10px';
+            (function(gid) {
+                toggle.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var currentState = jState.overlayExpanded[gid];
+                    jState.overlayExpanded[gid] = !currentState;
+                    jRenderOverlayList();
+                });
+            })(groupId);
 
-        var rotCW = document.createElement('button');
-        rotCW.className = 'icon-btn';
-        rotCW.textContent = '↻';
-        rotCW.title = 'Rotate +90°';
-        rotCW.style.marginLeft = '4px';
-        rotCW.style.fontSize = '12px';
-        (function(idx) {
-            rotCW.addEventListener('click', function(e) {
-                e.stopPropagation();
-                var o = jState.overlays[idx];
-                o._rotation = ((o._rotation || 0) + 90) % 360;
-                jRenderCanvas();
-                jRenderOverlayList();
-                jRenderLayerTree();
-            });
-        })(i);
+            var label = document.createElement('span');
+            label.className = 'component-label';
+            var layerName = parseInt(layerIdx) >= 0 ? 'Layer ' + (parseInt(layerIdx) + 1) : 'Unassigned';
+            label.textContent = '[Input] ' + layerName + ' (' + group.length + ')';
+            label.style.color = '#00aa00';
 
-        var rotCCW = document.createElement('button');
-        rotCCW.className = 'icon-btn';
-        rotCCW.textContent = '↺';
-        rotCCW.title = 'Rotate -90°';
-        rotCCW.style.fontSize = '12px';
-        (function(idx) {
-            rotCCW.addEventListener('click', function(e) {
-                e.stopPropagation();
-                var o = jState.overlays[idx];
-                o._rotation = ((o._rotation || 0) - 90 + 360) % 360;
-                jRenderCanvas();
-                jRenderOverlayList();
-                jRenderLayerTree();
-            });
-        })(i);
+            groupHeader.appendChild(toggle);
+            groupHeader.appendChild(label);
+            (function(gid) {
+                groupHeader.addEventListener('click', function() {
+                    var currentState = jState.overlayExpanded[gid];
+                    jState.overlayExpanded[gid] = !currentState;
+                    jRenderOverlayList();
+                });
+            })(groupId);
+            list.appendChild(groupHeader);
 
-        item.appendChild(eyeBtn);
-        item.appendChild(lockBtn);
-        item.appendChild(varBtn);
-        item.appendChild(label);
-        item.appendChild(rotCW);
-        item.appendChild(rotCCW);
-        (function(idx) {
-            item.addEventListener('click', function() {
-                jState.selectedOverlayIdx = idx;
-                jState.selectedTreePath = null;
-                jState.selectedTreePaths = {};
-                jState.lastClickedTreePath = null;
-                jState.selectedTreePanelId = null;
-                jRenderCanvas();
-                jRenderOverlayList();
-                jUpdateActionButtons();
-            });
-        })(i);
-        list.appendChild(item);
+            if (isExpanded) {
+                for (var j = 0; j < group.length; j++) {
+                    jRenderOverlayListItem(list, group[j].overlay, group[j].index, '20px');
+                }
+            }
+        }
+    } else {
+        // Flat view
+        for (var i = 0; i < jState.overlays.length; i++) {
+            jRenderOverlayListItem(list, jState.overlays[i], i, '4px');
+        }
     }
+}
+
+function jRenderOverlayListItem(parent, ov, idx, paddingLeft) {
+    if (!parent || !parent.appendChild) {
+        console.error('jRenderOverlayListItem: invalid parent element', parent);
+        return;
+    }
+
+    var item = document.createElement('div');
+    item.className = 'component-item';
+    item.style.paddingLeft = paddingLeft;
+    if (idx === jState.selectedOverlayIdx) item.classList.add('selected');
+
+    var eyeBtn = document.createElement('button');
+    eyeBtn.className = 'icon-btn';
+    eyeBtn.textContent = ov.visible ? '👁' : '-';
+    (function(index) {
+        eyeBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            jState.overlays[index].visible = !jState.overlays[index].visible;
+            jRenderCanvas();
+            jRenderOverlayList();
+        });
+    })(idx);
+
+    var lockBtn = document.createElement('button');
+    lockBtn.className = 'icon-btn';
+    lockBtn.textContent = ov.locked ? '🔒' : '🔓';
+    lockBtn.title = ov.locked ? 'Unlock' : 'Lock';
+    (function(index) {
+        lockBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            jState.overlays[index].locked = !jState.overlays[index].locked;
+            jRenderCanvas();
+            jRenderOverlayList();
+        });
+    })(idx);
+
+    var varBtn = document.createElement('button');
+    varBtn.className = 'icon-btn' + (ov.isVariable ? ' var-active' : '');
+    varBtn.textContent = ov.isVariable ? '⚡' : '○';
+    varBtn.title = ov.isVariable ? 'Variable (on)' : 'Variable (off)';
+    varBtn.style.fontSize = '10px';
+    (function(index) {
+        varBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            jState.overlays[index].isVariable = !jState.overlays[index].isVariable;
+            jCaptureState();
+            jRenderCanvas();
+            jRenderOverlayList();
+        });
+    })(idx);
+
+    var itemLabel = document.createElement('span');
+    itemLabel.className = 'component-label';
+    var labelMap = {
+        'textregion': 'Text: "' + (ov.content || '').substring(0, 20) + '"' + (ov.aiFontStyle && ov.aiFontStyle !== 'Regular' ? ' [' + ov.aiFontStyle + ']' : ''),
+        'imageregion': 'Image: ' + (ov.imageUrl || '').substring(0, 15),
+        'qrcoderegion': 'QR: ' + (ov.qrData || '').substring(0, 15),
+        'barcoderegion': 'Barcode: ' + (ov.barcodeData || '').substring(0, 15)
+    };
+    var ovRot = ov._rotation || 0;
+    var rotSuffix = ovRot ? ' [' + ovRot + '°]' : '';
+    itemLabel.textContent = (labelMap[ov.type] || ov.type) + rotSuffix;
+
+    var rotCW = document.createElement('button');
+    rotCW.className = 'icon-btn';
+    rotCW.textContent = '↻';
+    rotCW.title = 'Rotate +90°';
+    rotCW.style.marginLeft = '4px';
+    rotCW.style.fontSize = '12px';
+    (function(index) {
+        rotCW.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var o = jState.overlays[index];
+            o._rotation = ((o._rotation || 0) + 90) % 360;
+            jRenderCanvas();
+            jRenderOverlayList();
+            jRenderLayerTree();
+        });
+    })(idx);
+
+    var rotCCW = document.createElement('button');
+    rotCCW.className = 'icon-btn';
+    rotCCW.textContent = '↺';
+    rotCCW.title = 'Rotate -90°';
+    rotCCW.style.fontSize = '12px';
+    (function(index) {
+        rotCCW.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var o = jState.overlays[index];
+            o._rotation = ((o._rotation || 0) - 90 + 360) % 360;
+            jRenderCanvas();
+            jRenderOverlayList();
+            jRenderLayerTree();
+        });
+    })(idx);
+
+    item.appendChild(eyeBtn);
+    item.appendChild(lockBtn);
+    item.appendChild(varBtn);
+    item.appendChild(itemLabel);
+    item.appendChild(rotCW);
+    item.appendChild(rotCCW);
+    (function(index) {
+        item.addEventListener('click', function() {
+            jState.selectedOverlayIdx = index;
+            jState.selectedTreePath = null;
+            jState.selectedTreePaths = {};
+            jState.lastClickedTreePath = null;
+            jState.selectedTreePanelId = null;
+            jRenderCanvas();
+            jRenderOverlayList();
+            jUpdateActionButtons();
+        });
+    })(idx);
+    parent.appendChild(item);
 }
 
 function jToggleAllOverlayVisible() {
@@ -3638,6 +3704,15 @@ function jToggleAllOverlayLock() {
     var btn = _jel('overlay-toggle-lock');
     if (btn) btn.textContent = allLocked ? '🔓' : '🔒';
     jRenderCanvas();
+    jRenderOverlayList();
+}
+
+function jToggleOverlayGroupView() {
+    if (!jState) return;
+    jState.overlayGroupView = !jState.overlayGroupView;
+    var btn = _jel('overlay-toggle-group');
+    if (btn) btn.textContent = jState.overlayGroupView ? '☰' : '▤';
+    if (btn) btn.title = jState.overlayGroupView ? 'Switch to flat view' : 'Switch to grouped view';
     jRenderOverlayList();
 }
 
@@ -4236,7 +4311,6 @@ function undo() {
     jState.overlays = JSON.parse(JSON.stringify(snap.overlays));
     jState.edges = JSON.parse(JSON.stringify(snap.edges));
     jState.selectedOverlayIdx = -1;
-    jLoadOverlayFonts(false);
     jRenderCanvas();
     jRenderOverlayList();
     jRenderEdgeList();
@@ -4250,7 +4324,6 @@ function redo() {
     jState.overlays = JSON.parse(JSON.stringify(snap.overlays));
     jState.edges = JSON.parse(JSON.stringify(snap.edges));
     jState.selectedOverlayIdx = -1;
-    jLoadOverlayFonts(false);
     jRenderCanvas();
     jRenderOverlayList();
     jRenderEdgeList();
@@ -4303,6 +4376,22 @@ function jLoadOverlayFonts(updateOverlayData) {
         for (var i = 0; i < jState.overlays.length; i++) {
             var ov = jState.overlays[i];
             if (ov.type !== 'textregion' || !ov.fontFamily) continue;
+
+            // If not updating overlay data (undo/redo) and we have a fontId, load by ID directly
+            if (!updateOverlayData && ov.fontId) {
+                var fontById = null;
+                for (var fi = 0; fi < fonts.length; fi++) {
+                    if (fonts[fi].id === ov.fontId) {
+                        fontById = fonts[fi];
+                        break;
+                    }
+                }
+                if (fontById) {
+                    jLoadFontForCanvas(fontById.id, fontById.font_name);
+                    continue;
+                }
+            }
+
             var normalizedOv = ov.fontFamily.toLowerCase().replace(/[\s\-_]/g, '');
             // Also try fontFamily + fontStyle combined (e.g. "Mango New" + "SemiBold" = "mangonewsemibold")
             var normalizedOvWithStyle = normalizedOv;
@@ -4310,18 +4399,40 @@ function jLoadOverlayFonts(updateOverlayData) {
                 normalizedOvWithStyle = normalizedOv + ov.aiFontStyle.toLowerCase().replace(/[\s\-_]/g, '');
             }
             var found = false;
+            // First pass: try to match with style included (more specific)
             for (var fi = 0; fi < fonts.length; fi++) {
                 var f = fonts[fi];
                 var normalizedF = f.font_name.toLowerCase().replace(/[\s\-_]/g, '');
-                if (normalizedF === normalizedOv || normalizedF === normalizedOvWithStyle) {
+                if (normalizedF === normalizedOvWithStyle) {
                     // Update overlay data only on initial load
                     if (updateOverlayData) {
                         ov.fontFamily = f.font_name;
                         ov.fontId = f.id;
+                        // Also update aiFontName to match the database font name
+                        ov.aiFontName = f.font_name;
                     }
                     jLoadFontForCanvas(f.id, f.font_name);
                     found = true;
                     break;
+                }
+            }
+            // Second pass: if no match with style, try base font name only
+            if (!found) {
+                for (var fi = 0; fi < fonts.length; fi++) {
+                    var f = fonts[fi];
+                    var normalizedF = f.font_name.toLowerCase().replace(/[\s\-_]/g, '');
+                    if (normalizedF === normalizedOv) {
+                        // Update overlay data only on initial load
+                        if (updateOverlayData) {
+                            ov.fontFamily = f.font_name;
+                            ov.fontId = f.id;
+                            // Also update aiFontName to match the database font name
+                            ov.aiFontName = f.font_name;
+                        }
+                        jLoadFontForCanvas(f.id, f.font_name);
+                        found = true;
+                        break;
+                    }
                 }
             }
             if (!found) {
