@@ -1898,7 +1898,29 @@ function jRenderCanvas() {
     c.rect(0, 0, jState.docWidth, jState.docHeight);
     c.clip();
 
-    // Render document tree first (background content)
+    // Render overlays at index 0 first (lowest Z-index, behind document tree)
+    if (jState.overlays && jState.overlays.length > 0) {
+        var ov = jState.overlays[0];
+        if (ov.visible !== false) {
+            var rot = 0;
+            if (brs && ov._boundsRectIdx >= 0 && ov._boundsRectIdx < brs.length) {
+                rot = brs[ov._boundsRectIdx]._rotation || 0;
+            }
+            if (rot !== 0) {
+                var pbr = brs[ov._boundsRectIdx];
+                var cx = pbr.x + pbr.w / 2;
+                var cy = pbr.y + pbr.h / 2;
+                c.save();
+                c.translate(cx, cy);
+                c.rotate(rot * Math.PI / 180);
+                c.translate(-cx, -cy);
+            }
+            jRenderOverlayItem(c, ov, 0);
+            if (rot !== 0) c.restore();
+        }
+    }
+
+    // Render document tree (middle layer)
     var brs = jState.boundsRects;
     if (brs && brs.length > 0) {
         // Collect top-level nodes (preserving group hierarchy for clipping)
@@ -2550,7 +2572,8 @@ function jRenderImagePlaceholder(c, node, opacity) {
 function jRenderOverlays(c) {
     if (!jState.overlays) return;
     var brs = jState.boundsRects;
-    for (var i = 0; i < jState.overlays.length; i++) {
+    // Start from index 1 since index 0 is already rendered before document tree
+    for (var i = 1; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
         if (!ov.visible) continue;
         if (jState.editingComponentIdx === i && jState.pendingContentRegion) continue;
@@ -4464,8 +4487,9 @@ function applyContentSettings() {
                 var br = jFindContainingBoundsRect(comp);
                 comp._boundsRectIdx = br ? jState.boundsRects.indexOf(br) : -1;
             }
-            jState.overlays.push(comp);
-            jState.selectedOverlayIdx = -1;
+            jState.overlays.unshift(comp);
+            jState.selectedOverlayIdx = 0;
+            jState.selectedOverlayIndices = {0: true};
         }
         // Flash feedback on apply button
         var applyBtn = _jel('ct-apply');
