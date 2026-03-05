@@ -290,14 +290,24 @@
                     var pages = [];
                     lines.forEach(function(line) {
                         var genData = typeof line.generated_data === 'string' ? JSON.parse(line.generated_data) : line.generated_data;
-                        if (genData && genData.exportPayload) pages.push(genData.exportPayload);
+                        if (genData && genData.exportPayload) {
+                            var payload = genData.exportPayload;
+                            // Filter out invisible components
+                            payload.components = payload.components.filter(function(c) { return c.visible !== false; });
+                            pages.push(payload);
+                        }
                     });
                     pagesPromise = Promise.resolve(pages);
                 } else {
                     pagesPromise = generateOrderData(orderId).then(function(genLines) {
                         var pages = [];
                         genLines.forEach(function(genData) {
-                            if (genData && genData.exportPayload) pages.push(genData.exportPayload);
+                            if (genData && genData.exportPayload) {
+                                var payload = genData.exportPayload;
+                                // Filter out invisible components
+                                payload.components = payload.components.filter(function(c) { return c.visible !== false; });
+                                pages.push(payload);
+                            }
                         });
                         return pages;
                     });
@@ -311,6 +321,8 @@
                     var fetchPromise;
                     if (pages.length === 1) {
                         var payload = pages[0];
+                        // Filter out invisible components
+                        payload.components = payload.components.filter(function(c) { return c.visible !== false; });
                         payload.outlined = !!outlined;
                         payload.separateInvisible = true;
                         fetchPromise = fetch('/export/ai', {
@@ -319,6 +331,10 @@
                             body: JSON.stringify(payload)
                         });
                     } else {
+                        // Filter invisible components from all pages
+                        pages.forEach(function(p) {
+                            p.components = p.components.filter(function(c) { return c.visible !== false; });
+                        });
                         fetchPromise = fetch('/export/ai/batch', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },

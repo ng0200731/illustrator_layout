@@ -1340,6 +1340,8 @@ function jOnMouseDown(e) {
     // Check if clicking on an overlay
     var hitIdx = jHitTestOverlay(pos.x, pos.y);
     if (hitIdx >= 0) {
+        var hitOverlay = jState.overlays[hitIdx];
+
         // Multi-select support with Ctrl+Click
         if (e.ctrlKey || e.metaKey) {
             // Toggle selection
@@ -1351,7 +1353,17 @@ function jOnMouseDown(e) {
         } else {
             // Single select (clear previous selections)
             jState.selectedOverlayIndices = {};
-            jState.selectedOverlayIndices[hitIdx] = true;
+
+            // If overlay is part of a group, select all group members
+            if (hitOverlay.groupId) {
+                for (var i = 0; i < jState.overlays.length; i++) {
+                    if (jState.overlays[i].groupId === hitOverlay.groupId) {
+                        jState.selectedOverlayIndices[i] = true;
+                    }
+                }
+            } else {
+                jState.selectedOverlayIndices[hitIdx] = true;
+            }
         }
         jState.selectedOverlayIdx = hitIdx;
         jState.selectedTreePath = null;
@@ -4104,6 +4116,8 @@ function jRenderOverlayListItem(parent, ov, idx, paddingLeft) {
     item.appendChild(moveArrows);
     (function(index) {
         item.addEventListener('click', function(e) {
+            var clickedOverlay = jState.overlays[index];
+
             // Multi-select support with Ctrl+Click
             if (e.ctrlKey || e.metaKey) {
                 // Toggle selection
@@ -4115,7 +4129,17 @@ function jRenderOverlayListItem(parent, ov, idx, paddingLeft) {
             } else {
                 // Single select (clear previous selections)
                 jState.selectedOverlayIndices = {};
-                jState.selectedOverlayIndices[index] = true;
+
+                // If overlay is part of a group, select all group members
+                if (clickedOverlay.groupId) {
+                    for (var i = 0; i < jState.overlays.length; i++) {
+                        if (jState.overlays[i].groupId === clickedOverlay.groupId) {
+                            jState.selectedOverlayIndices[i] = true;
+                        }
+                    }
+                } else {
+                    jState.selectedOverlayIndices[index] = true;
+                }
             }
             jState.selectedOverlayIdx = index;
             jState.selectedTreePath = null;

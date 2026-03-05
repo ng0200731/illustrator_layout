@@ -57,6 +57,9 @@ def flatten_layout_for_export(layout_data):
 
     # 4. Add overlay components (overlays render on top, original content stays)
     for ov in overlays:
+        # Skip invisible overlays
+        if ov.get('visible') == False:
+            continue
         components.append({
             'type': ov.get('type', 'text'),
             'x': ov.get('x', 0), 'y': ov.get('y', 0),
@@ -99,6 +102,9 @@ def _flatten_tree(nodes, out, parent_opacity=1.0):
     for node in reversed(nodes):
         if node.get('_isBoundsRect') or node.get('_isDoubledText'):
             continue
+        # Skip invisible nodes
+        if node.get('visible') == False:
+            continue
         opacity = parent_opacity * (node.get('opacity', 100) / 100)
         if node.get('children'):
             _flatten_tree(node['children'], out, opacity)
@@ -115,6 +121,9 @@ def _flatten_tree(nodes, out, parent_opacity=1.0):
 
 
 def _flatten_compound(node, out, opacity):
+    # Skip invisible compound paths
+    if node.get('visible') == False:
+        return
     paths = node.get('paths', [])
     if not paths:
         return
