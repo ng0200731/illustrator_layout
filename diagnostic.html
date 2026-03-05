@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>JSON Coordinate Diagnostic</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border: 1px solid #000;
+        }
+        h1 {
+            margin: 0 0 20px 0;
+        }
+        #drop-zone {
+            border: 2px dashed #000;
+            padding: 40px;
+            text-align: center;
+            margin-bottom: 20px;
+            background: #fafafa;
+        }
+        #drop-zone.drag-over {
+            background: #e0e0e0;
+        }
+        #output {
+            white-space: pre-wrap;
+            font-size: 12px;
+            line-height: 1.4;
+            max-height: 600px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background: #fafafa;
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #f0f0f0;
+            border-left: 3px solid #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>JSON Coordinate Diagnostic Tool</h1>
+        <div id="drop-zone">
+            Drop JSON file here or click to select
+            <input type="file" id="file-input" accept=".json" style="display: none;">
+        </div>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        const PT_TO_MM = 25.4 / 72;
+
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const output = document.getElementById('output');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            const file = e.dataTransfer.files[0];
+            if (file) processFile(file);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) processFile(file);
+        });
+
+        function processFile(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    analyzeJSON(data);
+                } catch (err) {
+                    output.textContent = 'Error parsing JSON: ' + err.message;
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function analyzeJSON(data) {
+            let report = '';
+
+            // Metadata
+            report += '=== METADATA ===\n';
+            report += `Document: ${data.metadata.name}\n`;
+            report += `Width: ${data.metadata.width} pt\n`;
+            report += `Height: ${data.metadata.height} pt\n`;
+            report += `Color Space: ${data.metadata.colorSpace}\n`;
+            report += `Units: ${data.metadata.units}\n\n`;
+
+            // Panels
+            if (data.metadata.panels && data.metadata.panels.length > 0) {
+                report += '=== PANELS (Overlays) ===\n';
+                data.metadata.panels.forEach((panel, i) => {
+                    report += `Panel ${i + 1}:\n`;
+                    report += `  x: ${panel.x} pt\n`;
+                    report += `  y: ${panel.y} pt\n`;
+                    report += `  width: ${panel.width} pt\n`;
+                    report += `  height: ${panel.height} pt\n`;
+                    report += `  (converted to mm: x=${panel.x * PT_TO_MM}, y=${panel.y * PT_TO_MM})\n\n`;
+                });
+            }
+
+            // Find paths
+            const paths = [];
+            findPaths(data.layers, paths);
+
+            report += `=== PATHS (Layers) ===\n`;
+            report += `Total paths found: ${paths.length}\n\n`;
+
+            // Show first 10 paths with fills
+            const pathsWithFills = paths.filter(p => p.fill && p.fill.type !== 'none');
+            report += `Paths with fills: ${pathsWithFills.length}\n\n`;
+
+            pathsWithFills.slice(0, 10).forEach((path, i) => {
+                report += `Path ${i + 1}: "${path.name}"\n`;
+                report += `  Visible: ${path.visible}\n`;
+                report += `  Fill: ${JSON.stringify(path.fill)}\n`;
+                if (path.bounds) {
+                    report += `  Bounds (pt): x=${path.bounds.x}, y=${path.bounds.y}, w=${path.bounds.width}, h=${path.bounds.height}\n`;
+                    report += `  Bounds (mm): x=${path.bounds.x * PT_TO_MM}, y=${path.bounds.y * PT_TO_MM}, w=${path.bounds.width * PT_TO_MM}, h=${path.bounds.height * PT_TO_MM}\n`;
+                }
+                if (path.pathData && path.pathData.length > 0) {
+                    const first = path.pathData[0];
+                    report += `  First anchor (pt): x=${first.x}, y=${first.y}\n`;
+                    report += `  First anchor (mm): x=${first.x * PT_TO_MM}, y=${first.y * PT_TO_MM}\n`;
+                }
+                report += '\n';
+            });
+
+            // Analysis
+            report += '=== ANALYSIS ===\n';
+            report += `PT_TO_MM constant: ${PT_TO_MM}\n\n`;
+
+            if (pathsWithFills.length > 0 && data.metadata.panels && data.metadata.panels.length > 0) {
+                const firstPath = pathsWithFills[0];
+                const firstPanel = data.metadata.panels[0];
+
+                report += 'Coordinate comparison:\n';
+                report += `  Panel x (raw): ${firstPanel.x} pt\n`;
+                report += `  Path x (raw): ${firstPath.bounds.x} pt\n`;
+                report += `  Difference: ${Math.abs(firstPanel.x - firstPath.bounds.x)} pt\n\n`;
+
+                report += `  Panel x (with PT_TO_MM): ${firstPanel.x * PT_TO_MM} mm\n`;
+                report += `  Path x (with PT_TO_MM): ${firstPath.bounds.x * PT_TO_MM} mm\n`;
+                report += `  Difference: ${Math.abs(firstPanel.x * PT_TO_MM - firstPath.bounds.x * PT_TO_MM)} mm\n\n`;
+            }
+
+            output.textContent = report;
+        }
+
+        function findPaths(obj, results) {
+            if (!obj) return;
+
+            if (Array.isArray(obj)) {
+                obj.forEach(item => findPaths(item, results));
+            } else if (typeof obj === 'object') {
+                if (obj.type === 'path') {
+                    results.push(obj);
+                }
+                if (obj.children) {
+                    findPaths(obj.children, results);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

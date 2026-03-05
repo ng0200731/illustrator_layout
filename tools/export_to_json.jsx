@@ -13,7 +13,22 @@
     var abIdx = doc.artboards.getActiveArtboardIndex();
     var abRect = doc.artboards[abIdx].artboardRect; // [left, top, right, bottom]
     var artboardTop = abRect[1];
+    var artboardBottom = abRect[3];
     var artboardLeft = abRect[0];
+
+    // Coordinate conversion constant (points to millimeters)
+    var PT_TO_MM = 25.4 / 72;
+
+    // DIAGNOSTIC: Log artboard coordinates
+    var diagnosticLog = "=== ARTBOARD INFO ===\n";
+    diagnosticLog += "artboardRect: [" + abRect[0] + ", " + abRect[1] + ", " + abRect[2] + ", " + abRect[3] + "]\n";
+    diagnosticLog += "artboardLeft: " + artboardLeft + "\n";
+    diagnosticLog += "artboardTop: " + artboardTop + "\n";
+    diagnosticLog += "artboardBottom: " + artboardBottom + "\n";
+    diagnosticLog += "artboardRight: " + abRect[2] + "\n";
+    diagnosticLog += "width: " + (abRect[2] - abRect[0]) + "\n";
+    diagnosticLog += "height: " + (abRect[1] - abRect[3]) + "\n";
+    diagnosticLog += "PT_TO_MM: " + PT_TO_MM + "\n\n";
 
     // Detect panels from compound paths (read-only)
     var detectedPanels = [];
@@ -47,7 +62,15 @@
     file.write(jsonStringify(result, 0));
     file.close();
 
-    alert("Exported to:\n" + savePath);
+    // Save diagnostic log
+    var logPath = doc.fullName.toString().replace(/\.[^.]+$/, "") + "_diagnostic.txt";
+    var logFile = new File(logPath);
+    logFile.encoding = "UTF-8";
+    logFile.open("w");
+    logFile.write(diagnosticLog);
+    logFile.close();
+
+    alert("Exported to:\n" + savePath + "\n\nDiagnostic log:\n" + logPath);
 
     // ─── Metadata ───
 
@@ -381,6 +404,17 @@
             });
         }
         var gb = path.geometricBounds;
+
+        // DIAGNOSTIC: Log path coordinates
+        diagnosticLog += "PATH: " + (path.name || "unnamed") + "\n";
+        diagnosticLog += "  geometricBounds (raw): [" + gb[0] + ", " + gb[1] + ", " + gb[2] + ", " + gb[3] + "]\n";
+        diagnosticLog += "  converted bounds (pt): x=" + (gb[0] - artboardLeft) + ", y=" + (artboardTop - gb[1]) + ", w=" + (gb[2] - gb[0]) + ", h=" + (gb[1] - gb[3]) + "\n";
+        if (anchors.length > 0) {
+            diagnosticLog += "  first anchor (raw): [" + path.pathPoints[0].anchor[0] + ", " + path.pathPoints[0].anchor[1] + "]\n";
+            diagnosticLog += "  first anchor (converted): x=" + anchors[0].x + ", y=" + anchors[0].y + "\n";
+        }
+        diagnosticLog += "\n";
+
         return {
             type: "path",
             name: path.name || "",

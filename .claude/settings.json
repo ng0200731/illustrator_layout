@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node -c \"d:\\\\project\\\\illustrator-layout\\\\static\\\\js\\\\json_manager.js\")"
+      "Bash(node -c \"d:\\\\project\\\\illustrator-layout\\\\static\\\\js\\\\json_manager.js\")",
+      "Bash(head -c 5000 \"d:\\\\project\\\\illustrator-layout\\\\.tmp\\\\export \\(8\\) [Recovered]-remove-blank_with-plate.json\")",
+      "Bash(python -c \"import json; data = json.load\\(open\\(r''d:\\\\project\\\\illustrator-layout\\\\.tmp\\\\export \\(8\\) [Recovered]-remove-blank_with-plate.json''\\)\\); print\\(''Total layers:'', len\\(data.get\\(''layers'', []\\)\\)\\); print\\(''Document dimensions:'', data.get\\(''metadata'', {}\\).get\\(''width''\\), ''x'', data.get\\(''metadata'', {}\\).get\\(''height''\\)\\)\")"
     ]
   }
 }

@@ -3916,10 +3916,36 @@ function jRenderOverlayList() {
                         ugLabel.style.color = ugInfo.color;
                     }
 
+                    // Add move arrows for group
+                    var ugMoveArrows = document.createElement('span');
+                    ugMoveArrows.style.display = 'inline-flex';
+                    ugMoveArrows.style.gap = '2px';
+                    ugMoveArrows.style.marginLeft = '4px';
+                    var anyLocked = ugMembers.some(function(m) { return jState.overlays[m.index].locked === true; });
+                    if (anyLocked) {
+                        ugMoveArrows.style.opacity = '0.5';
+                    }
+                    ['←', '→', '↑', '↓'].forEach(function(arrow) {
+                        var dirMap = { '←': 'left', '→': 'right', '↑': 'up', '↓': 'down' };
+                        var btn = document.createElement('button');
+                        btn.className = 'icon-btn';
+                        btn.textContent = arrow;
+                        btn.title = 'Move group ' + dirMap[arrow];
+                        btn.disabled = anyLocked;
+                        (function(members, dir) {
+                            btn.addEventListener('click', function(e) {
+                                e.stopPropagation();
+                                jMoveOverlayGroup(members, dir);
+                            });
+                        })(ugMembers, dirMap[arrow]);
+                        ugMoveArrows.appendChild(btn);
+                    });
+
                     ugHeader.appendChild(ugToggle);
                     ugHeader.appendChild(ugEyeBtn);
                     ugHeader.appendChild(ugLockBtn);
                     ugHeader.appendChild(ugLabel);
+                    ugHeader.appendChild(ugMoveArrows);
                     (function(gid) {
                         ugHeader.addEventListener('click', function() {
                             var currentState = jState.overlayExpanded[gid];
@@ -4048,12 +4074,34 @@ function jRenderOverlayListItem(parent, ov, idx, paddingLeft) {
         });
     })(idx);
 
+    var moveArrows = document.createElement('span');
+    moveArrows.style.display = 'inline-flex';
+    moveArrows.style.gap = '2px';
+    moveArrows.style.marginLeft = '4px';
+    if (ov.locked) {
+        moveArrows.style.opacity = '0.5';
+    }
+    ['←', '→', '↑', '↓'].forEach(function(arrow) {
+        var dirMap = { '←': 'left', '→': 'right', '↑': 'up', '↓': 'down' };
+        var btn = document.createElement('button');
+        btn.className = 'icon-btn';
+        btn.textContent = arrow;
+        btn.title = 'Move ' + dirMap[arrow];
+        btn.disabled = ov.locked;
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            jMoveOverlayInBounds(idx, dirMap[arrow]);
+        });
+        moveArrows.appendChild(btn);
+    });
+
     item.appendChild(eyeBtn);
     item.appendChild(lockBtn);
     item.appendChild(varBtn);
     item.appendChild(itemLabel);
     item.appendChild(rotCW);
     item.appendChild(rotCCW);
+    item.appendChild(moveArrows);
     (function(index) {
         item.addEventListener('click', function(e) {
             // Multi-select support with Ctrl+Click
@@ -4221,6 +4269,75 @@ function jDeleteSelected() {
     jRenderCanvas();
     jRenderOverlayList();
     jUpdateActionButtons();
+}
+
+function jMoveOverlayInBounds(idx, direction) {
+    if (!jState || idx < 0 || idx >= jState.overlays.length) return;
+    var ov = jState.overlays[idx];
+    if (ov.locked) return;
+
+    jCaptureState();
+
+    var step = 1; // 1mm
+    var nx = ov.x, ny = ov.y;
+    if (direction === 'left') nx -= step;
+    else if (direction === 'right') nx += step;
+    else if (direction === 'up') ny -= step;
+    else if (direction === 'down') ny += step;
+
+    // Apply constraints if overlay is within a bounds rect
+    var constraint = null;
+    if (ov._boundsRectIdx >= 0 && jState.boundsRects) {
+        constraint = jState.boundsRects[ov._boundsRectIdx];
+    }
+    if (constraint) {
+        nx = Math.max(constraint.x, Math.min(constraint.x + constraint.w - ov.w, nx));
+        ny = Math.max(constraint.y, Math.min(constraint.y + constraint.h - ov.h, ny));
+    }
+
+    ov.x = nx;
+    ov.y = ny;
+
+    jRenderCanvas();
+    jRenderOverlayList();
+}
+
+function jMoveOverlayGroup(members, direction) {
+    if (!jState || !members || members.length === 0) return;
+
+    // Check if any member is locked
+    var anyLocked = members.some(function(m) { return jState.overlays[m.index].locked === true; });
+    if (anyLocked) return;
+
+    jCaptureState();
+
+    var step = 1; // 1mm
+    for (var i = 0; i < members.length; i++) {
+        var ov = jState.overlays[members[i].index];
+        if (ov.locked) continue;
+
+        var nx = ov.x, ny = ov.y;
+        if (direction === 'left') nx -= step;
+        else if (direction === 'right') nx += step;
+        else if (direction === 'up') ny -= step;
+        else if (direction === 'down') ny += step;
+
+        // Apply constraints if overlay is within a bounds rect
+        var constraint = null;
+        if (ov._boundsRectIdx >= 0 && jState.boundsRects) {
+            constraint = jState.boundsRects[ov._boundsRectIdx];
+        }
+        if (constraint) {
+            nx = Math.max(constraint.x, Math.min(constraint.x + constraint.w - ov.w, nx));
+            ny = Math.max(constraint.y, Math.min(constraint.y + constraint.h - ov.h, ny));
+        }
+
+        ov.x = nx;
+        ov.y = ny;
+    }
+
+    jRenderCanvas();
+    jRenderOverlayList();
 }
 
 function rotateSelectedOverlay(deg) {
