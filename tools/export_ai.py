@@ -29,6 +29,9 @@ def export_ai(data, outlined=False):
     # Create PDF canvas (AI can open PDFs)
     c = canvas.Canvas(filepath, pagesize=(page_w, page_h))
 
+    # Set high quality rendering
+    c._doc.setCompression(1)  # Enable compression but maintain quality
+
     _draw_page(c, data, outlined, page_w, page_h)
 
     _save_with_fonts(c, outlined)
@@ -46,7 +49,8 @@ def _draw_page(c, data, outlined, page_w, page_h):
         visible_paths = []
         hidden_paths = []
         layer_text = []  # Text from document tree
-        overlays = []    # User-added overlays (textregion, imageregion, qrcoderegion, barcoderegion)
+        manual_overlays = []  # User-created overlays (via "+") - go to bottom
+        auto_overlays = []    # Auto-created overlays from JSON - go to top
 
         for comp in components:
             comp_type = comp.get('type')
@@ -61,14 +65,31 @@ def _draw_page(c, data, outlined, page_w, page_h):
                 # Text from document tree (layer content)
                 layer_text.append(comp)
             elif comp_type in ('textregion', 'imageregion', 'qrcoderegion', 'barcoderegion'):
-                # User-added overlays
-                overlays.append(comp)
+                # Separate overlays by origin
+                if comp.get('autoFromText', False):
+                    auto_overlays.append(comp)  # Auto-created from JSON - top
+                else:
+                    manual_overlays.append(comp)  # Manually created via "+" - bottom
 
         # Debug: Print counts
-        print(f"DEBUG: hidden_paths={len(hidden_paths)}, visible_paths={len(visible_paths)}, layer_text={len(layer_text)}, overlays={len(overlays)}")
+        print(f"DEBUG: hidden_paths={len(hidden_paths)}, visible_paths={len(visible_paths)}, layer_text={len(layer_text)}, manual_overlays={len(manual_overlays)}, auto_overlays={len(auto_overlays)}")
 
         # Render order (bottom to top):
-        # 1. Hidden paths (bottom)
+        # 1. Manual overlays (lowest Z-index - created via "+")
+        for comp in manual_overlays:
+            _apply_rotation(c, comp, bounds_rects, page_h)
+            comp_type = comp.get('type')
+            if comp_type in ('qrcoderegion', 'barcoderegion'):
+                _draw_barcode_or_qr(c, comp, page_h)
+            elif comp_type == 'textregion':
+                if outlined:
+                    _draw_text_outlined(c, comp, page_h)
+                else:
+                    _draw_text(c, comp, page_h)
+            # imageregion would go here if implemented
+            _restore_rotation(c, comp, bounds_rects)
+
+        # 2. Hidden paths
         for comp in hidden_paths:
             _apply_rotation(c, comp, bounds_rects, page_h)
             _draw_pdfpath(c, comp, page_h)
@@ -89,13 +110,13 @@ def _draw_page(c, data, outlined, page_w, page_h):
         else:
             print(f"DEBUG: Skipping red line - hidden={len(hidden_paths)}, visible={len(visible_paths)}")
 
-        # 2. Visible paths (middle-bottom)
+        # 3. Visible paths (middle layer - document tree)
         for comp in visible_paths:
             _apply_rotation(c, comp, bounds_rects, page_h)
             _draw_pdfpath(c, comp, page_h)
             _restore_rotation(c, comp, bounds_rects)
 
-        # 3. Layer text (middle)
+        # 4. Layer text (middle-top layer)
         for comp in layer_text:
             _apply_rotation(c, comp, bounds_rects, page_h)
             if outlined:
@@ -104,8 +125,8 @@ def _draw_page(c, data, outlined, page_w, page_h):
                 _draw_text(c, comp, page_h)
             _restore_rotation(c, comp, bounds_rects)
 
-        # 4. Overlays (top - rendered last so they appear on top)
-        for comp in overlays:
+        # 5. Auto overlays (highest Z-index - auto-created from JSON)
+        for comp in auto_overlays:
             _apply_rotation(c, comp, bounds_rects, page_h)
             comp_type = comp.get('type')
             if comp_type in ('qrcoderegion', 'barcoderegion'):
@@ -330,6 +351,10 @@ def _draw_pdfpath(c, comp, page_h):
     lw = path_data.get('lw', 0.5)
     if not ops:
         return
+
+    # Set line cap and join for smooth rendering
+    c.setLineCap(1)  # Round cap
+    c.setLineJoin(1)  # Round join
 
     # Create path
     p = c.beginPath()

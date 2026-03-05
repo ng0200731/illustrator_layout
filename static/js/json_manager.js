@@ -5695,7 +5695,8 @@ function jExportFile(type, outlined) {
             barcodeFormat: ov.barcodeFormat || 'code128',
             rotation: ov._rotation || 0,
             boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1,
-            isVariable: ov.isVariable || false
+            isVariable: ov.isVariable || false,
+            autoFromText: ov._autoFromText || false
         });
     }
 
