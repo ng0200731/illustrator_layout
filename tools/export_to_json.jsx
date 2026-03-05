@@ -487,6 +487,15 @@
             mat = { a: m.mValueA, b: m.mValueB, c: m.mValueC, d: m.mValueD, tx: m.mValueTX - artboardLeft, ty: artboardTop - m.mValueTY };
         } catch(e) {}
 
+        // Capture text position (baseline anchor point)
+        var pos = null;
+        try {
+            var p = tf.position;
+            if (p && p.length >= 2) {
+                pos = { x: p[0] - artboardLeft, y: artboardTop - p[1] };
+            }
+        } catch(e) {}
+
         // Get text content using the safest method
         try {
             textContent = tf.contents || "";
@@ -544,6 +553,7 @@
             opacity: opacity,
             kind: kind,
             bounds: { x: gb[0] - artboardLeft, y: artboardTop - gb[1], width: gb[2] - gb[0], height: gb[1] - gb[3] },
+            position: pos,
             matrix: mat,
             content: textContent,
             paragraphs: [{

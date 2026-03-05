@@ -395,14 +395,37 @@ def _draw_text(c, comp, page_h):
 
     # Calculate vertical start based on alignV
     total_text_h = len(lines) * line_height
+
+    # Get actual font metrics for accurate baseline calculation
     comp_y = comp.get('y', 0) * mm
+
+    # Try to get actual font ascent from font file
+    try:
+        sys.path.insert(0, os.path.dirname(__file__))
+        from fonttools_outline import _get_font_path
+        from fontTools.ttLib import TTFont
+
+        font_path = _get_font_path(font_family)
+        if font_path and os.path.exists(font_path):
+            font = TTFont(font_path)
+            units_per_em = font['head'].unitsPerEm
+            ascent = font['hhea'].ascent
+            # Calculate baseline offset from top of bounds using actual font metrics
+            baseline_offset_mm = (ascent / units_per_em) * font_size * 0.3528
+            font.close()
+        else:
+            # Fallback to approximation if font not found
+            baseline_offset_mm = font_size * 0.8
+    except:
+        # Fallback to approximation if fonttools fails
+        baseline_offset_mm = font_size * 0.8
 
     if align_v == 'bottom':
         first_line_y = page_h - comp_y - h + (total_text_h - line_height) + (font_size * 0.2)
     elif align_v == 'center':
         first_line_y = page_h - comp_y - (h / 2) - (total_text_h / 2) + (font_size * 0.2) + (total_text_h - line_height)
     else:  # top
-        first_line_y = page_h - comp_y - (font_size * 0.8)
+        first_line_y = page_h - comp_y - baseline_offset_mm
 
     # Draw each line
     for i, line in enumerate(lines):
@@ -426,8 +449,14 @@ def _draw_text_outlined(c, comp, page_h):
     if not content:
         return
 
-    x = comp.get('x', 0)
-    y = comp.get('y', 0)
+    # Use position if available (baseline anchor), otherwise fall back to bounds
+    if 'position' in comp and comp.get('position'):
+        x = comp.get('position', {}).get('x', 0)
+        y = comp.get('position', {}).get('y', 0)
+    else:
+        x = comp.get('x', 0)
+        y = comp.get('y', 0)
+
     w = comp.get('width', 0)
     h = comp.get('height', 0)
     font_family = comp.get('fontFamily', 'Helvetica')
@@ -442,13 +471,30 @@ def _draw_text_outlined(c, comp, page_h):
     line_height_mm = font_size * 0.3528 * 1.2 + letter_spacing * 0.3528  # match canvas: fontSizeMm * 1.2 + letterSpacing * PT_TO_MM
     total_text_h = len(lines) * line_height_mm
 
+    # Get actual font metrics for accurate baseline calculation
+    try:
+        font_path = _get_font_path(font_family)
+        if font_path and os.path.exists(font_path):
+            font = TTFont(font_path)
+            units_per_em = font['head'].unitsPerEm
+            ascent = font['hhea'].ascent
+            # Calculate baseline offset from top of bounds using actual font metrics
+            baseline_offset_mm = (ascent / units_per_em) * font_size * 0.3528
+            font.close()
+        else:
+            # Fallback to approximation if font not found
+            baseline_offset_mm = font_size * 0.3528 * 0.8
+    except:
+        # Fallback to approximation if fonttools fails
+        baseline_offset_mm = font_size * 0.3528 * 0.8
+
     # Calculate vertical start for first line baseline
     if align_v == 'bottom':
-        first_baseline_y = y + h - total_text_h + (font_size * 0.3528 * 0.8)
+        first_baseline_y = y + h - total_text_h + baseline_offset_mm
     elif align_v == 'center':
-        first_baseline_y = y + (h - total_text_h) / 2 + (font_size * 0.3528 * 0.8)
+        first_baseline_y = y + (h - total_text_h) / 2 + baseline_offset_mm
     else:  # top
-        first_baseline_y = y + (font_size * 0.3528 * 0.8)
+        first_baseline_y = y + baseline_offset_mm
 
     try:
         p = c.beginPath()
