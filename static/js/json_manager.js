@@ -1898,10 +1898,7 @@ function jRenderCanvas() {
     c.rect(0, 0, jState.docWidth, jState.docHeight);
     c.clip();
 
-    // Render overlays first (so layers appear on top)
-    jRenderOverlays(c);
-
-    // Render document tree with per-panel rotation
+    // Render document tree first (background content)
     var brs = jState.boundsRects;
     if (brs && brs.length > 0) {
         // Collect top-level nodes (preserving group hierarchy for clipping)
@@ -1988,6 +1985,9 @@ function jRenderCanvas() {
         // No bounds rects — render normally
         jRenderNodes(c, jState.documentTree, 1.0);
     }
+
+    // Render overlays last (so they appear on top of document tree)
+    jRenderOverlays(c);
 
     c.restore();
 

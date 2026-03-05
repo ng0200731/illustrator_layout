@@ -42,10 +42,11 @@ def _draw_page(c, data, outlined, page_w, page_h):
     separate_invisible = data.get('separateInvisible', False)
 
     if separate_invisible:
-        # Separate visible and hidden paths
+        # Separate components by type for proper z-order
         visible_paths = []
         hidden_paths = []
-        text_components = []
+        layer_text = []  # Text from document tree
+        overlays = []    # User-added overlays (textregion, imageregion, qrcoderegion, barcoderegion)
 
         for comp in components:
             comp_type = comp.get('type')
@@ -56,15 +57,18 @@ def _draw_page(c, data, outlined, page_w, page_h):
                     visible_paths.append(comp)
                 else:
                     hidden_paths.append(comp)
-            elif comp_type in ('text', 'textregion'):
-                text_components.append(comp)
-            elif comp_type in ('barcoderegion', 'qrcoderegion'):
-                text_components.append(comp)
+            elif comp_type == 'text':
+                # Text from document tree (layer content)
+                layer_text.append(comp)
+            elif comp_type in ('textregion', 'imageregion', 'qrcoderegion', 'barcoderegion'):
+                # User-added overlays
+                overlays.append(comp)
 
         # Debug: Print counts
-        print(f"DEBUG: hidden_paths={len(hidden_paths)}, visible_paths={len(visible_paths)}")
+        print(f"DEBUG: hidden_paths={len(hidden_paths)}, visible_paths={len(visible_paths)}, layer_text={len(layer_text)}, overlays={len(overlays)}")
 
-        # Draw hidden paths first (bottom of Layers panel in Illustrator)
+        # Render order (bottom to top):
+        # 1. Hidden paths (bottom)
         for comp in hidden_paths:
             _apply_rotation(c, comp, bounds_rects, page_h)
             _draw_pdfpath(c, comp, page_h)
@@ -85,22 +89,33 @@ def _draw_page(c, data, outlined, page_w, page_h):
         else:
             print(f"DEBUG: Skipping red line - hidden={len(hidden_paths)}, visible={len(visible_paths)}")
 
-        # Draw visible paths (top of Layers panel in Illustrator)
+        # 2. Visible paths (middle-bottom)
         for comp in visible_paths:
             _apply_rotation(c, comp, bounds_rects, page_h)
             _draw_pdfpath(c, comp, page_h)
             _restore_rotation(c, comp, bounds_rects)
 
-        # Draw text/barcode/qr components
-        for comp in text_components:
+        # 3. Layer text (middle)
+        for comp in layer_text:
             _apply_rotation(c, comp, bounds_rects, page_h)
-            comp_type = comp.get('type')
-            if comp_type in ('barcoderegion', 'qrcoderegion'):
-                _draw_barcode_or_qr(c, comp, page_h)
-            elif outlined:
+            if outlined:
                 _draw_text_outlined(c, comp, page_h)
             else:
                 _draw_text(c, comp, page_h)
+            _restore_rotation(c, comp, bounds_rects)
+
+        # 4. Overlays (top - rendered last so they appear on top)
+        for comp in overlays:
+            _apply_rotation(c, comp, bounds_rects, page_h)
+            comp_type = comp.get('type')
+            if comp_type in ('qrcoderegion', 'barcoderegion'):
+                _draw_barcode_or_qr(c, comp, page_h)
+            elif comp_type == 'textregion':
+                if outlined:
+                    _draw_text_outlined(c, comp, page_h)
+                else:
+                    _draw_text(c, comp, page_h)
+            # imageregion would go here if implemented
             _restore_rotation(c, comp, bounds_rects)
     else:
         # Normal export: draw all components (including invisible ones)
