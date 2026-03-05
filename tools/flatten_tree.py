@@ -81,6 +81,7 @@ def flatten_layout_for_export(layout_data):
             'barcodeData': ov.get('barcodeData', ''),
             'barcodeFormat': ov.get('barcodeFormat', 'code128'),
             'isVariable': ov.get('isVariable', False),
+            'autoFromText': ov.get('_autoFromText', ov.get('autoFromText', False)),
             'rotation': ov.get('_rotation', ov.get('rotation', 0)),
             'boundsRectIdx': ov.get('_boundsRectIdx', ov.get('boundsRectIdx', -1)),
         })
