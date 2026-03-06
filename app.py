@@ -51,6 +51,21 @@ def export_ai():
         data = request.get_json()
         outlined = data.get('outlined', False)
 
+        # DEBUG: Log text components font info
+        print("\n=== EXPORT AI DEBUG ===")
+        print(f"Outlined: {outlined}")
+        for i, comp in enumerate(data.get('components', [])):
+            if comp.get('type') in ('text', 'textregion'):
+                preview = (comp.get('content', '')[:50]).encode('ascii', errors='backslashreplace').decode('ascii')
+                print(f"\nComponent {i} ({comp.get('type')}):")
+                print(f"  content: {preview}")
+                print(f"  fontFamily: {comp.get('fontFamily')}")
+                print(f"  fontStyle: {comp.get('fontStyle')}")
+                print(f"  fontId: {comp.get('fontId')}")
+                print(f"  aiFontName: {comp.get('aiFontName')}")
+                print(f"  aiFontStyle: {comp.get('aiFontStyle')}")
+        print("======================\n")
+
         # Import export tool (reload to pick up changes)
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tools'))
         import importlib

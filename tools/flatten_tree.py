@@ -67,6 +67,9 @@ def flatten_layout_for_export(layout_data):
             'content': ov.get('content', ''),
             'fontFamily': ov.get('fontFamily', ''),
             'fontId': ov.get('fontId'),
+            'fontStyle': ov.get('fontStyle', ov.get('aiFontStyle', '')),
+            'aiFontName': ov.get('aiFontName', ov.get('fontFamily', '')),
+            'aiFontStyle': ov.get('aiFontStyle', ov.get('fontStyle', '')),
             'fontSize': ov.get('fontSize', 12),
             'bold': ov.get('bold', False),
             'italic': ov.get('italic', False),
@@ -152,9 +155,24 @@ def _flatten_compound(node, out, opacity):
 
 
 def _path_to_component(node, opacity, parent=None):
-    pts = node.get('pathData', [])
+    raw_pts = node.get('pathData', [])
+    if not raw_pts:
+        return None
+
+    # Some Illustrator exports duplicate the first anchor as the last anchor.
+    # Remove that trailing duplicate to avoid extra seam artifacts on closed curves.
+    had_duplicate_terminal_point = False
+    pts = raw_pts
+    if len(raw_pts) > 1:
+        first_raw = raw_pts[0]
+        last_raw = raw_pts[-1]
+        if first_raw['x'] == last_raw['x'] and first_raw['y'] == last_raw['y']:
+            pts = raw_pts[:-1]
+            had_duplicate_terminal_point = True
+
     if not pts:
         return None
+
     ops = [{'o': 'M', 'a': [pts[0]['x'] * PT_TO_MM, pts[0]['y'] * PT_TO_MM]}]
     for i in range(1, len(pts)):
         prev = pts[i - 1]
@@ -171,11 +189,9 @@ def _path_to_component(node, opacity, parent=None):
             ]})
         else:
             ops.append({'o': 'L', 'a': [pt['x'] * PT_TO_MM, pt['y'] * PT_TO_MM]})
-    # Close path if flagged closed, or if first/last points coincide (common in AI exports)
-    is_closed = node.get('closed')
-    if not is_closed and len(pts) >= 3:
-        if pts[0]['x'] == pts[-1]['x'] and pts[0]['y'] == pts[-1]['y']:
-            is_closed = True
+
+    # Close path if flagged closed, or if first/last points coincided in source data
+    is_closed = bool(node.get('closed')) or had_duplicate_terminal_point
     if is_closed and len(pts) > 1:
         # Draw the closing bezier curve from last point back to first (matches canvas rendering)
         last = pts[-1]
@@ -212,7 +228,8 @@ def _path_to_component(node, opacity, parent=None):
 def _text_to_component(node, opacity):
     b = node.get('bounds', {'x': 0, 'y': 0, 'width': 0, 'height': 0})
     content = ''
-    font_family = 'Arial'
+    font_family = ''
+    font_style = ''
     font_size = 12
     color = '#000000'
     alignment = 'left'
@@ -225,13 +242,19 @@ def _text_to_component(node, opacity):
                 alignment = para['alignment']
             for run in para.get('runs', []):
                 texts.append(run.get('text', ''))
-                if run.get('fontFamily'):
+                if not font_family and run.get('fontFamily'):
                     font_family = run['fontFamily']
+                if not font_style and run.get('fontStyle'):
+                    font_style = run['fontStyle']
                 if run.get('fontSize'):
                     font_size = run['fontSize']
                 if run.get('color'):
                     color = _color_to_css(run['color']) or '#000000'
         content = ''.join(texts)
+
+    style_lower = (font_style or '').lower()
+    bold = 'bold' in style_lower
+    italic = 'italic' in style_lower
 
     return {
         'type': 'textregion',
@@ -239,11 +262,14 @@ def _text_to_component(node, opacity):
         'width': b['width'] * PT_TO_MM, 'height': b['height'] * PT_TO_MM,
         'content': content,
         'fontFamily': font_family,
+        'fontStyle': font_style,
+        'aiFontName': font_family,
+        'aiFontStyle': font_style,
         'fontSize': font_size,
         'color': color,
         'alignH': alignment,
         'alignV': 'top',
-        'bold': False, 'italic': False,
+        'bold': bold, 'italic': italic,
         'letterSpacing': 0,
         'visible': node.get('visible', True),
     }

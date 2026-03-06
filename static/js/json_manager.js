@@ -229,13 +229,15 @@ function jsonInitWithTabPane(tabPane) {
     if (ctFontSelect) {
         ctFontSelect.addEventListener('change', function() {
             var opt = ctFontSelect.options[ctFontSelect.selectedIndex];
+            var selectedFontName = opt ? (opt.dataset.fontName || '') : '';
             if (ctFontSelect.value && opt && opt.dataset.fontName) {
                 jLoadFontForCanvas(parseInt(ctFontSelect.value), opt.dataset.fontName);
             }
             if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
                 var comp = jState.overlays[jState.editingComponentIdx];
-                comp.fontFamily = opt ? (opt.dataset.fontName || '') : '';
+                comp.fontFamily = selectedFontName;
                 comp.fontId = ctFontSelect.value ? parseInt(ctFontSelect.value) : null;
+                comp.aiFontName = selectedFontName;
             }
             // Live update text node font
             if (jState && jState._editingTextNode) {
@@ -255,6 +257,12 @@ function jsonInitWithTabPane(tabPane) {
                     var comp = jState.overlays[jState.editingComponentIdx];
                     if (id === 'ct-bold-btn') comp.bold = btn.classList.contains('active');
                     else if (id === 'ct-italic-btn') comp.italic = btn.classList.contains('active');
+                    var compFontStyle = '';
+                    if (comp.bold) compFontStyle += 'Bold';
+                    if (comp.italic) compFontStyle += (compFontStyle ? ' ' : '') + 'Italic';
+                    if (!compFontStyle) compFontStyle = 'Regular';
+                    comp.fontStyle = compFontStyle;
+                    comp.aiFontStyle = compFontStyle;
                 }
                 if (jState && jState._editingTextNode) {
                     jUpdateTextNodeFromForm(jState._editingTextNode);
@@ -651,7 +659,7 @@ function jAutoCreateTextOverlays(nodes) {
             h: b.height * PT_TO_MM + paddingTop + paddingBottom
         };
         var boundsRect = jFindContainingBoundsRect(region);
-        var content = '', fontFamily = 'Arial', fontStyle = '';
+        var content = '', fontFamily = '', fontStyle = '';
         var fontSize = 12, color = '#000000', alignment = 'left', tracking = 0;
         for (var pi = 0; pi < node.paragraphs.length; pi++) {
             var para = node.paragraphs[pi];
@@ -660,8 +668,8 @@ function jAutoCreateTextOverlays(nodes) {
             for (var ri = 0; ri < runs.length; ri++) {
                 var run = runs[ri];
                 content += run.text || '';
-                if (run.fontFamily) fontFamily = run.fontFamily;
-                if (run.fontStyle) fontStyle = run.fontStyle;
+                if (!fontFamily && run.fontFamily) fontFamily = run.fontFamily;
+                if (!fontStyle && run.fontStyle) fontStyle = run.fontStyle;
                 if (run.fontSize) fontSize = run.fontSize;
                 if (run.tracking) tracking = run.tracking;
                 if (run.color) {
@@ -923,7 +931,7 @@ function jEditTextNode(node) {
 
     // Extract text properties from the node
     var content = '';
-    var fontFamily = 'Arial';
+    var fontFamily = '';
     var fontStyle = '';
     var fontSize = 12;
     var color = '#000000';
@@ -939,8 +947,8 @@ function jEditTextNode(node) {
         for (var ri = 0; ri < runs.length; ri++) {
             var run = runs[ri];
             content += run.text || '';
-            if (run.fontFamily) fontFamily = run.fontFamily;
-            if (run.fontStyle) fontStyle = run.fontStyle;
+            if (!fontFamily && run.fontFamily) fontFamily = run.fontFamily;
+            if (!fontStyle && run.fontStyle) fontStyle = run.fontStyle;
             if (run.fontSize) fontSize = run.fontSize;
             if (run.tracking) tracking = run.tracking;
             if (run.color) {
@@ -1022,9 +1030,20 @@ function jUpdateTextNodeFromForm(node) {
     var alignHBtns = _jel('ct-align-h');
     if (alignHBtns) { var a = alignHBtns.querySelector('.active'); if (a) alignH = a.dataset.val; }
 
-    // Get selected font family from dropdown
+    // Get selected font family from dropdown (preserve existing node font if nothing is selected)
+    var existingFontFamily = '';
+    for (var epi = 0; epi < node.paragraphs.length && !existingFontFamily; epi++) {
+        var existingRuns = node.paragraphs[epi].runs || [];
+        for (var eri = 0; eri < existingRuns.length; eri++) {
+            if (existingRuns[eri].fontFamily) {
+                existingFontFamily = existingRuns[eri].fontFamily;
+                break;
+            }
+        }
+    }
+
     var fontSelect = _jel('ct-font-select');
-    var fontFamily = 'Arial';
+    var fontFamily = existingFontFamily;
     if (fontSelect && fontSelect.options[fontSelect.selectedIndex]) {
         fontFamily = fontSelect.options[fontSelect.selectedIndex].dataset.fontName || fontFamily;
     }
@@ -4659,10 +4678,17 @@ function jCollectTextData(region) {
     var alignV = 'top';
     var alignVBtns = _jel('ct-align-v');
     if (alignVBtns) { var a = alignVBtns.querySelector('.active'); if (a) alignV = a.dataset.val; }
+    var fontStyle = '';
+    if (bold) fontStyle += 'Bold';
+    if (italic) fontStyle += (fontStyle ? ' ' : '') + 'Italic';
+    if (!fontStyle) fontStyle = 'Regular';
     return {
         type: 'textregion',
         x: region.x, y: region.y, w: region.w, h: region.h,
         fontFamily: fontName, fontId: fontId ? parseInt(fontId) : null,
+        fontStyle: fontStyle,
+        aiFontName: fontName,
+        aiFontStyle: fontStyle,
         fontSize: fontSize, bold: bold, italic: italic,
         color: color, letterSpacing: letterSpacing,
         alignH: alignH, alignV: alignV,
@@ -5775,6 +5801,9 @@ function jExportFile(type, outlined) {
             content: ov.content || '',
             fontFamily: ov.fontFamily || '',
             fontId: ov.fontId || null,
+            fontStyle: ov.fontStyle || ov.aiFontStyle || '',
+            aiFontName: ov.aiFontName || ov.fontFamily || '',
+            aiFontStyle: ov.aiFontStyle || ov.fontStyle || '',
             fontSize: ov.fontSize || 12,
             bold: ov.bold || false,
             italic: ov.italic || false,
@@ -5893,7 +5922,21 @@ function jFlattenForExport(nodes, out, parentOpacity) {
 function jPathToExportComponent(node, opacity, parent) {
     // Convert anchor points to ops format for export_ai.py
     var ops = [];
-    var pts = node.pathData || [];
+    var rawPts = node.pathData || [];
+    if (rawPts.length === 0) return null;
+
+    // Some Illustrator exports duplicate the first anchor as the last anchor.
+    // Remove that trailing duplicate to avoid extra seam artifacts on closed curves.
+    var hadDuplicateTerminalPoint = false;
+    var pts = rawPts;
+    if (rawPts.length > 1) {
+        var firstRaw = rawPts[0];
+        var lastRaw = rawPts[rawPts.length - 1];
+        if (firstRaw.x === lastRaw.x && firstRaw.y === lastRaw.y) {
+            pts = rawPts.slice(0, rawPts.length - 1);
+            hadDuplicateTerminalPoint = true;
+        }
+    }
     if (pts.length === 0) return null;
 
     ops.push({ o: 'M', a: [pts[0].x * PT_TO_MM, pts[0].y * PT_TO_MM] });
@@ -5908,11 +5951,8 @@ function jPathToExportComponent(node, opacity, parent) {
             ops.push({ o: 'L', a: [pt.x * PT_TO_MM, pt.y * PT_TO_MM] });
         }
     }
-    // Close path if flagged closed, or if first/last points coincide (common in AI exports)
-    var isClosed = node.closed;
-    if (!isClosed && pts.length >= 3 && pts[0].x === pts[pts.length - 1].x && pts[0].y === pts[pts.length - 1].y) {
-        isClosed = true;
-    }
+    // Close path if flagged closed, or if first/last points coincided in source data
+    var isClosed = !!node.closed || hadDuplicateTerminalPoint;
     if (isClosed && pts.length > 1) {
         // Draw the closing bezier curve from last point back to first (matches canvas rendering)
         var last = pts[pts.length - 1];
@@ -5943,7 +5983,8 @@ function jPathToExportComponent(node, opacity, parent) {
 function jTextToExportComponent(node, opacity) {
     var b = node.bounds || { x: 0, y: 0, width: 0, height: 0 };
     var content = '';
-    var fontFamily = 'Arial';
+    var fontFamily = '';
+    var fontStyle = '';
     var fontSize = 12;
     var color = '#000000';
     var alignment = 'left';
@@ -5956,7 +5997,8 @@ function jTextToExportComponent(node, opacity) {
             var runs = para.runs || [];
             for (var ri = 0; ri < runs.length; ri++) {
                 texts.push(runs[ri].text || '');
-                if (runs[ri].fontFamily) fontFamily = runs[ri].fontFamily;
+                if (!fontFamily && runs[ri].fontFamily) fontFamily = runs[ri].fontFamily;
+                if (!fontStyle && runs[ri].fontStyle) fontStyle = runs[ri].fontStyle;
                 if (runs[ri].fontSize) fontSize = runs[ri].fontSize;
                 if (runs[ri].color) color = jColorToCSS(runs[ri].color) || '#000000';
             }
@@ -5964,17 +6006,24 @@ function jTextToExportComponent(node, opacity) {
         content = texts.join('');
     }
 
+    var styleLower = (fontStyle || '').toLowerCase();
+    var bold = styleLower.indexOf('bold') >= 0;
+    var italic = styleLower.indexOf('italic') >= 0;
+
     return {
         type: 'textregion',
         x: b.x * PT_TO_MM, y: b.y * PT_TO_MM,
         width: b.width * PT_TO_MM, height: b.height * PT_TO_MM,
         content: content,
         fontFamily: fontFamily,
+        fontStyle: fontStyle,
+        aiFontName: fontFamily,
+        aiFontStyle: fontStyle,
         fontSize: fontSize,
         color: color,
         alignH: alignment,
         alignV: 'top',
-        bold: false, italic: false,
+        bold: bold, italic: italic,
         letterSpacing: 0,
         visible: node.visible !== false
     };

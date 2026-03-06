@@ -6,6 +6,7 @@ import sys
 import math
 import subprocess
 import json
+import re
 
 def export_ai(data, outlined=False):
     """
@@ -34,7 +35,7 @@ def export_ai(data, outlined=False):
 
     _draw_page(c, data, outlined, page_w, page_h)
 
-    _save_with_fonts(c, outlined)
+    _save_with_fonts(c, outlined, filepath)
     return filepath
 
 
@@ -160,8 +161,8 @@ def _draw_page(c, data, outlined, page_w, page_h):
     _draw_bounds_rects(c, bounds_rects, page_h)
 
 
-def _save_with_fonts(c, outlined):
-    """Save canvas with full font embedding when not outlined."""
+def _save_with_fonts(c, outlined, filepath):
+    """Save canvas with full font embedding when not outlined, then patch font names."""
     # Embed full fonts (not subsetted) so Illustrator can match local fonts
     # Only for fonts under 2MB to avoid huge file sizes
     if not outlined:
@@ -181,11 +182,62 @@ def _save_with_fonts(c, outlined):
             return _orig_makeSubset(self, subset)
         TTFontFile.makeSubset = _full_makeSubset
         try:
+            # Capture font mapping before save
+            font_mapping = dict(c._doc.fontMapping) if hasattr(c._doc, 'fontMapping') else {}
             c.save()
+            # Post-process: patch font BaseFont names to preserve selected fonts
+            _patch_font_names(filepath, font_mapping)
         finally:
             TTFontFile.makeSubset = _orig_makeSubset
     else:
         c.save()
+
+
+def _patch_font_names(filepath, font_mapping):
+    """
+    Post-process PDF to replace Helvetica BaseFont with selected font names.
+    This ensures Illustrator shows the correct font name (and missing font warning if needed).
+    """
+    try:
+        from pypdf import PdfReader, PdfWriter
+        from pypdf.generic import NameObject
+
+        reader = PdfReader(filepath)
+        writer = PdfWriter()
+
+        # Build reverse mapping: /F1 -> 'MangoNew-Regular', /F2 -> 'Helvetica', etc.
+        internal_to_requested = {}
+        for requested_name, internal_name in font_mapping.items():
+            # internal_name is like '/F1', '/F2'
+            internal_to_requested[internal_name] = requested_name
+
+        for page in reader.pages:
+            if '/Resources' in page and '/Font' in page['/Resources']:
+                fonts = page['/Resources']['/Font']
+                for font_key, font_ref in fonts.items():
+                    font_obj = font_ref.get_object()
+                    # Check if this font has an alias (non-Helvetica requested name)
+                    internal_name = font_obj.get('/Name', font_key)
+                    requested_name = internal_to_requested.get(str(internal_name))
+
+                    if requested_name and requested_name != 'Helvetica':
+                        # Patch BaseFont to preserve selected font name
+                        base_font_name = requested_name.replace(' ', '')
+                        font_obj[NameObject('/BaseFont')] = NameObject('/' + base_font_name)
+                        print(f"Patched {internal_name} BaseFont to /{base_font_name}")
+
+            writer.add_page(page)
+
+        # Write back to same file
+        with open(filepath, 'wb') as f:
+            writer.write(f)
+
+        print(f"Font name patching complete for {filepath}")
+    except Exception as e:
+        print(f"Warning: Could not patch font names: {e}")
+        import traceback
+        traceback.print_exc()
+        # Non-fatal: export still works, just with Helvetica names
 
 
 def export_ai_batch(pages_data, outlined=False):
@@ -211,7 +263,7 @@ def export_ai_batch(pages_data, outlined=False):
         if i < len(pages_data) - 1:
             c.showPage()
 
-    _save_with_fonts(c, outlined)
+    _save_with_fonts(c, outlined, filepath)
     return filepath
 
 def _apply_rotation(c, comp, bounds_rects, page_h):
@@ -359,16 +411,12 @@ def _draw_pdfpath(c, comp, page_h):
     # Create path
     p = c.beginPath()
 
-    sub_path_open = False
     for op in ops:
         o = op.get('o')
         a = op.get('a', [])
 
         if o == 'M' and len(a) >= 2:
-            if sub_path_open:
-                p.close()
             p.moveTo(a[0] * mm, page_h - (a[1] * mm))
-            sub_path_open = True
         elif o == 'L' and len(a) >= 2:
             p.lineTo(a[0] * mm, page_h - (a[1] * mm))
         elif o == 'C' and len(a) >= 6:
@@ -379,10 +427,6 @@ def _draw_pdfpath(c, comp, page_h):
             )
         elif o == 'Z':
             p.close()
-            sub_path_open = False
-
-    if sub_path_open:
-        p.close()
 
     # Set colors
     if fill:
@@ -413,6 +457,7 @@ def _draw_text(c, comp, page_h):
     font_family = comp.get('fontFamily', 'Helvetica')
     font_size = comp.get('fontSize', 12)
     font_id = comp.get('fontId', None)
+    font_style = comp.get('fontStyle') or comp.get('aiFontStyle') or ''
     bold = comp.get('bold', False)
     italic = comp.get('italic', False)
     color = comp.get('color', '#000000')
@@ -421,7 +466,7 @@ def _draw_text(c, comp, page_h):
     align_v = comp.get('alignV', 'top')
 
     # Try to register custom font
-    resolved_font, is_custom = _register_custom_font(c, font_family, font_id)
+    resolved_font, is_custom = _register_custom_font(c, font_family, font_id, font_style)
 
     c.setFont(resolved_font, font_size)
 
@@ -582,7 +627,7 @@ def _draw_text_outlined(c, comp, page_h):
         print(f"Warning: Text outlining failed, using regular text: {e}")
         _draw_text(c, comp, page_h)
 
-def _register_custom_font(c, font_family, font_id=None):
+def _register_custom_font(c, font_family, font_id=None, font_style=''):
     """
     Register custom font with ReportLab if available
     Returns: (font_name, is_custom) tuple
@@ -594,16 +639,64 @@ def _register_custom_font(c, font_family, font_id=None):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
     from models.font import Font
 
+    def _normalize_font_name(name):
+        if not name:
+            return ''
+        return re.sub(r'[\s\-_]+', '', str(name).lower())
+
+    def _find_uploaded_font_by_name(font_name):
+        if not font_name:
+            return None
+
+        # Exact lookup first
+        exact = Font.get_by_name(font_name)
+        if exact:
+            return exact
+
+        # Normalized lookup fallback
+        target = _normalize_font_name(font_name)
+        if not target:
+            return None
+
+        for f in Font.get_all():
+            n = _normalize_font_name(f.get('font_name', ''))
+            if n and n == target:
+                return f
+        return None
+
+    def _build_font_name_candidates(family, style):
+        candidates = []
+        fam = (family or '').strip()
+        sty = (style or '').strip()
+        if fam and sty and sty.lower() != 'regular':
+            candidates.append(f"{fam} {sty}")
+            candidates.append(f"{fam}-{sty}")
+            candidates.append(f"{fam}{sty}")
+        if fam:
+            candidates.append(fam)
+        # Deduplicate while preserving order
+        uniq = []
+        seen = set()
+        for c in candidates:
+            key = _normalize_font_name(c)
+            if key and key not in seen:
+                seen.add(key)
+                uniq.append(c)
+        return uniq
+
     try:
         uploaded_font = None
 
-        # Try by ID first (more reliable)
+        # Try by ID first (most reliable)
         if font_id:
             uploaded_font = Font.get_by_id(int(font_id))
 
-        # Fallback to name lookup
+        # Fallback to robust name lookup (include style variants)
         if not uploaded_font and font_family:
-            uploaded_font = Font.get_by_name(font_family)
+            for candidate in _build_font_name_candidates(font_family, font_style):
+                uploaded_font = _find_uploaded_font_by_name(candidate)
+                if uploaded_font:
+                    break
 
         if uploaded_font:
             file_path = uploaded_font['file_path']
@@ -663,7 +756,20 @@ def _register_custom_font(c, font_family, font_id=None):
     except Exception as e:
         print(f"Warning: Could not check uploaded fonts: {e}")
 
-    # Fall back to standard fonts
+    # Prefer preserving the requested font name so Illustrator can resolve/missing-font prompt
+    if font_family:
+        try:
+            from reportlab.pdfbase.pdfmetrics import Font as RLFont
+            # Register an alias with requested name backed by Helvetica metrics for PDF generation
+            try:
+                pdfmetrics.getFont(font_family)
+            except:
+                pdfmetrics.registerFont(RLFont(font_family, 'Helvetica', 'WinAnsiEncoding'))
+            return (font_family, False)
+        except Exception:
+            pass
+
+    # Final fallback to standard fonts
     font_map = {
         'Arial': 'Helvetica',
         'Times New Roman': 'Times-Roman',
