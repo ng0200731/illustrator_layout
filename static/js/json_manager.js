@@ -1798,6 +1798,7 @@ function jStartOverlayDrag(e, idx) {
             dd.overlay.y = newY;
         }
         jRenderCanvas();
+        jUpdateOverlayActionButtons();
     };
     var onUp = function() {
         document.removeEventListener('mousemove', onMove);
@@ -4365,6 +4366,7 @@ function jUpdateOverlayActionButtons() {
     var groupBtn = _jel('overlay-group-btn');
     var ungroupBtn = _jel('overlay-ungroup-btn');
     var confirmBtn = _jel('overlay-confirm-position-btn');
+    var coordsDisplay = _jel('overlay-group-coords');
 
     if (groupBtn) groupBtn.disabled = selectedCount < 2;
     if (ungroupBtn) ungroupBtn.disabled = selectedCount === 0;
@@ -4389,6 +4391,30 @@ function jUpdateOverlayActionButtons() {
         confirmBtn.disabled = !selectedGroupId || isConfirmed;
         confirmBtn.textContent = isConfirmed ? 'CONFIRMED' : 'CONFIRM';
         confirmBtn.title = isConfirmed ? 'Overlay input shift is complete' : 'Confirm final overlay input position';
+    }
+
+    if (coordsDisplay) {
+        if (selectedGroupId && jState.overlayGroups[selectedGroupId]) {
+            var grp = jState.overlayGroups[selectedGroupId];
+            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (var i = 0; i < jState.overlays.length; i++) {
+                var ov = jState.overlays[i];
+                if (ov.groupId === selectedGroupId) {
+                    if (ov.x < minX) minX = ov.x;
+                    if (ov.y < minY) minY = ov.y;
+                    if (ov.x + ov.w > maxX) maxX = ov.x + ov.w;
+                    if (ov.y + ov.h > maxY) maxY = ov.y + ov.h;
+                }
+            }
+            var currentCenterX = (minX + maxX) / 2;
+            var currentCenterY = (minY + maxY) / 2;
+            var origX = grp.originalCenterX || 0;
+            var origY = grp.originalCenterY || 0;
+            coordsDisplay.textContent = 'Original: X: ' + origX.toFixed(1) + 'mm, Y: ' + origY.toFixed(1) + 'mm | Current: X: ' + currentCenterX.toFixed(1) + 'mm, Y: ' + currentCenterY.toFixed(1) + 'mm';
+            coordsDisplay.style.display = 'block';
+        } else {
+            coordsDisplay.style.display = 'none';
+        }
     }
 }
 
@@ -4449,6 +4475,19 @@ function jGroupSelectedOverlays(groupName) {
     }
 
     var groupId = 'ovg_' + jState.nextOverlayGroupId++;
+
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var i = 0; i < selectedIndices.length; i++) {
+        var idx = parseInt(selectedIndices[i]);
+        var ov = jState.overlays[idx];
+        if (ov.x < minX) minX = ov.x;
+        if (ov.y < minY) minY = ov.y;
+        if (ov.x + ov.w > maxX) maxX = ov.x + ov.w;
+        if (ov.y + ov.h > maxY) maxY = ov.y + ov.h;
+    }
+    var originalCenterX = (minX + maxX) / 2;
+    var originalCenterY = (minY + maxY) / 2;
+
     jState.overlayGroups[groupId] = {
         name: groupName,
         color: jGenerateRandomColor(),
@@ -4457,7 +4496,9 @@ function jGroupSelectedOverlays(groupName) {
         exportOffsetY: 0,
         confirmedExportOffsetX: 0,
         confirmedExportOffsetY: 0,
-        positionConfirmed: false
+        positionConfirmed: false,
+        originalCenterX: originalCenterX,
+        originalCenterY: originalCenterY
     };
 
     for (var i = 0; i < selectedIndices.length; i++) {
@@ -4468,6 +4509,7 @@ function jGroupSelectedOverlays(groupName) {
     jCaptureState();
     jRenderCanvas();
     jRenderOverlayList();
+    jUpdateOverlayActionButtons();
 }
 
 function jUngroupSelectedOverlays() {
