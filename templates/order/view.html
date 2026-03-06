@@ -40,16 +40,21 @@
     var orderDetailCache = {};
 
     function showExportOverlay(msg) {
+        console.log('showExportOverlay called:', msg);
         var el = document.getElementById('export-overlay');
+        console.log('export-overlay element:', el);
         el.style.display = 'flex';
         document.getElementById('export-status').textContent = msg || 'Exporting...';
     }
     function hideExportOverlay() {
+        console.log('hideExportOverlay called');
         document.getElementById('export-overlay').style.display = 'none';
     }
 
     (function() {
         refreshOrders();
+        // Auto-refresh every 5 seconds
+        setInterval(refreshOrders, 5000);
     })();
 
     function refreshOrders() {

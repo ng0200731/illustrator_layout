@@ -54,6 +54,8 @@ function getJCanvasState(c) {
             editingComponentIdx: -1,
             _editingTextNode: null,
             _selectedTextNode: null,
+            _editOverlaySnapshot: null,
+            _editTextNodeSnapshot: null,
             _textNodeResizing: null,
             regionResizing: null,
             boundsRects: [],
@@ -883,6 +885,8 @@ function jEditOverlayRegion(ovIdx) {
     var contentType = typeMap[ov.type];
     if (!contentType) return;
 
+    jState._editOverlaySnapshot = JSON.parse(JSON.stringify(ov));
+    jState._editTextNodeSnapshot = null;
     jState.pendingContentRegion = { x: ov.x, y: ov.y, w: ov.w, h: ov.h };
     jState.pendingContentType = contentType;
     jState.editingComponentIdx = ovIdx;
@@ -894,12 +898,13 @@ function jEditOverlayRegion(ovIdx) {
     var picker = _jel('content-type-picker');
     if (picker) picker.style.display = '';
     var typeSelect = _jel('ct-type-select');
-    if (typeSelect) { typeSelect.value = contentType; jOnContentTypeChange(); }
     var btns = _jel('ct-buttons');
     if (btns) btns.style.display = '';
     var rotBtns = _jel('ct-rotate-buttons');
     if (rotBtns) rotBtns.style.display = '';
 
+    jResetContentForms();
+    if (typeSelect) { typeSelect.value = contentType; jOnContentTypeChange(); }
     jLoadFontList().then(function() {
         jPrefillContentForm(contentType, ov);
     });
@@ -964,6 +969,8 @@ function jEditTextNode(node) {
         region.h = snappedEdge.y2 - snappedEdge.y1;
     }
 
+    jState._editOverlaySnapshot = null;
+    jState._editTextNodeSnapshot = jCloneTextNodeForSnapshot(node);
     jState.pendingContentRegion = region;
     jState.pendingContentType = 'text';
     jState.editingComponentIdx = -1;
@@ -976,12 +983,13 @@ function jEditTextNode(node) {
     var picker = _jel('content-type-picker');
     if (picker) picker.style.display = '';
     var typeSelect = _jel('ct-type-select');
-    if (typeSelect) { typeSelect.value = 'text'; jOnContentTypeChange(); }
     var btns = _jel('ct-buttons');
     if (btns) btns.style.display = '';
     var rotBtns = _jel('ct-rotate-buttons');
     if (rotBtns) rotBtns.style.display = '';
 
+    jResetContentForms();
+    if (typeSelect) { typeSelect.value = 'text'; jOnContentTypeChange(); }
     jLoadFontList(true).then(function() {
         jPrefillContentForm('text', {
             content: content,
@@ -1049,6 +1057,93 @@ function jUpdateTextNodeFromForm(node) {
             }]
         };
     });
+}
+
+function jCloneTextNodeForSnapshot(node) {
+    if (!node) return null;
+    return {
+        nodeRef: node,
+        snapshot: JSON.parse(JSON.stringify(node))
+    };
+}
+
+function jRestoreTextNodeFromSnapshot(textNodeSnapshot) {
+    if (!textNodeSnapshot || !textNodeSnapshot.nodeRef || !textNodeSnapshot.snapshot) return;
+    var nodeRef = textNodeSnapshot.nodeRef;
+    var snapshot = textNodeSnapshot.snapshot;
+    Object.keys(nodeRef).forEach(function(k) { delete nodeRef[k]; });
+    Object.keys(snapshot).forEach(function(k) { nodeRef[k] = JSON.parse(JSON.stringify(snapshot[k])); });
+}
+
+function jResetContentForms() {
+    var fs = _jel('ct-font-size'); if (fs) fs.value = 12;
+    var cc = _jel('ct-color'); if (cc) cc.value = '#000000';
+    var ls = _jel('ct-letter-spacing'); if (ls) ls.value = 0;
+    var tv = _jel('ct-text-value'); if (tv) tv.value = '';
+    var cw = _jel('ct-width'); if (cw) cw.value = '';
+    var ch = _jel('ct-height'); if (ch) ch.value = '';
+
+    var iw = _jel('ct-image-width'); if (iw) iw.value = '';
+    var ih = _jel('ct-image-height'); if (ih) ih.value = '';
+    var qw = _jel('ct-qr-width'); if (qw) qw.value = '';
+    var qh = _jel('ct-qr-height'); if (qh) qh.value = '';
+    var bw = _jel('ct-barcode-width'); if (bw) bw.value = '';
+    var bh = _jel('ct-barcode-height'); if (bh) bh.value = '';
+
+    var iu = _jel('ct-image-url'); if (iu) iu.value = '';
+    var imf = _jel('ct-image-fit'); if (imf) imf.value = 'contain';
+    var qd = _jel('ct-qr-data'); if (qd) qd.value = '';
+    var qc = _jel('ct-qr-color'); if (qc) qc.value = '#000000';
+    var bd = _jel('ct-barcode-data'); if (bd) bd.value = '';
+    var bf = _jel('ct-barcode-format'); if (bf) bf.value = 'code128';
+    var bc = _jel('ct-barcode-color'); if (bc) bc.value = '#000000';
+
+    var bb = _jel('ct-bold-btn'); if (bb) bb.classList.remove('active');
+    var ib = _jel('ct-italic-btn'); if (ib) ib.classList.remove('active');
+
+    var ah = _jel('ct-align-h');
+    if (ah) {
+        ah.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+        var hBtn = ah.querySelector('[data-val="left"]');
+        if (hBtn) hBtn.classList.add('active');
+    }
+    var av = _jel('ct-align-v');
+    if (av) {
+        av.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+        var vBtn = av.querySelector('[data-val="top"]');
+        if (vBtn) vBtn.classList.add('active');
+    }
+
+    var fontSelect = _jel('ct-font-select');
+    if (fontSelect) {
+        fontSelect.selectedIndex = 0;
+    }
+
+    var aiFontRow = _jel('ct-ai-font-row');
+    if (aiFontRow) aiFontRow.style.display = 'none';
+    var aiFontSpan = _jel('ct-ai-font-name');
+    if (aiFontSpan) {
+        aiFontSpan.textContent = '';
+        aiFontSpan.style.color = '';
+        aiFontSpan.style.borderColor = '';
+    }
+
+    var typeSelect = _jel('ct-type-select');
+    if (typeSelect) typeSelect.value = '';
+}
+
+function jHideContentEditorPanel() {
+    var picker = _jel('content-type-picker');
+    if (picker) picker.style.display = 'none';
+    var btns = _jel('ct-buttons');
+    if (btns) btns.style.display = 'none';
+    var rotBtns = _jel('ct-rotate-buttons');
+    if (rotBtns) rotBtns.style.display = 'none';
+    ['ct-form-text', 'ct-form-image', 'ct-form-qrcode', 'ct-form-barcode'].forEach(function(id) {
+        var el = _jel(id); if (el) el.style.display = 'none';
+    });
+    var aiFontRow = _jel('ct-ai-font-row');
+    if (aiFontRow) aiFontRow.style.display = 'none';
 }
 
 function jPrefillContentForm(type, data) {
@@ -1374,6 +1469,8 @@ function jOnMouseDown(e) {
         jState.pendingContentType = null;
         jState.editingComponentIdx = -1;
         jState._editingTextNode = null;
+        jState._editOverlaySnapshot = null;
+        jState._editTextNodeSnapshot = null;
         jStartOverlayDrag(e, hitIdx);
     } else {
         // Check if clicking on a tree node
@@ -1400,6 +1497,8 @@ function jOnMouseDown(e) {
             jState.pendingContentType = null;
             jState.editingComponentIdx = -1;
             jState._editingTextNode = null;
+            jState._editOverlaySnapshot = null;
+            jState._editTextNodeSnapshot = null;
             jRenderCanvas();
             jRenderLayerTree();
             jRenderOverlayList();
@@ -1414,6 +1513,8 @@ function jOnMouseDown(e) {
         jState.pendingContentType = null;
         jState.editingComponentIdx = -1;
         jState._editingTextNode = null;
+        jState._editOverlaySnapshot = null;
+        jState._editTextNodeSnapshot = null;
         if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
             jState.selectedTreePath = null;
             jState.selectedTreePaths = {};
@@ -1898,6 +1999,9 @@ function jRenderCanvas() {
     c.rect(0, 0, jState.docWidth, jState.docHeight);
     c.clip();
 
+    // Render document tree (middle layer)
+    var brs = jState.boundsRects;
+
     // Render overlays at index 0 first (lowest Z-index, behind document tree)
     if (jState.overlays && jState.overlays.length > 0) {
         var ov = jState.overlays[0];
@@ -1919,9 +2023,6 @@ function jRenderCanvas() {
             if (rot !== 0) c.restore();
         }
     }
-
-    // Render document tree (middle layer)
-    var brs = jState.boundsRects;
     if (brs && brs.length > 0) {
         // Collect top-level nodes (preserving group hierarchy for clipping)
         var allTopNodes = [];
@@ -2576,7 +2677,6 @@ function jRenderOverlays(c) {
     for (var i = 1; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
         if (!ov.visible) continue;
-        if (jState.editingComponentIdx === i && jState.pendingContentRegion) continue;
         var rot = 0;
         if (brs && ov._boundsRectIdx >= 0 && ov._boundsRectIdx < brs.length) {
             rot = brs[ov._boundsRectIdx]._rotation || 0;
@@ -4503,47 +4603,42 @@ function applyContentSettings() {
         }
     }
 
+    jState._editOverlaySnapshot = null;
+    jState._editTextNodeSnapshot = null;
     jState.editingComponentIdx = -1;
     jState._editingTextNode = null;
     jState._selectedTextNode = null;
     jState.pendingContentRegion = null;
     jState.pendingContentType = null;
     jState._addOverlayBRIdx = -1;
-    var picker = _jel('content-type-picker');
-    if (picker) picker.style.display = 'none';
-    var btns = _jel('ct-buttons');
-    if (btns) btns.style.display = 'none';
-    var rotBtns = _jel('ct-rotate-buttons');
-    if (rotBtns) rotBtns.style.display = 'none';
-    ['ct-form-text', 'ct-form-image', 'ct-form-qrcode', 'ct-form-barcode'].forEach(function(id) {
-        var el = _jel(id); if (el) el.style.display = 'none';
-    });
-    var aiFontRow = _jel('ct-ai-font-row');
-    if (aiFontRow) aiFontRow.style.display = 'none';
+    jResetContentForms();
+    jHideContentEditorPanel();
 
     jRenderCanvas();
     jRenderOverlayList();
 }
 
 function cancelContentSettings() {
+    if (jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length && jState._editOverlaySnapshot) {
+        jState.overlays[jState.editingComponentIdx] = JSON.parse(JSON.stringify(jState._editOverlaySnapshot));
+    }
+    if (jState._editTextNodeSnapshot) {
+        jRestoreTextNodeFromSnapshot(jState._editTextNodeSnapshot);
+    }
+
+    jState._editOverlaySnapshot = null;
+    jState._editTextNodeSnapshot = null;
     jState.pendingContentRegion = null;
     jState.pendingContentType = null;
     jState._addOverlayBRIdx = -1;
     jState.editingComponentIdx = -1;
     jState._editingTextNode = null;
     jState._selectedTextNode = null;
-    var picker = _jel('content-type-picker');
-    if (picker) picker.style.display = 'none';
-    var btns = _jel('ct-buttons');
-    if (btns) btns.style.display = 'none';
-    var rotBtns = _jel('ct-rotate-buttons');
-    if (rotBtns) rotBtns.style.display = 'none';
-    ['ct-form-text', 'ct-form-image', 'ct-form-qrcode', 'ct-form-barcode'].forEach(function(id) {
-        var el = _jel(id); if (el) el.style.display = 'none';
-    });
-    var aiFontRow = _jel('ct-ai-font-row');
-    if (aiFontRow) aiFontRow.style.display = 'none';
+
+    jResetContentForms();
+    jHideContentEditorPanel();
     jRenderCanvas();
+    jRenderOverlayList();
 }
 
 // __CONTINUE_HERE_10__
