@@ -87,6 +87,9 @@ def flatten_layout_for_export(layout_data):
             'autoFromText': ov.get('_autoFromText', ov.get('autoFromText', False)),
             'rotation': ov.get('_rotation', ov.get('rotation', 0)),
             'boundsRectIdx': ov.get('_boundsRectIdx', ov.get('boundsRectIdx', -1)),
+            'groupId': ov.get('groupId'),
+            'groupOffsetX': ov.get('groupOffsetX', 0),
+            'groupOffsetY': ov.get('groupOffsetY', 0),
         })
 
     return {

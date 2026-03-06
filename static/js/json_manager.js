@@ -1753,7 +1753,10 @@ function jStartOverlayDrag(e, idx) {
                 overlay: dragOv,
                 offX: dragPos.x - dragOv.x,
                 offY: dragPos.y - dragOv.y,
-                brIdx: dragOv._boundsRectIdx
+                brIdx: dragOv._boundsRectIdx,
+                startX: dragOv.x,
+                startY: dragOv.y,
+                groupId: dragOv.groupId || null
             });
         }
     } else {
@@ -1763,7 +1766,10 @@ function jStartOverlayDrag(e, idx) {
             overlay: ov,
             offX: pos.x - ov.x,
             offY: pos.y - ov.y,
-            brIdx: ov._boundsRectIdx
+            brIdx: ov._boundsRectIdx,
+            startX: ov.x,
+            startY: ov.y,
+            groupId: ov.groupId || null
         });
     }
 
@@ -1796,7 +1802,27 @@ function jStartOverlayDrag(e, idx) {
     var onUp = function() {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+
+        var groupOffsets = {};
+        for (var i = 0; i < dragData.length; i++) {
+            var dd = dragData[i];
+            if (!dd.groupId) continue;
+            var dx = dd.overlay.x - dd.startX;
+            var dy = dd.overlay.y - dd.startY;
+            if (!groupOffsets[dd.groupId]) {
+                groupOffsets[dd.groupId] = { dx: dx, dy: dy };
+            }
+        }
+        for (var gid in groupOffsets) {
+            if (jState.overlayGroups[gid]) {
+                jState.overlayGroups[gid].exportOffsetX = -(groupOffsets[gid].dx || 0);
+                jState.overlayGroups[gid].exportOffsetY = -(groupOffsets[gid].dy || 0);
+                jState.overlayGroups[gid].positionConfirmed = false;
+            }
+        }
+
         jCaptureState();
+        jUpdateOverlayActionButtons();
     };
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
@@ -4338,9 +4364,57 @@ function jUpdateOverlayActionButtons() {
     var selectedCount = Object.keys(jState.selectedOverlayIndices).length;
     var groupBtn = _jel('overlay-group-btn');
     var ungroupBtn = _jel('overlay-ungroup-btn');
+    var confirmBtn = _jel('overlay-confirm-position-btn');
 
     if (groupBtn) groupBtn.disabled = selectedCount < 2;
     if (ungroupBtn) ungroupBtn.disabled = selectedCount === 0;
+
+    var selectedGroupId = null;
+    if (selectedCount > 0) {
+        var selKeys = Object.keys(jState.selectedOverlayIndices);
+        for (var i = 0; i < selKeys.length; i++) {
+            var ov = jState.overlays[parseInt(selKeys[i])];
+            if (ov && ov.groupId) {
+                selectedGroupId = ov.groupId;
+                break;
+            }
+        }
+    }
+
+    if (confirmBtn) {
+        var isConfirmed = false;
+        if (selectedGroupId && jState.overlayGroups[selectedGroupId]) {
+            isConfirmed = !!jState.overlayGroups[selectedGroupId].positionConfirmed;
+        }
+        confirmBtn.disabled = !selectedGroupId || isConfirmed;
+        confirmBtn.textContent = isConfirmed ? 'CONFIRMED' : 'CONFIRM';
+        confirmBtn.title = isConfirmed ? 'Overlay input shift is complete' : 'Confirm final overlay input position';
+    }
+}
+
+function jConfirmOverlayGroupPosition() {
+    var selKeys = Object.keys(jState.selectedOverlayIndices);
+    if (selKeys.length === 0) return;
+
+    var targetGroupId = null;
+    for (var i = 0; i < selKeys.length; i++) {
+        var ov = jState.overlays[parseInt(selKeys[i])];
+        if (ov && ov.groupId) {
+            targetGroupId = ov.groupId;
+            break;
+        }
+    }
+    if (!targetGroupId || !jState.overlayGroups[targetGroupId]) return;
+
+    var grp = jState.overlayGroups[targetGroupId];
+    grp.confirmedExportOffsetX = grp.exportOffsetX || 0;
+    grp.confirmedExportOffsetY = grp.exportOffsetY || 0;
+    grp.positionConfirmed = true;
+
+    alert('Overlay input shift is complete.');
+    jCaptureState();
+    jRenderOverlayList();
+    jUpdateOverlayActionButtons();
 }
 
 function jShowGroupModal() {
@@ -4378,7 +4452,12 @@ function jGroupSelectedOverlays(groupName) {
     jState.overlayGroups[groupId] = {
         name: groupName,
         color: jGenerateRandomColor(),
-        expanded: true
+        expanded: true,
+        exportOffsetX: 0,
+        exportOffsetY: 0,
+        confirmedExportOffsetX: 0,
+        confirmedExportOffsetY: 0,
+        positionConfirmed: false
     };
 
     for (var i = 0; i < selectedIndices.length; i++) {
@@ -5820,7 +5899,10 @@ function jExportFile(type, outlined) {
             rotation: ov._rotation || 0,
             boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1,
             isVariable: ov.isVariable || false,
-            autoFromText: ov._autoFromText || false
+            autoFromText: ov._autoFromText || false,
+            groupId: ov.groupId || null,
+            groupOffsetX: (ov.groupId && jState.overlayGroups[ov.groupId] && jState.overlayGroups[ov.groupId].positionConfirmed) ? (jState.overlayGroups[ov.groupId].confirmedExportOffsetX || 0) : 0,
+            groupOffsetY: (ov.groupId && jState.overlayGroups[ov.groupId] && jState.overlayGroups[ov.groupId].positionConfirmed) ? (jState.overlayGroups[ov.groupId].confirmedExportOffsetY || 0) : 0
         });
     }
 

@@ -451,9 +451,14 @@ def _draw_text(c, comp, page_h):
     if not content:
         return
 
-    x = comp.get('x', 0) * mm
-    w = comp.get('width', 0) * mm
-    h = comp.get('height', 0) * mm
+    x = comp.get('x', 0)
+    y = comp.get('y', 0)
+    w = comp.get('width', 0)
+    h = comp.get('height', 0)
+    group_offset_x = comp.get('groupOffsetX', 0)
+    group_offset_y = comp.get('groupOffsetY', 0)
+    x += group_offset_x
+    y += group_offset_y
     font_family = comp.get('fontFamily', 'Helvetica')
     font_size = comp.get('fontSize', 12)
     font_id = comp.get('fontId', None)
@@ -476,15 +481,11 @@ def _draw_text(c, comp, page_h):
 
     # Split into lines for multi-line support
     lines = content.split('\n')
-    line_height = font_size * 1.2 + letter_spacing  # match canvas: fontSize * 1.2 + letterSpacing
-
-    # Calculate vertical start based on alignV
-    total_text_h = len(lines) * line_height
+    line_height_mm = font_size * 0.3528 * 1.2 + letter_spacing * 0.3528  # match canvas: fontSizeMm * 1.2 + letterSpacing * PT_TO_MM
+    total_text_h = len(lines) * line_height_mm
 
     # Get actual font metrics for accurate baseline calculation
-    comp_y = comp.get('y', 0) * mm
-
-    # Try to get actual font ascent from font file
+    # ReportLab's drawString does NOT apply descent offset, so we don't need to compensate
     try:
         sys.path.insert(0, os.path.dirname(__file__))
         from fonttools_outline import _get_font_path
@@ -500,29 +501,30 @@ def _draw_text(c, comp, page_h):
             font.close()
         else:
             # Fallback to approximation if font not found
-            baseline_offset_mm = font_size * 0.8
+            baseline_offset_mm = font_size * 0.3528 * 0.8
     except:
         # Fallback to approximation if fonttools fails
-        baseline_offset_mm = font_size * 0.8
+        baseline_offset_mm = font_size * 0.3528 * 0.8
 
+    # Calculate vertical start for first line baseline (match _draw_text_outlined)
     if align_v == 'bottom':
-        first_line_y = page_h - comp_y - h + (total_text_h - line_height) + (font_size * 0.2)
+        first_baseline_y = y + h - total_text_h + baseline_offset_mm
     elif align_v == 'center':
-        first_line_y = page_h - comp_y - (h / 2) - (total_text_h / 2) + (font_size * 0.2) + (total_text_h - line_height)
+        first_baseline_y = y + (h - total_text_h) / 2 + baseline_offset_mm
     else:  # top
-        first_line_y = page_h - comp_y - baseline_offset_mm
+        first_baseline_y = y + baseline_offset_mm
 
     # Draw each line
     for i, line in enumerate(lines):
-        y = first_line_y - (i * line_height)
+        baseline_y = first_baseline_y + i * line_height_mm
         if not line:
             continue
         if align_h == 'center':
-            c.drawCentredString(x + w / 2, y, line)
+            c.drawCentredString((x + w / 2) * mm, page_h - (baseline_y * mm), line)
         elif align_h == 'right':
-            c.drawRightString(x + w, y, line)
+            c.drawRightString((x + w) * mm, page_h - (baseline_y * mm), line)
         else:
-            c.drawString(x, y, line)
+            c.drawString(x * mm, page_h - (baseline_y * mm), line)
 
 def _draw_text_outlined(c, comp, page_h):
     """Draw text as outlined paths"""
