@@ -1776,26 +1776,80 @@ function jStartOverlayDrag(e, idx) {
     var onMove = function(ev) {
         var rawP = jScreenToDoc(ev.clientX, ev.clientY);
 
-        for (var i = 0; i < dragData.length; i++) {
-            var dd = dragData[i];
-            var p = jUnrotatePoint(rawP.x, rawP.y, dd.brIdx);
-            var newX = p.x - dd.offX;
-            var newY = p.y - dd.offY;
+        // Check if dragging a group - if so, calculate group bounds first
+        var isGroup = dragData.length > 0 && dragData[0].groupId;
+        var groupBounds = null;
+        var constraint = null;
 
-            // Apply constraints if overlay is within a bounds rect
-            var constraint = null;
-            if (dd.brIdx >= 0 && jState.boundsRects) {
-                constraint = jState.boundsRects[dd.brIdx];
+        if (isGroup) {
+            // Calculate the overall group bounding box from START positions
+            groupBounds = {
+                minX: Infinity,
+                minY: Infinity,
+                maxX: -Infinity,
+                maxY: -Infinity
+            };
+            for (var i = 0; i < dragData.length; i++) {
+                var dd = dragData[i];
+                groupBounds.minX = Math.min(groupBounds.minX, dd.startX);
+                groupBounds.minY = Math.min(groupBounds.minY, dd.startY);
+                groupBounds.maxX = Math.max(groupBounds.maxX, dd.startX + dd.overlay.w);
+                groupBounds.maxY = Math.max(groupBounds.maxY, dd.startY + dd.overlay.h);
             }
+
+            // Get constraint from first overlay's bounds rect
+            if (dragData[0].brIdx >= 0 && jState.boundsRects) {
+                constraint = jState.boundsRects[dragData[0].brIdx];
+            }
+
+            // Calculate the delta from first overlay
+            var p0 = jUnrotatePoint(rawP.x, rawP.y, dragData[0].brIdx);
+            var requestedDx = (p0.x - dragData[0].offX) - dragData[0].startX;
+            var requestedDy = (p0.y - dragData[0].offY) - dragData[0].startY;
+
+            // Check if group would go outside constraint
             if (constraint) {
-                if (newX < constraint.x) newX = constraint.x;
-                if (newY < constraint.y) newY = constraint.y;
-                if (newX + dd.overlay.w > constraint.x + constraint.w) newX = constraint.x + constraint.w - dd.overlay.w;
-                if (newY + dd.overlay.h > constraint.y + constraint.h) newY = constraint.y + constraint.h - dd.overlay.h;
+                var newMinX = groupBounds.minX + requestedDx;
+                var newMinY = groupBounds.minY + requestedDy;
+                var newMaxX = groupBounds.maxX + requestedDx;
+                var newMaxY = groupBounds.maxY + requestedDy;
+
+                // If would go past edge, stop movement (no alert, just don't move)
+                if (newMinX < constraint.x || newMaxX > constraint.x + constraint.w ||
+                    newMinY < constraint.y || newMaxY > constraint.y + constraint.h) {
+                    return; // Stop all movement
+                }
             }
 
-            dd.overlay.x = newX;
-            dd.overlay.y = newY;
+            // Apply the same delta to all overlays in the group
+            for (var i = 0; i < dragData.length; i++) {
+                var dd = dragData[i];
+                dd.overlay.x = dd.startX + requestedDx;
+                dd.overlay.y = dd.startY + requestedDy;
+            }
+        } else {
+            // Single overlay - use original logic
+            for (var i = 0; i < dragData.length; i++) {
+                var dd = dragData[i];
+                var p = jUnrotatePoint(rawP.x, rawP.y, dd.brIdx);
+                var newX = p.x - dd.offX;
+                var newY = p.y - dd.offY;
+
+                // Apply constraints if overlay is within a bounds rect
+                var constraint = null;
+                if (dd.brIdx >= 0 && jState.boundsRects) {
+                    constraint = jState.boundsRects[dd.brIdx];
+                }
+                if (constraint) {
+                    if (newX < constraint.x) newX = constraint.x;
+                    if (newY < constraint.y) newY = constraint.y;
+                    if (newX + dd.overlay.w > constraint.x + constraint.w) newX = constraint.x + constraint.w - dd.overlay.w;
+                    if (newY + dd.overlay.h > constraint.y + constraint.h) newY = constraint.y + constraint.h - dd.overlay.h;
+                }
+
+                dd.overlay.x = newX;
+                dd.overlay.y = newY;
+            }
         }
         jRenderCanvas();
         jUpdateOverlayActionButtons();

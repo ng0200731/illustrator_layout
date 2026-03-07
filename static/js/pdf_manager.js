@@ -11,7 +11,7 @@ function getCanvasState(canvas) {
             pdfWidth: 0,
             pdfHeight: 0,
             pan: { x: 0, y: 0, zoom: 1, dragging: false, startX: 0, startY: 0, spaceDown: false },
-            dragState: { active: false, startX: 0, startY: 0, componentIdx: -1 },
+            dragState: { active: false, startX: 0, startY: 0, componentIdx: -1, originalPositions: {} },
             rectSelect: { active: false, startX: 0, startY: 0, endX: 0, endY: 0 },
             groupExpanded: {},
             historyStack: [],
@@ -83,7 +83,7 @@ Object.defineProperty(window, 'pan', {
     set: function(val) { if (state) state.pan = val; }
 });
 Object.defineProperty(window, 'dragState', {
-    get: function() { return state ? state.dragState : { active: false, startX: 0, startY: 0, componentIdx: -1 }; },
+    get: function() { return state ? state.dragState : { active: false, startX: 0, startY: 0, componentIdx: -1, originalPositions: {} }; },
     set: function(val) { if (state) state.dragState = val; }
 });
 Object.defineProperty(window, 'rectSelect', {
@@ -1830,6 +1830,14 @@ function onCanvasMouseDown(e) {
                     dragState.startX = x;
                     dragState.startY = y;
                     dragState.componentIdx = ci;
+                    // Store original positions for all selected components
+                    dragState.originalPositions = {};
+                    selectedSet.forEach(function(idx) {
+                        dragState.originalPositions[idx] = {
+                            x: components[idx].x,
+                            y: components[idx].y
+                        };
+                    });
                     canvas.style.cursor = 'move';
                     return;
                 }
@@ -1887,7 +1895,7 @@ function onCanvasMouseDown(e) {
         if (x >= comp.x && x <= comp.x + comp.w && y >= comp.y && y <= comp.y + comp.h) {
             if (e.ctrlKey) {
                 toggleSelection(i);
-            } else {
+            } else if (selectedSet.indexOf(i) === -1 || selectedSet.length <= 1) {
                 selectComponent(i);
             }
 
@@ -1896,6 +1904,14 @@ function onCanvasMouseDown(e) {
             dragState.startX = x;
             dragState.startY = y;
             dragState.componentIdx = i;
+            // Store original positions for all selected components
+            dragState.originalPositions = {};
+            selectedSet.forEach(function(idx) {
+                dragState.originalPositions[idx] = {
+                    x: components[idx].x,
+                    y: components[idx].y
+                };
+            });
             return;
         }
     }
@@ -1918,8 +1934,12 @@ function onCanvasMouseDown(e) {
 }
 
 function onCanvasMouseMove(e) {
+    console.log('onCanvasMouseMove CALLED');
     // Overlay add mode intercept
-    if (onAddOverlayMouseMove(e)) return;
+    if (onAddOverlayMouseMove(e)) {
+        console.log('Overlay mode intercepted');
+        return;
+    }
 
     // Edge resize handle dragging
     if (state && state.resizingEdge) {
@@ -2077,30 +2097,102 @@ function onCanvasMouseMove(e) {
     var x = (e.clientX - rect.left) / scale;
     var y = (e.clientY - rect.top) / scale;
 
+    // Calculate total delta from original drag start position
     var dx = x - dragState.startX;
     var dy = y - dragState.startY;
 
-    // Move selected components
-    selectedSet.forEach(function(idx) {
-        components[idx].x += dx;
-        components[idx].y += dy;
+    console.log('DRAG: dx=', dx, 'dy=', dy, 'selectedSet=', selectedSet);
 
-        // Clamp to parent block if content region
+    // Step 1: Calculate the group's bounding box from original positions
+    var groupBounds = {
+        minX: Infinity,
+        minY: Infinity,
+        maxX: -Infinity,
+        maxY: -Infinity
+    };
+    var hasValidComponents = false;
+
+    selectedSet.forEach(function(idx) {
+        var origPos = dragState.originalPositions[idx];
+        if (!origPos) {
+            console.log('NO ORIG POS for idx', idx);
+            return;
+        }
         var comp = components[idx];
-        if (comp.snappedEdgeId && state) {
+        if (!comp) {
+            console.log('NO COMP for idx', idx);
+            return;
+        }
+
+        groupBounds.minX = Math.min(groupBounds.minX, origPos.x);
+        groupBounds.minY = Math.min(groupBounds.minY, origPos.y);
+        groupBounds.maxX = Math.max(groupBounds.maxX, origPos.x + comp.w);
+        groupBounds.maxY = Math.max(groupBounds.maxY, origPos.y + comp.h);
+        hasValidComponents = true;
+    });
+
+    console.log('Group bounds:', groupBounds, 'hasValid:', hasValidComponents);
+
+    // If no valid components, don't move anything
+    if (!hasValidComponents) {
+        console.log('NO VALID COMPONENTS - returning');
+        return;
+    }
+
+    // Step 2: Find the edge block (if any component is snapped to one)
+    var edgeBlock = null;
+    for (var i = 0; i < selectedSet.length; i++) {
+        var comp = components[selectedSet[i]];
+        if (comp && comp.snappedEdgeId && state) {
             for (var bi = 0; bi < state.edges.length; bi++) {
                 if (state.edges[bi].id === comp.snappedEdgeId) {
-                    var blk = state.edges[bi];
-                    comp.x = Math.max(blk.x, Math.min(blk.x + blk.w - comp.w, comp.x));
-                    comp.y = Math.max(blk.y, Math.min(blk.y + blk.h - comp.h, comp.y));
+                    edgeBlock = state.edges[bi];
                     break;
                 }
             }
+            if (edgeBlock) break;
+        }
+    }
+
+    console.log('Edge block:', edgeBlock);
+
+    // Step 3: Check if group rectangle would touch edge block boundaries
+    var appliedDx = dx;
+    var appliedDy = dy;
+
+    if (edgeBlock) {
+        // Calculate where the group would be after moving
+        var newMinX = groupBounds.minX + dx;
+        var newMinY = groupBounds.minY + dy;
+        var newMaxX = groupBounds.maxX + dx;
+        var newMaxY = groupBounds.maxY + dy;
+
+        // Check if would go past any edge
+        var wouldGoLeft = newMinX < edgeBlock.x;
+        var wouldGoRight = newMaxX > edgeBlock.x + edgeBlock.w;
+        var wouldGoUp = newMinY < edgeBlock.y;
+        var wouldGoDown = newMaxY > edgeBlock.y + edgeBlock.h;
+
+        if (wouldGoLeft || wouldGoRight || wouldGoUp || wouldGoDown) {
+            // Group would go past edge - STOP all movement
+            console.log('EDGE HIT! Stopping movement');
+            alert('Group cannot move beyond layer edge!');
+            return; // Don't move anything
+        }
+
+        // Not touching - allow movement
+        appliedDx = dx;
+        appliedDy = dy;
+    }
+
+    // Apply position based on original position + constrained delta
+    selectedSet.forEach(function(idx) {
+        var origPos = dragState.originalPositions[idx];
+        if (origPos && components[idx]) {
+            components[idx].x = origPos.x + appliedDx;
+            components[idx].y = origPos.y + appliedDy;
         }
     });
-
-    dragState.startX = x;
-    dragState.startY = y;
 
     renderCanvas();
 }
