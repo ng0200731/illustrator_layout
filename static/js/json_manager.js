@@ -1018,7 +1018,7 @@ function jPrefillContentForm(type, data) {
                     }
                 }
             }
-            // Fallback: match by fontFamily name (exact normalized match only)
+            // Fallback: match by fontFamily name
             if (!found && data.fontFamily) {
                 var normalizedName = data.fontFamily.toLowerCase().replace(/[\s\-_]/g, '');
                 // Also try fontFamily+fontStyle combined
@@ -1026,12 +1026,40 @@ function jPrefillContentForm(type, data) {
                 if (data.aiFontStyle) {
                     normalizedWithStyle = normalizedName + data.aiFontStyle.toLowerCase().replace(/[\s\-_]/g, '');
                 }
-                for (var fi = 0; fi < fontSelect.options.length; fi++) {
-                    var optName = (fontSelect.options[fi].dataset.fontName || '').toLowerCase().replace(/[\s\-_]/g, '');
-                    if (optName && (optName === normalizedName || optName === normalizedWithStyle)) {
-                        fontSelect.selectedIndex = fi;
-                        found = true;
-                        break;
+
+                // First pass: try to match the combined name (fontFamily + style) for exact match
+                if (data.aiFontStyle) {
+                    for (var fi = 0; fi < fontSelect.options.length; fi++) {
+                        var optName = (fontSelect.options[fi].dataset.fontName || '').toLowerCase().replace(/[\s\-_]/g, '');
+                        if (optName && optName === normalizedWithStyle) {
+                            fontSelect.selectedIndex = fi;
+                            found = true;
+                            // Update overlay's fontFamily to match the actual database font name
+                            if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
+                                var comp = jState.overlays[jState.editingComponentIdx];
+                                comp.fontFamily = fontSelect.options[fi].dataset.fontName;
+                                comp.fontId = parseInt(fontSelect.options[fi].value);
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                // Second pass: if not found, try matching just the font name
+                if (!found) {
+                    for (var fi = 0; fi < fontSelect.options.length; fi++) {
+                        var optName = (fontSelect.options[fi].dataset.fontName || '').toLowerCase().replace(/[\s\-_]/g, '');
+                        if (optName && optName === normalizedName) {
+                            fontSelect.selectedIndex = fi;
+                            found = true;
+                            // Update overlay's fontFamily to match the actual database font name
+                            if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
+                                var comp = jState.overlays[jState.editingComponentIdx];
+                                comp.fontFamily = fontSelect.options[fi].dataset.fontName;
+                                comp.fontId = parseInt(fontSelect.options[fi].value);
+                            }
+                            break;
+                        }
                     }
                 }
             }
@@ -1089,15 +1117,33 @@ function jCheckAiFontAvailability(aiFontName, aiFontStyle) {
         if (aiFontStyle) {
             normalizedAiWithStyle = normalizedAi + aiFontStyle.toLowerCase().replace(/[\s\-_]/g, '');
         }
-        for (var i = 0; i < fontSelect.options.length; i++) {
-            var opt = fontSelect.options[i];
-            var optName = (opt.dataset.fontName || opt.textContent || '').toLowerCase().replace(/[\s\-_]/g, '');
-            if (optName && (optName === normalizedAi || optName === normalizedAiWithStyle)) {
-                found = true;
-                matchIdx = i;
-                break;
+
+        // First pass: try to match the combined name (fontName + style) for exact match
+        if (aiFontStyle) {
+            for (var i = 0; i < fontSelect.options.length; i++) {
+                var opt = fontSelect.options[i];
+                var optName = (opt.dataset.fontName || opt.textContent || '').toLowerCase().replace(/[\s\-_]/g, '');
+                if (optName && optName === normalizedAiWithStyle) {
+                    found = true;
+                    matchIdx = i;
+                    break;
+                }
             }
         }
+
+        // Second pass: if not found, try matching just the font name
+        if (!found) {
+            for (var i = 0; i < fontSelect.options.length; i++) {
+                var opt = fontSelect.options[i];
+                var optName = (opt.dataset.fontName || opt.textContent || '').toLowerCase().replace(/[\s\-_]/g, '');
+                if (optName && optName === normalizedAi) {
+                    found = true;
+                    matchIdx = i;
+                    break;
+                }
+            }
+        }
+
         if (found) {
             aiFontSpan.style.color = '#00aa00';
             aiFontSpan.style.borderColor = '#00aa00';
@@ -1109,6 +1155,14 @@ function jCheckAiFontAvailability(aiFontName, aiFontStyle) {
                 var matchOpt = fontSelect.options[matchIdx];
                 if (matchOpt && matchOpt.dataset.fontName) {
                     jLoadFontForCanvas(parseInt(matchOpt.value), matchOpt.dataset.fontName);
+                    // Update the overlay's fontFamily to match the actual font name in database
+                    if (jState && jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
+                        var comp = jState.overlays[jState.editingComponentIdx];
+                        comp.fontFamily = matchOpt.dataset.fontName;
+                        comp.fontId = parseInt(matchOpt.value);
+                    }
+                    // Re-render canvas with correct font
+                    jRenderCanvas();
                 }
             }
         } else {
@@ -4245,15 +4299,34 @@ function jLoadOverlayFonts() {
                 normalizedOvWithStyle = normalizedOv + ov.aiFontStyle.toLowerCase().replace(/[\s\-_]/g, '');
             }
             var found = false;
-            for (var fi = 0; fi < fonts.length; fi++) {
-                var f = fonts[fi];
-                var normalizedF = f.font_name.toLowerCase().replace(/[\s\-_]/g, '');
-                if (normalizedF === normalizedOv || normalizedF === normalizedOvWithStyle) {
-                    ov.fontFamily = f.font_name;
-                    ov.fontId = f.id;
-                    jLoadFontForCanvas(f.id, f.font_name);
-                    found = true;
-                    break;
+
+            // First pass: try to match the combined name (fontFamily + style) for exact match
+            if (ov.aiFontStyle) {
+                for (var fi = 0; fi < fonts.length; fi++) {
+                    var f = fonts[fi];
+                    var normalizedF = f.font_name.toLowerCase().replace(/[\s\-_]/g, '');
+                    if (normalizedF === normalizedOvWithStyle) {
+                        ov.fontFamily = f.font_name;
+                        ov.fontId = f.id;
+                        jLoadFontForCanvas(f.id, f.font_name);
+                        found = true;
+                        break;
+                    }
+                }
+            }
+
+            // Second pass: if not found, try matching just the font name
+            if (!found) {
+                for (var fi = 0; fi < fonts.length; fi++) {
+                    var f = fonts[fi];
+                    var normalizedF = f.font_name.toLowerCase().replace(/[\s\-_]/g, '');
+                    if (normalizedF === normalizedOv) {
+                        ov.fontFamily = f.font_name;
+                        ov.fontId = f.id;
+                        jLoadFontForCanvas(f.id, f.font_name);
+                        found = true;
+                        break;
+                    }
                 }
             }
             if (!found) {
