@@ -579,7 +579,7 @@ function jAutoCreateTextOverlays(nodes) {
             w: b.width * PT_TO_MM, h: b.height * PT_TO_MM
         };
         var boundsRect = jFindContainingBoundsRect(region);
-        var content = '', fontFamily = 'Arial', fontStyle = '';
+        var content = '', fontFamily = '', fontStyle = '';
         var fontSize = 12, color = '#000000', alignment = 'left', tracking = 0;
         for (var pi = 0; pi < node.paragraphs.length; pi++) {
             var para = node.paragraphs[pi];
@@ -848,7 +848,7 @@ function jEditTextNode(node) {
 
     // Extract text properties from the node
     var content = '';
-    var fontFamily = 'Arial';
+    var fontFamily = '';
     var fontStyle = '';
     var fontSize = 12;
     var color = '#000000';
@@ -946,7 +946,7 @@ function jUpdateTextNodeFromForm(node) {
 
     // Get selected font family from dropdown
     var fontSelect = _jel('ct-font-select');
-    var fontFamily = 'Arial';
+    var fontFamily = '';
     if (fontSelect && fontSelect.options[fontSelect.selectedIndex]) {
         fontFamily = fontSelect.options[fontSelect.selectedIndex].dataset.fontName || fontFamily;
     }
@@ -2239,15 +2239,19 @@ function jRenderText(c, node, opacity) {
     var h = b.height * PT_TO_MM;
 
     // Apply transformation matrix if present (handles rotation)
+    // Skip if matrix is identity (no transformation needed)
     if (node.matrix) {
         var m = node.matrix;
-        var cx = x + w / 2;
-        var cy = y + h / 2;
-        c.translate(cx, cy);
-        // Illustrator matrix: a=scaleX, b=shearY, c=shearX, d=scaleY
-        // But d is negated because we flipped Y in export
-        c.transform(m.a, -m.b, -m.c, m.d, m.tx * PT_TO_MM, -m.ty * PT_TO_MM);
-        c.translate(-cx, -cy);
+        var isIdentity = (m.a === 1 && m.b === 0 && m.c === 0 && m.d === 1 && m.tx === 0 && m.ty === 0);
+        if (!isIdentity) {
+            var cx = x + w / 2;
+            var cy = y + h / 2;
+            c.translate(cx, cy);
+            // Illustrator matrix: a=scaleX, b=shearY, c=shearX, d=scaleY
+            // But d is negated because we flipped Y in export
+            c.transform(m.a, -m.b, -m.c, m.d, m.tx * PT_TO_MM, -m.ty * PT_TO_MM);
+            c.translate(-cx, -cy);
+        }
     }
 
     c.beginPath();
@@ -2292,11 +2296,14 @@ function jRenderText(c, node, opacity) {
     c.globalAlpha = 1;
     if (node.matrix) {
         var m = node.matrix;
-        var cx = x + w / 2;
-        var cy = y + h / 2;
-        c.translate(cx, cy);
-        c.transform(m.a, -m.b, -m.c, m.d, m.tx * PT_TO_MM, -m.ty * PT_TO_MM);
-        c.translate(-cx, -cy);
+        var isIdentity = (m.a === 1 && m.b === 0 && m.c === 0 && m.d === 1 && m.tx === 0 && m.ty === 0);
+        if (!isIdentity) {
+            var cx = x + w / 2;
+            var cy = y + h / 2;
+            c.translate(cx, cy);
+            c.transform(m.a, -m.b, -m.c, m.d, m.tx * PT_TO_MM, -m.ty * PT_TO_MM);
+            c.translate(-cx, -cy);
+        }
     }
     c.strokeStyle = '#00cc00';
     c.lineWidth = 0.3;
@@ -4993,7 +5000,7 @@ function jPathToExportComponent(node, opacity, parent) {
 function jTextToExportComponent(node, opacity) {
     var b = node.bounds || { x: 0, y: 0, width: 0, height: 0 };
     var content = '';
-    var fontFamily = 'Arial';
+    var fontFamily = '';
     var fontSize = 12;
     var color = '#000000';
     var alignment = 'left';

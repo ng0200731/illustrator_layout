@@ -434,7 +434,10 @@
         } catch(e) {}
         try {
             var m = tf.matrix;
-            mat = { a: m.mValueA, b: m.mValueB, c: m.mValueC, d: m.mValueD, tx: m.mValueTX - artboardLeft, ty: artboardTop - m.mValueTY };
+            // Matrix should only contain rotation, scale, and skew - NOT translation
+            // Translation is handled by the bounds position (x, y)
+            // Including tx/ty here causes double positioning in the renderer
+            mat = { a: m.mValueA, b: m.mValueB, c: m.mValueC, d: m.mValueD, tx: 0, ty: 0 };
         } catch(e) {}
 
         // Get text content using the safest method

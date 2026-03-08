@@ -370,9 +370,10 @@ def _draw_text(c, comp, page_h):
     x = comp.get('x', 0) * mm
     w = comp.get('width', 0) * mm
     h = comp.get('height', 0) * mm
-    font_family = comp.get('fontFamily', 'Helvetica')
+    font_family = comp.get('fontFamily', '')
     font_size = comp.get('fontSize', 12)
     font_id = comp.get('fontId', None)
+    font_style = comp.get('fontStyle') or comp.get('aiFontStyle') or ''
     bold = comp.get('bold', False)
     italic = comp.get('italic', False)
     color = comp.get('color', '#000000')
@@ -381,7 +382,9 @@ def _draw_text(c, comp, page_h):
     align_v = comp.get('alignV', 'top')
 
     # Try to register custom font
-    resolved_font, is_custom = _register_custom_font(c, font_family, font_id)
+    resolved_font, is_custom = _register_custom_font(c, font_family, font_id, font_style)
+
+    print(f"DEBUG: fontFamily='{font_family}', resolved_font='{resolved_font}', is_custom={is_custom}")
 
     c.setFont(resolved_font, font_size)
 
@@ -430,7 +433,7 @@ def _draw_text_outlined(c, comp, page_h):
     y = comp.get('y', 0)
     w = comp.get('width', 0)
     h = comp.get('height', 0)
-    font_family = comp.get('fontFamily', 'Helvetica')
+    font_family = comp.get('fontFamily', '')
     font_size = comp.get('fontSize', 12)
     color = comp.get('color', '#000000')
     align_h = comp.get('alignH', 'left')
@@ -496,94 +499,181 @@ def _draw_text_outlined(c, comp, page_h):
         print(f"Warning: Text outlining failed, using regular text: {e}")
         _draw_text(c, comp, page_h)
 
-def _register_custom_font(c, font_family, font_id=None):
+def _register_custom_font(c, font_family, font_id=None, font_style=''):
     """
     Register custom font with ReportLab if available
     Returns: (font_name, is_custom) tuple
     """
+    import re
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 
-    # Check if font is uploaded
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-    from models.font import Font
+    def _normalize_font_name(name):
+        if not name:
+            return ''
+        return re.sub(r'[\s\-_]+', '', str(name).lower())
+
+    def _build_font_name_candidates(family, style):
+        """Build list of possible font file names to search for"""
+        candidates = []
+        fam = (family or '').strip()
+        sty = (style or '').strip()
+
+        # Replace spaces with underscores for file names (e.g., "Mango New" -> "Mango_New")
+        fam_file = fam.replace(' ', '_')
+
+        if fam and sty and sty.lower() != 'regular':
+            # Try hyphen separator (matches file naming: "Mango_New-Bold.ttf")
+            candidates.append(f"{fam_file}-{sty}")
+            # Try space separator (matches internal font name: "Mango New Bold")
+            candidates.append(f"{fam} {sty}")
+            # Try no separator
+            candidates.append(f"{fam}{sty}")
+
+        # When no style or style is "Regular", try with -Regular suffix
+        if fam:
+            candidates.append(f"{fam_file}-Regular")
+            candidates.append(f"{fam} Regular")
+            candidates.append(fam)
+            candidates.append(fam_file)
+
+        # Deduplicate while preserving order
+        uniq = []
+        seen = set()
+        for c in candidates:
+            key = _normalize_font_name(c)
+            if key and key not in seen:
+                seen.add(key)
+                uniq.append(c)
+        return uniq
+
+    def _find_font_file(font_name):
+        """Search for font file in fonts directory"""
+        fonts_dir = os.path.join(os.path.dirname(__file__), '..', 'fonts')
+        if not os.path.exists(fonts_dir):
+            return None
+
+        # Normalize search name
+        target = _normalize_font_name(font_name)
+        if not target:
+            return None
+
+        # Search for TTF files first (preferred), then OTF
+        for ext in ['.ttf', '.otf']:
+            for filename in os.listdir(fonts_dir):
+                if not filename.lower().endswith(ext):
+                    continue
+
+                # Check if filename matches (without extension)
+                file_base = os.path.splitext(filename)[0]
+                if _normalize_font_name(file_base) == target:
+                    return os.path.join(fonts_dir, filename)
+
+        return None
 
     try:
-        uploaded_font = None
+        # Build candidate font names
+        candidates = _build_font_name_candidates(font_family, font_style)
+        print(f"DEBUG: Font lookup for '{font_family}' + '{font_style}'")
+        print(f"DEBUG: Candidates: {candidates}")
 
-        # Try by ID first (more reliable)
-        if font_id:
-            uploaded_font = Font.get_by_id(int(font_id))
-
-        # Fallback to name lookup
-        if not uploaded_font and font_family:
-            uploaded_font = Font.get_by_name(font_family)
-
-        if uploaded_font:
-            file_path = uploaded_font['file_path']
-            # Ensure absolute path
-            if not os.path.isabs(file_path):
-                file_path = os.path.join(os.path.dirname(__file__), '..', file_path)
-            file_path = os.path.normpath(file_path)
-            # ReportLab needs forward slashes on Windows
-            file_path = file_path.replace('\\', '/')
-
-            if os.path.exists(file_path):
-                # Read font's full name from font file for Illustrator compatibility
-                reg_name = uploaded_font['font_name'] or font_family
-                try:
-                    from fontTools.ttLib import TTFont as FTFont
-                    ft_font = FTFont(file_path)
-                    full_name = None
-                    ps_name = None
-                    for record in ft_font['name'].names:
-                        if record.nameID == 4 and record.platformID == 3:  # Full name (Windows)
-                            try:
-                                full_name = record.toUnicode()
-                            except:
-                                pass
-                        elif record.nameID == 6 and record.platformID == 3:  # PostScript name
-                            try:
-                                ps_name = record.toUnicode()
-                            except:
-                                pass
-                    ft_font.close()
-                    # Prefer full name (matches local installed font), fallback to PostScript name
-                    if full_name:
-                        reg_name = full_name
-                    elif ps_name:
-                        reg_name = ps_name
-                except Exception as e:
-                    print(f"Warning: Could not read font name: {e}")
-
-                # Check if already registered
-                try:
-                    pdfmetrics.getFont(reg_name)
-                    return (reg_name, True)
-                except:
-                    pass
-
-                # Register TTF with ReportLab
-                try:
-                    font = TTFont(reg_name, file_path)
-                    font.substitutionFonts = []
-                    pdfmetrics.registerFont(font)
-                    print(f"Font registered: {reg_name} from {file_path}")
-                    return (reg_name, True)
-                except Exception as e:
-                    print(f"Warning: Could not register font {reg_name}: {e}")
+        # Search for font file
+        file_path = None
+        for candidate in candidates:
+            file_path = _find_font_file(candidate)
+            if file_path:
+                print(f"DEBUG: Found font file: {candidate} -> {file_path}")
+                break
             else:
-                print(f"Warning: Font file not found: {file_path}")
-    except Exception as e:
-        print(f"Warning: Could not check uploaded fonts: {e}")
+                print(f"DEBUG: No file found for: {candidate}")
 
-    # Fall back to standard fonts
-    font_map = {
-        'Arial': 'Helvetica',
-        'Times New Roman': 'Times-Roman',
-        'Courier New': 'Courier'
-    }
-    return (font_map.get(font_family, 'Helvetica'), False)
+        if file_path and os.path.exists(file_path):
+            # Normalize path
+            file_path = os.path.normpath(file_path)
+
+            # ReportLab needs forward slashes on Windows
+            file_path_rl = file_path.replace('\\', '/')
+
+            # Read font's PostScript name from font file for Illustrator compatibility
+            reg_name = None
+            try:
+                from fontTools.ttLib import TTFont as FTFont
+                ft_font = FTFont(file_path)
+                ps_name = None
+                full_name = None
+                for record in ft_font['name'].names:
+                    if record.nameID == 6 and record.platformID == 3:  # PostScript name (Windows)
+                        try:
+                            ps_name = record.toUnicode()
+                        except:
+                            pass
+                    elif record.nameID == 4 and record.platformID == 3:  # Full name
+                        try:
+                            full_name = record.toUnicode()
+                        except:
+                            pass
+                ft_font.close()
+                # Prefer PostScript name (matches web font naming: "MangoNew-Bold")
+                # Fallback to full name if PostScript name not available
+                if ps_name:
+                    reg_name = ps_name
+                elif full_name:
+                    reg_name = full_name
+            except Exception as e:
+                print(f"Warning: Could not read font name: {e}")
+
+            # Fallback to font_family if we couldn't read from file
+            if not reg_name:
+                reg_name = font_family
+
+            # Check if already registered
+            try:
+                existing = pdfmetrics.getFont(reg_name)
+                print(f"DEBUG: Font '{reg_name}' already registered, reusing")
+                return (reg_name, True)
+            except:
+                print(f"DEBUG: Font '{reg_name}' not yet registered")
+
+            # Register TTF with ReportLab
+            try:
+                print(f"DEBUG: Attempting to register font '{reg_name}' from {file_path}")
+                font = TTFont(reg_name, file_path_rl)
+                font.substitutionFonts = []
+                pdfmetrics.registerFont(font)
+                print(f"Font registered: {reg_name} from {file_path}")
+                return (reg_name, True)
+            except Exception as e:
+                print(f"ERROR: Could not register font {reg_name}: {e}")
+                import traceback
+                traceback.print_exc()
+
+                # Fallback: use Helvetica metrics but keep font name
+                # This allows Illustrator to see the font name and substitute locally
+                try:
+                    from reportlab.pdfbase.pdfmetrics import Font as RLFont
+                    try:
+                        pdfmetrics.getFont(reg_name)
+                    except:
+                        pdfmetrics.registerFont(RLFont(reg_name, 'Helvetica', 'WinAnsiEncoding'))
+                    print(f"Using Helvetica metrics for font: {reg_name}")
+                    return (reg_name, False)
+                except Exception as e2:
+                    print(f"Warning: Could not register fallback font: {e2}")
+                    return (reg_name, False)
+        else:
+            print(f"Warning: Font file not found for '{font_family}'")
+    except Exception as e:
+        print(f"Warning: Font registration error: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # If font couldn't be found/registered, return the font name anyway
+    # This allows Illustrator to see the font name and substitute locally
+    if font_family:
+        return (font_family, False)
+
+    # If no font_family provided at all, return empty string
+    return ('', False)
 
 def _hex_to_rgb(hex_color):
     """Convert hex color string to RGB tuple (0-1 range)"""

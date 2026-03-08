@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -lt .tmp/*.json)",
+      "Bash(ls -la .tmp/*.ai)"
+    ]
+  }
+}
