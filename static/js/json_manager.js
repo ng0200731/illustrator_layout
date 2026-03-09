@@ -158,6 +158,23 @@ function jsonInitWithTabPane(tabPane) {
         });
     });
 
+    // Live update for width/height dimensions
+    ['ct-width', 'ct-height'].forEach(function(id) {
+        var el = tabPane.querySelector('#' + id);
+        if (el) el.addEventListener('input', function() {
+            if (jState && jState.pendingContentRegion) {
+                var val = parseFloat(el.value);
+                if (isNaN(val) || val < 0.1) val = 0.1;
+                if (id === 'ct-width') {
+                    jState.pendingContentRegion.w = val;
+                } else if (id === 'ct-height') {
+                    jState.pendingContentRegion.h = val;
+                }
+                jRenderCanvas();
+            }
+        });
+    });
+
     var ctFontSelect = tabPane.querySelector('#ct-font-select');
 
     // Live preview for QR/barcode inputs
@@ -804,6 +821,19 @@ function jHitTestTextNode(nodes, x, y) {
     return null;
 }
 
+function jPopulateDimensionFields() {
+    if (!jState || !jState.pendingContentRegion) return;
+    var widthEl = _jel('ct-width');
+    var heightEl = _jel('ct-height');
+    var dimRow = _jel('ct-dimensions-row');
+    var dimRowHeight = _jel('ct-dimensions-row-height');
+
+    if (widthEl) widthEl.value = jState.pendingContentRegion.w.toFixed(1);
+    if (heightEl) heightEl.value = jState.pendingContentRegion.h.toFixed(1);
+    if (dimRow) dimRow.style.display = '';
+    if (dimRowHeight) dimRowHeight.style.display = '';
+}
+
 function jEditOverlayRegion(ovIdx) {
     if (!jState) return;
     var ov = jState.overlays[ovIdx];
@@ -829,6 +859,8 @@ function jEditOverlayRegion(ovIdx) {
     if (btns) btns.style.display = '';
     var rotBtns = _jel('ct-rotate-buttons');
     if (rotBtns) rotBtns.style.display = '';
+
+    jPopulateDimensionFields();
 
     jLoadFontList().then(function() {
         jPrefillContentForm(contentType, ov);
@@ -911,6 +943,8 @@ function jEditTextNode(node) {
     if (btns) btns.style.display = '';
     var rotBtns = _jel('ct-rotate-buttons');
     if (rotBtns) rotBtns.style.display = '';
+
+    jPopulateDimensionFields();
 
     jLoadFontList(true).then(function() {
         jPrefillContentForm('text', {
@@ -3730,10 +3764,10 @@ function applyContentSettings() {
         jCaptureState();
         // Editing existing overlay (double-click)
         if (jState.editingComponentIdx >= 0 && jState.editingComponentIdx < jState.overlays.length) {
-            // Preserve position and bounds constraint from existing overlay
+            // Use dimensions from pendingContentRegion (which may have been edited via width/height inputs)
             var existing = jState.overlays[jState.editingComponentIdx];
-            comp.x = existing.x; comp.y = existing.y;
-            comp.w = existing.w; comp.h = existing.h;
+            comp.x = region.x; comp.y = region.y;
+            comp.w = region.w; comp.h = region.h;
             comp._boundsRectIdx = existing._boundsRectIdx;
             comp._rotation = existing._rotation || 0;
             jState.overlays[jState.editingComponentIdx] = comp;
@@ -3776,6 +3810,10 @@ function applyContentSettings() {
     ['ct-form-text', 'ct-form-image', 'ct-form-qrcode', 'ct-form-barcode'].forEach(function(id) {
         var el = _jel(id); if (el) el.style.display = 'none';
     });
+    var dimRow = _jel('ct-dimensions-row');
+    if (dimRow) dimRow.style.display = 'none';
+    var dimRowHeight = _jel('ct-dimensions-row-height');
+    if (dimRowHeight) dimRowHeight.style.display = 'none';
     var aiFontRow = _jel('ct-ai-font-row');
     if (aiFontRow) aiFontRow.style.display = 'none';
 
@@ -3799,6 +3837,10 @@ function cancelContentSettings() {
     ['ct-form-text', 'ct-form-image', 'ct-form-qrcode', 'ct-form-barcode'].forEach(function(id) {
         var el = _jel(id); if (el) el.style.display = 'none';
     });
+    var dimRow = _jel('ct-dimensions-row');
+    if (dimRow) dimRow.style.display = 'none';
+    var dimRowHeight = _jel('ct-dimensions-row-height');
+    if (dimRowHeight) dimRowHeight.style.display = 'none';
     var aiFontRow = _jel('ct-ai-font-row');
     if (aiFontRow) aiFontRow.style.display = 'none';
     jRenderCanvas();
@@ -4075,6 +4117,7 @@ function jOnAddOverlayDrawStart(e) {
             if (btns) btns.style.display = '';
             var rotBtns = _jel('ct-rotate-buttons');
             if (rotBtns) rotBtns.style.display = '';
+            jPopulateDimensionFields();
             jLoadFontList();
             jAttachContentPreviewListeners();
             jState.addOverlayMode = false;
@@ -4145,6 +4188,7 @@ function jOnContentRegionMouseDown(e) {
             var w = Math.abs(rd.x2 - rd.x1), h = Math.abs(rd.y2 - rd.y1);
             jState.pendingContentRegion = { x: x, y: y, w: w, h: h };
             jState.pendingContentType = (_jel('ct-type-select') || {}).value || 'text';
+            jPopulateDimensionFields();
             var picker = _jel('content-type-picker');
             if (picker) picker.style.display = '';
         }
