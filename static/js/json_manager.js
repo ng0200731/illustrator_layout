@@ -3535,6 +3535,11 @@ function jRenderOverlayList() {
         item.className = 'component-item';
         if (i === jState.selectedOverlayIdx) item.classList.add('selected');
 
+        // Add green styling for overlays created from + button
+        if (ov._fromAddButton) {
+            item.classList.add('from-add-button');
+        }
+
         var eyeBtn = document.createElement('button');
         eyeBtn.className = 'icon-btn';
         eyeBtn.textContent = ov.visible ? '👁' : '-';
@@ -3770,6 +3775,10 @@ function applyContentSettings() {
             comp.w = region.w; comp.h = region.h;
             comp._boundsRectIdx = existing._boundsRectIdx;
             comp._rotation = existing._rotation || 0;
+            // Preserve the _fromAddButton flag
+            if (existing._fromAddButton) {
+                comp._fromAddButton = true;
+            }
             jState.overlays[jState.editingComponentIdx] = comp;
             jState.selectedOverlayIdx = -1;
         } else {
@@ -3779,6 +3788,10 @@ function applyContentSettings() {
             } else {
                 var br = jFindContainingBoundsRect(comp);
                 comp._boundsRectIdx = br ? jState.boundsRects.indexOf(br) : -1;
+            }
+            // Mark if created from + button
+            if (jState._fromAddButton) {
+                comp._fromAddButton = true;
             }
             jState.overlays.push(comp);
             jState.selectedOverlayIdx = -1;
@@ -3801,6 +3814,7 @@ function applyContentSettings() {
     jState.pendingContentRegion = null;
     jState.pendingContentType = null;
     jState._addOverlayBRIdx = -1;
+    jState._fromAddButton = false; // Clear the flag
     var picker = _jel('content-type-picker');
     if (picker) picker.style.display = 'none';
     var btns = _jel('ct-buttons');
@@ -4107,6 +4121,7 @@ function jOnAddOverlayDrawStart(e) {
             jState.pendingContentType = 'text';
             jState.editingComponentIdx = -1;
             jState._addOverlayBRIdx = brIdx;
+            jState._fromAddButton = true; // Mark as created from + button
             var panel = _jel('content-type-panel');
             if (panel) panel.style.display = '';
             var picker = _jel('content-type-picker');

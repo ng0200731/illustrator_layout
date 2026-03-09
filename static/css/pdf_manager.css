@@ -317,6 +317,27 @@
     background: rgba(0, 0, 0, 0.1);
 }
 
+.pdf-manager-container .component-item.from-add-button {
+    background: #e8f5e9;
+    border-left: 4px solid #4caf50;
+    padding-left: 20px;
+}
+
+.pdf-manager-container .component-item.from-add-button:hover {
+    background: #c8e6c9;
+}
+
+.pdf-manager-container .component-item.from-add-button.selected {
+    background: #e8f5e9;
+    border: 2px solid #4caf50;
+    border-left: 4px solid #4caf50;
+}
+
+.pdf-manager-container .component-item.from-add-button .component-label {
+    color: #2e7d32;
+    font-weight: 500;
+}
+
 .component-label {
     flex: 1;
     overflow: hidden;
