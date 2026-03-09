@@ -4976,35 +4976,16 @@ function jExportFile(type, outlined) {
     var chk = _jel('export-include-hidden');
     if (chk) includeHidden = chk.checked;
 
-    // Flatten document tree into components array for export
+    // Build components array for export in correct z-order (bottom to top):
+    // 1. Manual overlays (bottom)
+    // 2. Auto overlays (middle)
+    // 3. Document tree (top)
     var components = [];
-    jFlattenForExport(jState.documentTree, components, 1.0);
 
-    // If export-eye-close is off, remove hidden components
-    if (!includeHidden) {
-        components = components.filter(function(c) { return c.visible !== false; });
-    }
-
-    // Assign boundsRectIdx to flattened components based on center point
-    var brs = jState.boundsRects || [];
-    for (var ci = 0; ci < components.length; ci++) {
-        var comp = components[ci];
-        if (comp._isBoundsRect) continue;
-        var ccx = comp.x + comp.width / 2;
-        var ccy = comp.y + comp.height / 2;
-        comp.boundsRectIdx = -1;
-        for (var bi = 0; bi < brs.length; bi++) {
-            var tbr = brs[bi];
-            if (ccx >= tbr.x && ccx <= tbr.x + tbr.w && ccy >= tbr.y && ccy <= tbr.y + tbr.h) {
-                comp.boundsRectIdx = bi;
-                break;
-            }
-        }
-    }
-
-    // Add overlay components
+    // First, add manual overlays (_fromAddButton) - bottom layer
     for (var i = 0; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
+        if (!ov._fromAddButton) continue; // Skip non-manual overlays
         if (!includeHidden && ov.visible === false) continue;
         components.push({
             type: ov.type,
@@ -5030,6 +5011,62 @@ function jExportFile(type, outlined) {
             boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1,
             isVariable: ov.isVariable || false
         });
+    }
+
+    // Second, add auto overlays (no _fromAddButton) - middle layer
+    for (var i = 0; i < jState.overlays.length; i++) {
+        var ov = jState.overlays[i];
+        if (ov._fromAddButton) continue; // Skip manual overlays
+        if (!includeHidden && ov.visible === false) continue;
+        components.push({
+            type: ov.type,
+            x: ov.x, y: ov.y,
+            width: ov.w, height: ov.h,
+            content: ov.content || '',
+            fontFamily: ov.fontFamily || '',
+            fontId: ov.fontId || null,
+            fontSize: ov.fontSize || 12,
+            bold: ov.bold || false,
+            italic: ov.italic || false,
+            color: ov.color || '#000000',
+            letterSpacing: ov.letterSpacing || 0,
+            alignH: ov.alignH || 'left',
+            alignV: ov.alignV || 'top',
+            visible: ov.visible !== false,
+            imageUrl: ov.imageUrl || '',
+            imageFit: ov.imageFit || 'contain',
+            qrData: ov.qrData || '',
+            barcodeData: ov.barcodeData || '',
+            barcodeFormat: ov.barcodeFormat || 'code128',
+            rotation: ov._rotation || 0,
+            boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1,
+            isVariable: ov.isVariable || false
+        });
+    }
+
+    // Third, flatten document tree - top layer
+    jFlattenForExport(jState.documentTree, components, 1.0);
+
+    // If export-eye-close is off, remove hidden components
+    if (!includeHidden) {
+        components = components.filter(function(c) { return c.visible !== false; });
+    }
+
+    // Assign boundsRectIdx to flattened components based on center point
+    var brs = jState.boundsRects || [];
+    for (var ci = 0; ci < components.length; ci++) {
+        var comp = components[ci];
+        if (comp._isBoundsRect) continue;
+        var ccx = comp.x + comp.width / 2;
+        var ccy = comp.y + comp.height / 2;
+        comp.boundsRectIdx = -1;
+        for (var bi = 0; bi < brs.length; bi++) {
+            var tbr = brs[bi];
+            if (ccx >= tbr.x && ccx <= tbr.x + tbr.w && ccy >= tbr.y && ccy <= tbr.y + tbr.h) {
+                comp.boundsRectIdx = bi;
+                break;
+            }
+        }
     }
 
     // Build boundsRects info for export (rotation + geometry)

@@ -42,10 +42,9 @@ def _draw_page(c, data, outlined, page_w, page_h):
     separate_invisible = data.get('separateInvisible', False)
 
     if separate_invisible:
-        # Separate visible and hidden paths
-        visible_paths = []
+        # Separate visible and hidden paths while preserving order within each group
         hidden_paths = []
-        text_components = []
+        visible_and_text = []
 
         for comp in components:
             comp_type = comp.get('type')
@@ -53,16 +52,14 @@ def _draw_page(c, data, outlined, page_w, page_h):
 
             if comp_type == 'pdfpath':
                 if visible:
-                    visible_paths.append(comp)
+                    visible_and_text.append(comp)
                 else:
                     hidden_paths.append(comp)
-            elif comp_type in ('text', 'textregion'):
-                text_components.append(comp)
-            elif comp_type in ('barcoderegion', 'qrcoderegion'):
-                text_components.append(comp)
+            elif comp_type in ('text', 'textregion', 'barcoderegion', 'qrcoderegion'):
+                visible_and_text.append(comp)
 
         # Debug: Print counts
-        print(f"DEBUG: hidden_paths={len(hidden_paths)}, visible_paths={len(visible_paths)}")
+        print(f"DEBUG: hidden_paths={len(hidden_paths)}, visible_and_text={len(visible_and_text)}")
 
         # Draw hidden paths first (bottom of Layers panel in Illustrator)
         for comp in hidden_paths:
@@ -71,7 +68,7 @@ def _draw_page(c, data, outlined, page_w, page_h):
             _restore_rotation(c, comp, bounds_rects)
 
         # Draw red separator line (helps identify hidden/visible boundary)
-        if len(hidden_paths) > 0 and len(visible_paths) > 0:
+        if len(hidden_paths) > 0 and len(visible_and_text) > 0:
             print("DEBUG: Drawing red separator line")
             # Draw a thin vertical red FILLED rectangle OUTSIDE the artboard (to the right)
             p = c.beginPath()
@@ -83,27 +80,27 @@ def _draw_page(c, data, outlined, page_w, page_h):
             c.setFillColorRGB(1, 0, 0)  # Pure red fill
             c.drawPath(p, fill=1, stroke=0)  # Fill only, no stroke
         else:
-            print(f"DEBUG: Skipping red line - hidden={len(hidden_paths)}, visible={len(visible_paths)}")
+            print(f"DEBUG: Skipping red line - hidden={len(hidden_paths)}, visible={len(visible_and_text)}")
 
-        # Draw visible paths (top of Layers panel in Illustrator)
-        for comp in visible_paths:
-            _apply_rotation(c, comp, bounds_rects, page_h)
-            _draw_pdfpath(c, comp, page_h)
-            _restore_rotation(c, comp, bounds_rects)
-
-        # Draw text/barcode/qr components
-        for comp in text_components:
-            _apply_rotation(c, comp, bounds_rects, page_h)
+        # Draw visible paths and text components in the order they were sent
+        # This preserves the z-index: manual overlays -> auto overlays -> document tree
+        for comp in visible_and_text:
             comp_type = comp.get('type')
-            if comp_type in ('barcoderegion', 'qrcoderegion'):
+            _apply_rotation(c, comp, bounds_rects, page_h)
+
+            if comp_type == 'pdfpath':
+                _draw_pdfpath(c, comp, page_h)
+            elif comp_type in ('barcoderegion', 'qrcoderegion'):
                 _draw_barcode_or_qr(c, comp, page_h)
-            elif outlined:
-                _draw_text_outlined(c, comp, page_h)
-            else:
-                _draw_text(c, comp, page_h)
+            elif comp_type in ('text', 'textregion'):
+                if outlined:
+                    _draw_text_outlined(c, comp, page_h)
+                else:
+                    _draw_text(c, comp, page_h)
+
             _restore_rotation(c, comp, bounds_rects)
     else:
-        # Normal export: draw all components (including invisible ones)
+        # Normal export: draw all components in order (preserves z-index)
         for comp in components:
             comp_type = comp.get('type')
             _apply_rotation(c, comp, bounds_rects, page_h)
