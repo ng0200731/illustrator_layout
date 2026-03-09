@@ -11,6 +11,9 @@
                     <option value="">-- Select customer --</option>
                 </select>
             </div>
+            <div id="layout-name-display" style="display:none;margin-top:8px;padding:6px 8px;background:#f9f9f9;border:1px solid #ddd;font-size:11px;color:#444;">
+                <strong>Layout:</strong> <span id="layout-name-text"></span>
+            </div>
         </div>
 
         <div id="order-lines"></div>
@@ -165,7 +168,13 @@
         var vars = [];
         comps.forEach(function(c, ci) {
             if (!c.isVariable) return;
-            vars.push({ idx: ci, content: c.content || '', fontFamily: c.fontFamily || '', fontSize: c.fontSize || 12 });
+            vars.push({
+                idx: ci,
+                content: c.content || '',
+                variableName: c.variableName || '',
+                fontFamily: c.fontFamily || '',
+                fontSize: c.fontSize || 12
+            });
         });
 
         // Add to orderLinesList
@@ -190,33 +199,58 @@
     function renderOrderLines() {
         var container = document.getElementById('order-lines');
         container.innerHTML = '';
+
+        // Show layout name at the top
+        if (orderLinesList.length > 0) {
+            document.getElementById('layout-name-display').style.display = '';
+            document.getElementById('layout-name-text').textContent = orderLinesList[0].layoutName;
+        } else {
+            document.getElementById('layout-name-display').style.display = 'none';
+        }
+
         orderLinesList.forEach(function(line, li) {
-            var card = document.createElement('div');
-            card.className = 'order-line-card';
+            // Add set separator for all sets
+            if (line.vars.length > 0) {
+                var separator = document.createElement('div');
+                separator.style.cssText = 'margin:16px 0 8px 0;padding:8px;background:#000;color:#fff;font-size:11px;font-weight:600;text-align:center;';
+                separator.textContent = 'SET #' + (li + 1);
+                container.appendChild(separator);
+            }
 
-            var header = '<div class="line-card-header">' +
-                '<span>' + escHtml(line.layoutName) + ' (qty: ' + (line.quantity || 1) + ')</span>' +
-                '<button class="btn-remove" onclick="removeLine(' + li + ')">✕</button>' +
-                '</div>';
-
-            var varsHtml = '';
+            // Create a card for each variable
             if (line.vars.length === 0) {
-                varsHtml = '<span class="no-vars">No variable fields</span>';
+                var card = document.createElement('div');
+                card.className = 'order-line-card';
+                var header = '<div class="line-card-header">' +
+                    '<span>' + escHtml(line.layoutName) + ' (qty: ' + (line.quantity || 1) + ')</span>' +
+                    '<button class="btn-remove" onclick="removeLine(' + li + ')">✕</button>' +
+                    '</div>';
+                card.innerHTML = header + '<div class="line-card-vars"><span class="no-vars">No variable fields</span></div>';
+                container.appendChild(card);
             } else {
-                line.vars.forEach(function(v) {
-                    varsHtml +=
+                line.vars.forEach(function(v, vi) {
+                    var card = document.createElement('div');
+                    card.className = 'order-line-card';
+
+                    var varLabel = v.variableName || ('#' + (vi + 1));
+                    var header = '<div class="line-card-header">' +
+                        '<span>' + escHtml(varLabel) + '</span>' +
+                        (vi === 0 ? '<button class="btn-remove" onclick="removeLine(' + li + ')">✕</button>' : '') +
+                        '</div>';
+
+                    var varsHtml =
                         '<div class="var-row-side">' +
                             '<div class="var-left">' + escHtml(v.content) + '</div>' +
                             '<textarea class="var-right" data-line="' + li + '" data-idx="' + v.idx + '" ' +
-                                'placeholder="Enter value" rows="2" oninput="onVarInput(this)">' +
+                                'placeholder="Enter value" rows="2" oninput="onVarInput(this)" style="width:100%;">' +
                                 escHtml(line.variableValues[v.idx] || '') +
                             '</textarea>' +
                         '</div>';
+
+                    card.innerHTML = header + '<div class="line-card-vars">' + varsHtml + '</div>';
+                    container.appendChild(card);
                 });
             }
-
-            card.innerHTML = header + '<div class="line-card-vars">' + varsHtml + '</div>';
-            container.appendChild(card);
         });
 
         // Add "+" button to duplicate same layout with new variable set
@@ -229,9 +263,18 @@
 
     function addVariableSet() {
         if (orderLinesList.length === 0) return;
+        // Copy structure from first set with default content values
         var src = orderLinesList[0];
-        var lineObj = { layout_id: src.layout_id, layoutName: src.layoutName, vars: src.vars, variableValues: {} };
-        src.vars.forEach(function(v) { lineObj.variableValues[v.idx] = v.content; });
+        var lineObj = {
+            layout_id: src.layout_id,
+            layoutName: src.layoutName,
+            vars: src.vars,
+            variableValues: {}
+        };
+        // Set default values to the original content (same as when first loading)
+        src.vars.forEach(function(v) {
+            lineObj.variableValues[v.idx] = v.content;
+        });
         orderLinesList.push(lineObj);
         renderOrderLines();
     }

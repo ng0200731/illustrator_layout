@@ -3652,13 +3652,28 @@ function jRenderOverlayList() {
 
         var varBtn = document.createElement('button');
         varBtn.className = 'icon-btn' + (ov.isVariable ? ' var-active' : '');
-        varBtn.textContent = ov.isVariable ? '⚡' : '○';
+        varBtn.textContent = ov.isVariable ? 'f(x)' : '○';
         varBtn.title = ov.isVariable ? 'Variable (on)' : 'Variable (off)';
         varBtn.style.fontSize = '10px';
         (function(idx) {
             varBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
-                jState.overlays[idx].isVariable = !jState.overlays[idx].isVariable;
+                var wasVariable = jState.overlays[idx].isVariable;
+                jState.overlays[idx].isVariable = !wasVariable;
+
+                // If turning on, prompt for variable name
+                if (!wasVariable) {
+                    var varName = prompt('Enter variable name:', jState.overlays[idx].variableName || '');
+                    if (varName !== null) {
+                        jState.overlays[idx].variableName = varName.trim();
+                        console.log('Set variableName for overlay', idx, ':', jState.overlays[idx].variableName);
+                        console.log('Overlay after setting variableName:', jState.overlays[idx]);
+                    } else {
+                        // User cancelled, revert the toggle
+                        jState.overlays[idx].isVariable = false;
+                    }
+                }
+
                 jCaptureState();
                 jRenderCanvas();
                 jRenderOverlayList();
@@ -4685,6 +4700,7 @@ function saveLayoutToDatabase() {
                             barcodeData: ov.barcodeData || '',
                             barcodeFormat: ov.barcodeFormat || 'code128',
                             isVariable: ov.isVariable || false,
+                            variableName: ov.variableName || '',
                             rotation: ov._rotation || 0,
                             boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1
                         };
