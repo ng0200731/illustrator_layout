@@ -22,41 +22,16 @@ def flatten_layout_for_export(layout_data):
     doc_w = layout_data.get('docWidth', layout_data.get('label_width', 0))
     doc_h = layout_data.get('docHeight', layout_data.get('label_height', 0))
 
-    # 1. Flatten document tree into pdfpath/text components
+    # Build components array in correct z-order (bottom to top):
+    # 1. Manual overlays (bottom)
+    # 2. Document tree (middle)
+    # 3. Auto overlays (top)
     components = []
-    _flatten_tree(doc_tree, components, 1.0)
 
-    # 2. Build boundsRects from layout data
-    bounds_rects = []
-    raw_brs = layout_data.get('boundsRects', [])
-    br_rotations = layout_data.get('boundsRectRotations', [])
-    if isinstance(raw_brs, list):
-        for bi, br in enumerate(raw_brs):
-            rot = 0
-            if bi < len(br_rotations):
-                rot = br_rotations[bi] or 0
-            # boundsRects may come as overlay-style (x,y,w,h) or already export-style
-            bounds_rects.append({
-                'x': br.get('x', 0), 'y': br.get('y', 0),
-                'w': br.get('w', br.get('width', 0)), 'h': br.get('h', br.get('height', 0)),
-                'rotation': br.get('_rotation', br.get('rotation', rot))
-            })
-
-    # 3. Assign boundsRectIdx to flattened components based on center point
-    for comp in components:
-        if comp.get('_isBoundsRect'):
-            continue
-        cx = comp.get('x', 0) + comp.get('width', 0) / 2
-        cy = comp.get('y', 0) + comp.get('height', 0) / 2
-        comp['boundsRectIdx'] = -1
-        for bi, tbr in enumerate(bounds_rects):
-            if (cx >= tbr['x'] and cx <= tbr['x'] + tbr['w'] and
-                    cy >= tbr['y'] and cy <= tbr['y'] + tbr['h']):
-                comp['boundsRectIdx'] = bi
-                break
-
-    # 4. Add overlay components (overlays render on top, original content stays)
+    # 1. Add manual overlays (_fromAddButton) - bottom layer
     for ov in overlays:
+        if not ov.get('_fromAddButton'):
+            continue  # Skip non-manual overlays
         components.append({
             'type': ov.get('type', 'text'),
             'x': ov.get('x', 0), 'y': ov.get('y', 0),
@@ -84,6 +59,70 @@ def flatten_layout_for_export(layout_data):
             'rotation': ov.get('_rotation', ov.get('rotation', 0)),
             'boundsRectIdx': ov.get('_boundsRectIdx', ov.get('boundsRectIdx', -1)),
         })
+
+    # 2. Flatten document tree into pdfpath/text components - middle layer
+    _flatten_tree(doc_tree, components, 1.0)
+
+    # 3. Add auto overlays (no _fromAddButton) - top layer
+    for ov in overlays:
+        if ov.get('_fromAddButton'):
+            continue  # Skip manual overlays
+        components.append({
+            'type': ov.get('type', 'text'),
+            'x': ov.get('x', 0), 'y': ov.get('y', 0),
+            'width': ov.get('w', 0), 'height': ov.get('h', 0),
+            'content': ov.get('content', ''),
+            'fontFamily': ov.get('fontFamily', ''),
+            'fontId': ov.get('fontId'),
+            'fontStyle': ov.get('fontStyle', ov.get('aiFontStyle', '')),
+            'aiFontName': ov.get('aiFontName', ov.get('fontFamily', '')),
+            'aiFontStyle': ov.get('aiFontStyle', ov.get('fontStyle', '')),
+            'fontSize': ov.get('fontSize', 12),
+            'bold': ov.get('bold', False),
+            'italic': ov.get('italic', False),
+            'color': ov.get('color', '#000000'),
+            'letterSpacing': ov.get('letterSpacing', 0),
+            'alignH': ov.get('alignH', 'left'),
+            'alignV': ov.get('alignV', 'top'),
+            'visible': ov.get('visible', True),
+            'imageUrl': ov.get('imageUrl', ''),
+            'imageFit': ov.get('imageFit', 'contain'),
+            'qrData': ov.get('qrData', ''),
+            'barcodeData': ov.get('barcodeData', ''),
+            'barcodeFormat': ov.get('barcodeFormat', 'code128'),
+            'isVariable': ov.get('isVariable', False),
+            'rotation': ov.get('_rotation', ov.get('rotation', 0)),
+            'boundsRectIdx': ov.get('_boundsRectIdx', ov.get('boundsRectIdx', -1)),
+        })
+
+    # Build boundsRects from layout data
+    bounds_rects = []
+    raw_brs = layout_data.get('boundsRects', [])
+    br_rotations = layout_data.get('boundsRectRotations', [])
+    if isinstance(raw_brs, list):
+        for bi, br in enumerate(raw_brs):
+            rot = 0
+            if bi < len(br_rotations):
+                rot = br_rotations[bi] or 0
+            # boundsRects may come as overlay-style (x,y,w,h) or already export-style
+            bounds_rects.append({
+                'x': br.get('x', 0), 'y': br.get('y', 0),
+                'w': br.get('w', br.get('width', 0)), 'h': br.get('h', br.get('height', 0)),
+                'rotation': br.get('_rotation', br.get('rotation', rot))
+            })
+
+    # Assign boundsRectIdx to flattened components based on center point
+    for comp in components:
+        if comp.get('_isBoundsRect'):
+            continue
+        cx = comp.get('x', 0) + comp.get('width', 0) / 2
+        cy = comp.get('y', 0) + comp.get('height', 0) / 2
+        comp['boundsRectIdx'] = -1
+        for bi, tbr in enumerate(bounds_rects):
+            if (cx >= tbr['x'] and cx <= tbr['x'] + tbr['w'] and
+                    cy >= tbr['y'] and cy <= tbr['y'] + tbr['h']):
+                comp['boundsRectIdx'] = bi
+                break
 
     return {
         'label': {'width': doc_w, 'height': doc_h},
