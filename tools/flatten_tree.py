@@ -124,6 +124,9 @@ def flatten_layout_for_export(layout_data):
                 comp['boundsRectIdx'] = bi
                 break
 
+    # Filter out invisible components (matching layout create JSON behavior)
+    components = [c for c in components if c.get('visible') != False]
+
     return {
         'label': {'width': doc_w, 'height': doc_h},
         'components': components,

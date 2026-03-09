@@ -215,6 +215,17 @@
                     alert('No data to export for ' + orderId);
                     return;
                 }
+
+                // Filter out invisible components from each page (matching layout create JSON behavior)
+                pages = pages.map(function(page) {
+                    if (page.components) {
+                        page.components = page.components.filter(function(c) {
+                            return c.visible !== false;
+                        });
+                    }
+                    return page;
+                });
+
                 if (pages.length === 1) {
                     // Single page export
                     var payload = pages[0];
