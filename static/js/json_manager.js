@@ -1706,7 +1706,10 @@ function jRenderCanvas() {
     c.rect(0, 0, jState.docWidth, jState.docHeight);
     c.clip();
 
-    // Render document tree with per-panel rotation
+    // Render overlays first (bottom layer, with per-panel rotation)
+    jRenderOverlays(c);
+
+    // Render document tree on top with per-panel rotation
     var brs = jState.boundsRects;
     if (brs && brs.length > 0) {
         // Collect top-level nodes (preserving group hierarchy for clipping)
@@ -1795,9 +1798,6 @@ function jRenderCanvas() {
     }
 
     c.restore();
-
-    // Render overlays on top (with per-panel rotation)
-    jRenderOverlays(c);
 
     // Live preview for pending content region (image/QR/barcode)
     if (jState.pendingContentRegion && jState.pendingContentType) {
@@ -2443,8 +2443,35 @@ function jRenderImagePlaceholder(c, node, opacity) {
 function jRenderOverlays(c) {
     if (!jState.overlays) return;
     var brs = jState.boundsRects;
+
+    // Render in two passes to control z-order:
+    // Pass 1: Manual overlays (_fromAddButton) - render first (bottom layer)
     for (var i = 0; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
+        if (!ov._fromAddButton) continue; // Skip non-manual overlays in this pass
+        if (!ov.visible) continue;
+        if (jState.editingComponentIdx === i && jState.pendingContentRegion) continue;
+        var rot = 0;
+        if (brs && ov._boundsRectIdx >= 0 && ov._boundsRectIdx < brs.length) {
+            rot = brs[ov._boundsRectIdx]._rotation || 0;
+        }
+        if (rot !== 0) {
+            var pbr = brs[ov._boundsRectIdx];
+            var cx = pbr.x + pbr.w / 2;
+            var cy = pbr.y + pbr.h / 2;
+            c.save();
+            c.translate(cx, cy);
+            c.rotate(rot * Math.PI / 180);
+            c.translate(-cx, -cy);
+        }
+        jRenderOverlayItem(c, ov, i);
+        if (rot !== 0) c.restore();
+    }
+
+    // Pass 2: Auto overlays (no _fromAddButton) - render second (middle layer)
+    for (var i = 0; i < jState.overlays.length; i++) {
+        var ov = jState.overlays[i];
+        if (ov._fromAddButton) continue; // Skip manual overlays in this pass
         if (!ov.visible) continue;
         if (jState.editingComponentIdx === i && jState.pendingContentRegion) continue;
         var rot = 0;
@@ -3529,8 +3556,9 @@ function jRenderOverlayList() {
         list.innerHTML = '<div class="empty-message">No overlays added</div>';
         return;
     }
-    for (var i = 0; i < jState.overlays.length; i++) {
-        var ov = jState.overlays[i];
+
+    // Helper function to create overlay list item
+    function createOverlayItem(ov, i) {
         var item = document.createElement('div');
         item.className = 'component-item';
         if (i === jState.selectedOverlayIdx) item.classList.add('selected');
@@ -3643,7 +3671,22 @@ function jRenderOverlayList() {
                 jUpdateActionButtons();
             });
         })(i);
-        list.appendChild(item);
+
+        return item;
+    }
+
+    // First, render overlays with _fromAddButton flag (manual overlays at top of UI list)
+    for (var i = 0; i < jState.overlays.length; i++) {
+        var ov = jState.overlays[i];
+        if (!ov._fromAddButton) continue;
+        list.appendChild(createOverlayItem(ov, i));
+    }
+
+    // Then, render overlays without _fromAddButton flag (auto overlays at bottom of UI list)
+    for (var i = 0; i < jState.overlays.length; i++) {
+        var ov = jState.overlays[i];
+        if (ov._fromAddButton) continue;
+        list.appendChild(createOverlayItem(ov, i));
     }
 }
 
@@ -3792,9 +3835,9 @@ function applyContentSettings() {
             // Mark if created from + button
             if (jState._fromAddButton) {
                 comp._fromAddButton = true;
-                // Insert at the beginning of the array (top of list)
-                jState.overlays.unshift(comp);
-                jState.selectedOverlayIdx = 0; // Select the newly added item at index 0
+                // Insert at the end of the array for top z-index on canvas
+                jState.overlays.push(comp);
+                jState.selectedOverlayIdx = jState.overlays.length - 1;
             } else {
                 // Regular overlays go at the end
                 jState.overlays.push(comp);
