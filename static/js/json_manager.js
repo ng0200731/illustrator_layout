@@ -1706,10 +1706,10 @@ function jRenderCanvas() {
     c.rect(0, 0, jState.docWidth, jState.docHeight);
     c.clip();
 
-    // Render overlays first (bottom layer, with per-panel rotation)
-    jRenderOverlays(c);
+    // Render manual overlays first (bottom layer)
+    jRenderManualOverlays(c);
 
-    // Render document tree on top with per-panel rotation
+    // Render document tree in the middle
     var brs = jState.boundsRects;
     if (brs && brs.length > 0) {
         // Collect top-level nodes (preserving group hierarchy for clipping)
@@ -1798,6 +1798,9 @@ function jRenderCanvas() {
     }
 
     c.restore();
+
+    // Render auto overlays on top (top layer)
+    jRenderAutoOverlays(c);
 
     // Live preview for pending content region (image/QR/barcode)
     if (jState.pendingContentRegion && jState.pendingContentType) {
@@ -2438,6 +2441,60 @@ function jRenderImagePlaceholder(c, node, opacity) {
     c.moveTo(x + w, y); c.lineTo(x, y + h);
     c.stroke();
     c.restore();
+}
+
+function jRenderManualOverlays(c) {
+    // Render only manual overlays (_fromAddButton)
+    if (!jState.overlays) return;
+    var brs = jState.boundsRects;
+    for (var i = 0; i < jState.overlays.length; i++) {
+        var ov = jState.overlays[i];
+        if (!ov._fromAddButton) continue; // Skip non-manual overlays
+        if (!ov.visible) continue;
+        if (jState.editingComponentIdx === i && jState.pendingContentRegion) continue;
+        var rot = 0;
+        if (brs && ov._boundsRectIdx >= 0 && ov._boundsRectIdx < brs.length) {
+            rot = brs[ov._boundsRectIdx]._rotation || 0;
+        }
+        if (rot !== 0) {
+            var pbr = brs[ov._boundsRectIdx];
+            var cx = pbr.x + pbr.w / 2;
+            var cy = pbr.y + pbr.h / 2;
+            c.save();
+            c.translate(cx, cy);
+            c.rotate(rot * Math.PI / 180);
+            c.translate(-cx, -cy);
+        }
+        jRenderOverlayItem(c, ov, i);
+        if (rot !== 0) c.restore();
+    }
+}
+
+function jRenderAutoOverlays(c) {
+    // Render only auto overlays (no _fromAddButton)
+    if (!jState.overlays) return;
+    var brs = jState.boundsRects;
+    for (var i = 0; i < jState.overlays.length; i++) {
+        var ov = jState.overlays[i];
+        if (ov._fromAddButton) continue; // Skip manual overlays
+        if (!ov.visible) continue;
+        if (jState.editingComponentIdx === i && jState.pendingContentRegion) continue;
+        var rot = 0;
+        if (brs && ov._boundsRectIdx >= 0 && ov._boundsRectIdx < brs.length) {
+            rot = brs[ov._boundsRectIdx]._rotation || 0;
+        }
+        if (rot !== 0) {
+            var pbr = brs[ov._boundsRectIdx];
+            var cx = pbr.x + pbr.w / 2;
+            var cy = pbr.y + pbr.h / 2;
+            c.save();
+            c.translate(cx, cy);
+            c.rotate(rot * Math.PI / 180);
+            c.translate(-cx, -cy);
+        }
+        jRenderOverlayItem(c, ov, i);
+        if (rot !== 0) c.restore();
+    }
 }
 
 function jRenderOverlays(c) {
@@ -4978,8 +5035,8 @@ function jExportFile(type, outlined) {
 
     // Build components array for export in correct z-order (bottom to top):
     // 1. Manual overlays (bottom)
-    // 2. Auto overlays (middle)
-    // 3. Document tree (top)
+    // 2. Document tree (middle)
+    // 3. Auto overlays (top)
     var components = [];
 
     // First, add manual overlays (_fromAddButton) - bottom layer
@@ -5013,7 +5070,10 @@ function jExportFile(type, outlined) {
         });
     }
 
-    // Second, add auto overlays (no _fromAddButton) - middle layer
+    // Second, flatten document tree - middle layer
+    jFlattenForExport(jState.documentTree, components, 1.0);
+
+    // Third, add auto overlays (no _fromAddButton) - top layer
     for (var i = 0; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
         if (ov._fromAddButton) continue; // Skip manual overlays
@@ -5044,8 +5104,36 @@ function jExportFile(type, outlined) {
         });
     }
 
-    // Third, flatten document tree - top layer
-    jFlattenForExport(jState.documentTree, components, 1.0);
+    // Third, add auto overlays (no _fromAddButton) - top layer
+    for (var i = 0; i < jState.overlays.length; i++) {
+        var ov = jState.overlays[i];
+        if (ov._fromAddButton) continue; // Skip manual overlays
+        if (!includeHidden && ov.visible === false) continue;
+        components.push({
+            type: ov.type,
+            x: ov.x, y: ov.y,
+            width: ov.w, height: ov.h,
+            content: ov.content || '',
+            fontFamily: ov.fontFamily || '',
+            fontId: ov.fontId || null,
+            fontSize: ov.fontSize || 12,
+            bold: ov.bold || false,
+            italic: ov.italic || false,
+            color: ov.color || '#000000',
+            letterSpacing: ov.letterSpacing || 0,
+            alignH: ov.alignH || 'left',
+            alignV: ov.alignV || 'top',
+            visible: ov.visible !== false,
+            imageUrl: ov.imageUrl || '',
+            imageFit: ov.imageFit || 'contain',
+            qrData: ov.qrData || '',
+            barcodeData: ov.barcodeData || '',
+            barcodeFormat: ov.barcodeFormat || 'code128',
+            rotation: ov._rotation || 0,
+            boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1,
+            isVariable: ov.isVariable || false
+        });
+    }
 
     // If export-eye-close is off, remove hidden components
     if (!includeHidden) {
