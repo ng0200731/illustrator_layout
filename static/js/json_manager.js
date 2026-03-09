@@ -3792,9 +3792,14 @@ function applyContentSettings() {
             // Mark if created from + button
             if (jState._fromAddButton) {
                 comp._fromAddButton = true;
+                // Insert at the beginning of the array (top of list)
+                jState.overlays.unshift(comp);
+                jState.selectedOverlayIdx = 0; // Select the newly added item at index 0
+            } else {
+                // Regular overlays go at the end
+                jState.overlays.push(comp);
+                jState.selectedOverlayIdx = -1;
             }
-            jState.overlays.push(comp);
-            jState.selectedOverlayIdx = -1;
         }
         // Flash feedback on apply button
         var applyBtn = _jel('ct-apply');
