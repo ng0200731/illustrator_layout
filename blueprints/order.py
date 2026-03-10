@@ -70,6 +70,40 @@ def api_delete(order_id):
         return jsonify({'error': str(e)}), 500
 
 
+@order_bp.route('/api/<order_id>', methods=['PUT'])
+def api_update(order_id):
+    data = request.get_json()
+    customer_id = data.get('customer_id')
+    po_number = data.get('po_number')
+    lines = data.get('lines', [])
+
+    if not customer_id or not po_number or not lines:
+        return jsonify({'error': 'Missing required fields'}), 400
+
+    try:
+        # Delete existing lines
+        execute_query("DELETE FROM order_lines WHERE order_id = ?", (order_id,))
+
+        # Update order
+        execute_query(
+            "UPDATE orders SET customer_id = ?, po_number = ? WHERE order_id = ?",
+            (customer_id, po_number, order_id)
+        )
+
+        # Add new lines
+        for line in lines:
+            Order.add_line(
+                order_id,
+                line['layout_id'],
+                line['quantity'],
+                line.get('variable_values')
+            )
+
+        return jsonify({'ok': True, 'order_id': order_id})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @order_bp.route('/api/<order_id>/confirm', methods=['POST'])
 def api_confirm(order_id):
     try:

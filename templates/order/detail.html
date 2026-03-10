@@ -52,6 +52,8 @@
         document.getElementById('export-overlay').style.display = 'none';
     }
 
+    var layoutVariableNames = {};
+
     (function() {
         fetch('/order/api/{{ order_id }}')
             .then(function(r) { return r.json(); })
@@ -73,25 +75,76 @@
                     '<div class="info-row"><label>Created:</label><span>' + order.created_at + '</span></div>' +
                     '</div>';
 
-                var tbody = document.querySelector('#lines-table tbody');
-                orderLines.forEach(function(l, idx) {
-                    var vars = l.variable_values ? JSON.parse(l.variable_values) : {};
-                    var varParts = [];
-                    for (var k in vars) { varParts.push('#' + (parseInt(k) + 1) + ': ' + vars[k]); }
-                    var varDisplay = varParts.length ? varParts.join(', ') : '—';
+                // Get variable names from generated_data or fetch layout
+                if (orderLines.length > 0) {
+                    var firstLine = orderLines[0];
 
-                    var tr = document.createElement('tr');
-                    tr.innerHTML =
-                        '<td>' + l.quantity + '</td>' +
-                        '<td>' + varDisplay + '</td>' +
-                        '<td class="export-cell">' +
-                            '<button onclick="exportLine(' + idx + ', false)">AI E</button>' +
-                            '<button onclick="exportLine(' + idx + ', true)">AI O</button>' +
-                        '</td>';
-                    tbody.appendChild(tr);
-                });
+                    // Try to get from generated_data first
+                    if (firstLine.generated_data) {
+                        try {
+                            var genData = typeof firstLine.generated_data === 'string' ? JSON.parse(firstLine.generated_data) : firstLine.generated_data;
+                            var comps = genData.components || [];
+                            comps.forEach(function(c, idx) {
+                                if (c.isVariable) {
+                                    layoutVariableNames[idx] = c.variableName || ('#' + (idx + 1));
+                                }
+                            });
+                            renderOrderLinesTable();
+                        } catch (e) {
+                            console.error('Error parsing generated_data:', e);
+                            renderOrderLinesTable();
+                        }
+                    } else {
+                        // Fallback: generate layout data to get variable names
+                        fetch('/order/api/{{ order_id }}/generate', { method: 'POST' })
+                            .then(function(r) { return r.json(); })
+                            .then(function(res) {
+                                if (res.lines && res.lines.length > 0) {
+                                    var comps = res.lines[0].components || [];
+                                    comps.forEach(function(c, idx) {
+                                        if (c.isVariable) {
+                                            layoutVariableNames[idx] = c.variableName || ('#' + (idx + 1));
+                                        }
+                                    });
+                                }
+                                renderOrderLinesTable();
+                            })
+                            .catch(function(err) {
+                                console.error('Error fetching layout data:', err);
+                                renderOrderLinesTable();
+                            });
+                    }
+                } else {
+                    renderOrderLinesTable();
+                }
             });
     })();
+
+    function renderOrderLinesTable() {
+        var tbody = document.querySelector('#lines-table tbody');
+        tbody.innerHTML = '';
+
+        orderLines.forEach(function(l, idx) {
+            var vars = l.variable_values ? JSON.parse(l.variable_values) : {};
+            var varParts = [];
+
+            for (var k in vars) {
+                var varName = layoutVariableNames[k] || ('#' + (parseInt(k) + 1));
+                varParts.push(varName + ': ' + vars[k]);
+            }
+            var varDisplay = varParts.length ? varParts.join(', ') : '—';
+
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td>' + l.quantity + '</td>' +
+                '<td>' + varDisplay + '</td>' +
+                '<td class="export-cell">' +
+                    '<button onclick="exportLine(' + idx + ', false)">AI E</button>' +
+                    '<button onclick="exportLine(' + idx + ', true)">AI O</button>' +
+                '</td>';
+            tbody.appendChild(tr);
+        });
+    }
 
     function previewLayout(layoutId, layoutType, layoutName) {
         var route = layoutType === 'json' ? '/layout/create/json/order' : '/layout/create/pdf';

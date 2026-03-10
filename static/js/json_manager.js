@@ -2911,13 +2911,7 @@ function jRenderLayerTree() {
                 for (var ci = 0; ci < buckets[li].length; ci++) {
                     jRenderTreeNode(tree, buckets[li][ci], 1, false, layerId);
                 }
-                // Render overlays belonging to this layer
-                for (var oi = 0; oi < jState.overlays.length; oi++) {
-                    var ov = jState.overlays[oi];
-                    if (ov._boundsRectIdx === li) {
-                        jRenderOverlayTreeItem(tree, ov, oi, 1);
-                    }
-                }
+                // Overlays are not shown in layer tree (managed separately in overlay input block)
             }
         }
     } else {
@@ -3162,7 +3156,7 @@ function jRenderOverlayTreeItem(parent, ov, ovIdx, depth) {
     if (ov.type === 'textregion' && ov.content) txt += ': "' + ov.content.substring(0, 15) + '"';
     var ovRot = ov._rotation || 0;
     if (ovRot) txt += ' [' + ovRot + '°]';
-    label.textContent = '[OV] ' + txt;
+    label.textContent = txt;
 
     // Rotate buttons for overlay
     var rotCW = document.createElement('button');

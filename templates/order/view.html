@@ -84,6 +84,7 @@
                     '<button onclick="exportOrder(\'' + o.order_id + '\', false)">AI E</button> ' +
                     '<button onclick="exportOrder(\'' + o.order_id + '\', true)">AI O</button> ' +
                     '<button onclick="confirmOrder(\'' + o.order_id + '\')">Confirm</button> ' +
+                    '<button onclick="editOrder(\'' + o.order_id + '\')">Edit</button> ' +
                     '<button onclick="openTab(\'Order (' + o.order_id + ')\', \'/order/detail/' + o.order_id + '\')">View</button> ' +
                     '<button style="border-color:#c00;color:#c00;" onclick="deleteSingle(\'' + o.order_id + '\')">Del</button>' +
                 '</td>';
@@ -156,6 +157,10 @@
                 allOrders = allOrders.filter(function(o) { return o.order_id !== orderId; });
                 renderOrders(allOrders);
             });
+    }
+
+    function editOrder(orderId) {
+        openTab('Edit Order (' + orderId + ')', '/order/create?edit=' + orderId);
     }
 
     // --- Export functions ---
