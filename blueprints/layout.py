@@ -79,6 +79,18 @@ def list_layouts():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
+@layout_bp.route('/api/<layout_id>', methods=['GET'])
+def api_get_layout(layout_id):
+    """Get layout data directly (for API use)"""
+    try:
+        layout = Layout.get_by_id(layout_id)
+        if layout:
+            return jsonify(layout), 200
+        else:
+            return jsonify({'error': 'Layout not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
 @layout_bp.route('/<layout_id>', methods=['GET'])
 def get_layout(layout_id):
     """Get layout details"""

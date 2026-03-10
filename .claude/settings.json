@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(ls -lt .tmp/*.json)",
-      "Bash(ls -la .tmp/*.ai)"
+      "Bash(ls -la .tmp/*.ai)",
+      "Bash(grep -n \"id=\"\"export-overlay\"\"\" templates/order/*.html)"
     ]
   }
 }
