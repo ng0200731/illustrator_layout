@@ -34,7 +34,9 @@ class Order:
     @staticmethod
     def get_all():
         rows = execute_query(
-            """SELECT o.*, c.company_name
+            """SELECT o.*, c.company_name,
+               (SELECT COUNT(*) FROM order_lines WHERE order_id = o.order_id) as line_count,
+               (SELECT COALESCE(SUM(quantity), 0) FROM order_lines WHERE order_id = o.order_id) as total_qty
                FROM orders o
                JOIN customers c ON c.customer_id = o.customer_id
                ORDER BY o.created_at DESC""",
