@@ -4,7 +4,7 @@
     <div class="order-create">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <h2>Create Order</h2>
-            <button onclick="openTab('Orders', '/order/view')" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;font-size:11px;">← Back to Orders</button>
+            <button onclick="backToOrders()" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;font-size:11px;">← Back to Orders</button>
         </div>
 
         <div class="form-section">
@@ -785,5 +785,26 @@
             });
         }, 200);
     })();
+
+    function backToOrders() {
+        if (confirm('Close this tab and return to Orders?')) {
+            // Get current tab ID
+            var activePane = document.querySelector('.tab-pane.active');
+            if (activePane && activePane.id) {
+                var tabId = activePane.id.replace('-content', '');
+                // Open Orders tab first
+                openTab('Orders', '/order/view');
+                // Close current tab using the closeTab function
+                setTimeout(function() {
+                    if (typeof closeTab === 'function') {
+                        closeTab(tabId, new Event('click'));
+                    }
+                }, 100);
+            } else {
+                // Fallback: just open Orders tab
+                openTab('Orders', '/order/view');
+            }
+        }
+    }
     </script>
 </div>
