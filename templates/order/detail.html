@@ -22,6 +22,7 @@
         <table id="lines-table">
             <thead>
                 <tr>
+                    <th style="width:40px;">#</th>
                     <th>Qty</th>
                     <th>Variables</th>
                     <th>Export</th>
@@ -152,6 +153,7 @@
 
             var tr = document.createElement('tr');
             tr.innerHTML =
+                '<td style="text-align:center;">' + (idx + 1) + '</td>' +
                 '<td>' + l.quantity + '</td>' +
                 '<td>' + varDisplay + '</td>' +
                 '<td class="export-cell">' +

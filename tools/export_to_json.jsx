@@ -21,6 +21,14 @@
         findCompoundPathPanels(doc.layers[li], detectedPanels);
     }
 
+    // If no compound path panels found, try to find the outermost rectangle path
+    if (detectedPanels.length === 0) {
+        var outermostRect = findOutermostRectangle(doc);
+        if (outermostRect) {
+            detectedPanels.push(outermostRect);
+        }
+    }
+
     var result = {
         version: "1.0",
         metadata: extractMetadata(doc),
@@ -35,8 +43,8 @@
         result.layers.push(processLayer(doc.layers[i]));
     }
 
-    // Inject __bounds__ path nodes for compound path panels
-    injectBoundsNodes(result.layers);
+    // Inject __bounds__ path nodes for compound path panels or outermost rectangle
+    injectBoundsNodes(result.layers, detectedPanels);
 
     var savePath = doc.fullName.toString().replace(/\.[^.]+$/, "") + ".json";
     var file = new File(savePath);
@@ -180,6 +188,52 @@
         }
     }
 
+    // Find the outermost rectangle path (largest closed path with 4 points)
+    function findOutermostRectangle(doc) {
+        var largestPath = null;
+        var largestArea = 0;
+
+        function searchPaths(container) {
+            var items;
+            try { items = container.pageItems; } catch(e) { return; }
+            for (var i = 0; i < items.length; i++) {
+                var item = items[i];
+                if (item.hidden) continue;
+
+                if (item.typename === "PathItem" && item.closed && item.pathPoints.length === 4) {
+                    try {
+                        var gb = item.geometricBounds;
+                        var w = gb[2] - gb[0];
+                        var h = gb[1] - gb[3];
+                        var area = w * h;
+
+                        if (area > largestArea && w >= 30 && h >= 30) {
+                            largestArea = area;
+                            var x = gb[0] - artboardLeft;
+                            var y = artboardTop - gb[1];
+                            largestPath = {
+                                x: x,
+                                y: y,
+                                width: w,
+                                height: h
+                            };
+                        }
+                    } catch(e) {}
+                }
+
+                if (item.typename === "GroupItem") {
+                    searchPaths(item);
+                }
+            }
+        }
+
+        for (var li = 0; li < doc.layers.length; li++) {
+            searchPaths(doc.layers[li]);
+        }
+
+        return largestPath;
+    }
+
     // Create a synthetic __bounds__ path node from panel bounds
     function makeBoundsNode(name, b) {
         return {
@@ -203,10 +257,43 @@
     }
 
     // Walk the document tree and inject __bounds__ nodes for compound path panels
-    function injectBoundsNodes(layers) {
+    function injectBoundsNodes(layers, panels) {
+        // If we have panels from outermost rectangle detection (not from compound paths)
+        // inject them directly into the first layer
+        if (panels && panels.length > 0 && layers.length > 0) {
+            var hasCompoundPanels = false;
+            for (var li = 0; li < layers.length; li++) {
+                if (checkForPanelClusters(layers[li].children)) {
+                    hasCompoundPanels = true;
+                    break;
+                }
+            }
+
+            // Only inject outermost rectangle if no compound path panels exist
+            if (!hasCompoundPanels) {
+                for (var pi = 0; pi < panels.length; pi++) {
+                    var boundsNode = makeBoundsNode("Panel", panels[pi]);
+                    if (!layers[0].children) {
+                        layers[0].children = [];
+                    }
+                    layers[0].children.splice(0, 0, boundsNode);
+                }
+            }
+        }
+
+        // Process compound path panels as before
         for (var li = 0; li < layers.length; li++) {
             injectBoundsInChildren(layers[li].children);
         }
+    }
+
+    function checkForPanelClusters(children) {
+        if (!children) return false;
+        for (var i = 0; i < children.length; i++) {
+            if (children[i]._panelClusters) return true;
+            if (children[i].children && checkForPanelClusters(children[i].children)) return true;
+        }
+        return false;
     }
 
     function injectBoundsInChildren(children) {
