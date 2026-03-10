@@ -159,6 +159,7 @@
                 // Set customer
                 var sel = document.getElementById('order-customer');
                 sel.value = order.customer_id;
+                sel.disabled = true;  // Disable customer selection in edit mode
                 currentCustomerId = order.customer_id;
                 currentCustomerName = order.company_name;
                 console.log('Set customer:', currentCustomerId, currentCustomerName);
