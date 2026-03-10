@@ -569,20 +569,56 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
         return None
 
     try:
+        # Check database first to get the canonical font name
+        db_font_name = None
+        db_file_path = None
+        try:
+            import sys
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+            from models.font import Font
+
+            # Try exact match first
+            uploaded_font = Font.get_by_name(font_family)
+            if uploaded_font:
+                db_font_name = uploaded_font['font_name']
+                db_file_path = uploaded_font['file_path']
+                if not os.path.isabs(db_file_path):
+                    db_file_path = os.path.join(os.path.dirname(__file__), '..', db_file_path)
+                db_file_path = os.path.normpath(db_file_path)
+                print(f"DEBUG: Found font in database: '{db_font_name}' -> {db_file_path}")
+            else:
+                # Try case-insensitive match
+                all_fonts = Font.get_all()
+                font_family_lower = font_family.lower()
+                for font in all_fonts:
+                    if font['font_name'].lower() == font_family_lower:
+                        db_font_name = font['font_name']
+                        db_file_path = font['file_path']
+                        if not os.path.isabs(db_file_path):
+                            db_file_path = os.path.join(os.path.dirname(__file__), '..', db_file_path)
+                        db_file_path = os.path.normpath(db_file_path)
+                        print(f"DEBUG: Found font in database (case-insensitive): '{db_font_name}' -> {db_file_path}")
+                        break
+        except Exception as e:
+            print(f"DEBUG: Could not check database for font: {e}")
+
         # Build candidate font names
         candidates = _build_font_name_candidates(font_family, font_style)
         print(f"DEBUG: Font lookup for '{font_family}' + '{font_style}'")
         print(f"DEBUG: Candidates: {candidates}")
 
-        # Search for font file
-        file_path = None
-        for candidate in candidates:
-            file_path = _find_font_file(candidate)
-            if file_path:
-                print(f"DEBUG: Found font file: {candidate} -> {file_path}")
-                break
-            else:
-                print(f"DEBUG: No file found for: {candidate}")
+        # Use database file path if available, otherwise search
+        file_path = db_file_path if db_file_path and os.path.exists(db_file_path) else None
+
+        if not file_path:
+            # Search for font file
+            for candidate in candidates:
+                file_path = _find_font_file(candidate)
+                if file_path:
+                    print(f"DEBUG: Found font file: {candidate} -> {file_path}")
+                    break
+                else:
+                    print(f"DEBUG: No file found for: {candidate}")
 
         if file_path and os.path.exists(file_path):
             # Normalize path
@@ -591,35 +627,43 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
             # ReportLab needs forward slashes on Windows
             file_path_rl = file_path.replace('\\', '/')
 
-            # Read font's PostScript name from font file for Illustrator compatibility
+            # Use database font name if available (source of truth for uploaded fonts)
+            # Otherwise, read PostScript name from font file for system fonts
             reg_name = None
-            try:
-                from fontTools.ttLib import TTFont as FTFont
-                ft_font = FTFont(file_path)
-                ps_name = None
-                full_name = None
-                for record in ft_font['name'].names:
-                    if record.nameID == 6 and record.platformID == 3:  # PostScript name (Windows)
-                        try:
-                            ps_name = record.toUnicode()
-                        except:
-                            pass
-                    elif record.nameID == 4 and record.platformID == 3:  # Full name
-                        try:
-                            full_name = record.toUnicode()
-                        except:
-                            pass
-                ft_font.close()
-                # Prefer PostScript name (matches web font naming: "MangoNew-Bold")
-                # Fallback to full name if PostScript name not available
-                if ps_name:
-                    reg_name = ps_name
-                elif full_name:
-                    reg_name = full_name
-            except Exception as e:
-                print(f"Warning: Could not read font name: {e}")
+            if db_font_name:
+                # Database is source of truth - use the name stored there
+                reg_name = db_font_name
+                print(f"DEBUG: Using database font name for registration: '{reg_name}'")
+            else:
+                # System font - read PostScript name from file
+                try:
+                    from fontTools.ttLib import TTFont as FTFont
+                    ft_font = FTFont(file_path)
+                    ps_name = None
+                    full_name = None
+                    for record in ft_font['name'].names:
+                        if record.nameID == 6 and record.platformID == 3:  # PostScript name (Windows)
+                            try:
+                                ps_name = record.toUnicode()
+                            except:
+                                pass
+                        elif record.nameID == 4 and record.platformID == 3:  # Full name
+                            try:
+                                full_name = record.toUnicode()
+                            except:
+                                pass
+                    ft_font.close()
+                    # Prefer PostScript name (matches web font naming: "MangoNew-Bold")
+                    # Fallback to full name if PostScript name not available
+                    if ps_name:
+                        reg_name = ps_name
+                    elif full_name:
+                        reg_name = full_name
+                    print(f"DEBUG: Using PostScript name from font file: '{reg_name}'")
+                except Exception as e:
+                    print(f"Warning: Could not read font name: {e}")
 
-            # Fallback to font_family if we couldn't read from file
+            # Fallback to font_family if we couldn't determine a name
             if not reg_name:
                 reg_name = font_family
 
@@ -636,6 +680,18 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
                 print(f"DEBUG: Attempting to register font '{reg_name}' from {file_path}")
                 font = TTFont(reg_name, file_path_rl)
                 font.substitutionFonts = []
+
+                # Override the font's internal name to match registration name
+                # This ensures the embedded PDF uses the database name, not PostScript name
+                if db_font_name:
+                    original_name = font.face.name
+                    # Convert to bytes if needed (ReportLab expects bytes)
+                    reg_name_bytes = reg_name.encode('utf-8') if isinstance(reg_name, str) else reg_name
+                    font.face.name = reg_name_bytes
+                    font.face.familyName = reg_name_bytes
+                    font.face.fullName = reg_name_bytes
+                    print(f"DEBUG: Overrode font name from '{original_name}' to '{reg_name_bytes}'")
+
                 pdfmetrics.registerFont(font)
                 print(f"Font registered: {reg_name} from {file_path}")
                 return (reg_name, True)
