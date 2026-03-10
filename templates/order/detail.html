@@ -2,7 +2,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/order.css') }}">
 
     <div class="order-detail">
-        <h2>Order: {{ order_id }}</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h2>Order: {{ order_id }}</h2>
+            <button onclick="openTab('Orders', '/order/view')" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;font-size:11px;">← Back to Orders</button>
+        </div>
         <div id="order-info"></div>
 
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">

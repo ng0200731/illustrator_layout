@@ -2,7 +2,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/order.css') }}">
 
     <div class="order-create">
-        <h2>Create Order</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h2>Create Order</h2>
+            <button onclick="openTab('Orders', '/order/view')" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;font-size:11px;">← Back to Orders</button>
+        </div>
 
         <div class="form-section">
             <div class="form-row">
@@ -375,7 +378,10 @@
         // Variable columns
         vars.forEach(function(v) {
             var th = document.createElement('th');
-            th.textContent = v.variableName || ('#' + (vars.indexOf(v) + 1));
+            var varName = v.variableName || ('#' + (vars.indexOf(v) + 1));
+            var content = v.content || '';
+            th.innerHTML = '<div style="font-weight:600;">' + escHtml(varName) + '</div>' +
+                           '<div style="font-weight:400;font-size:9px;color:#666;margin-top:2px;">' + escHtml(content) + '</div>';
             th.style.cssText = 'border:1px solid #000;padding:4px;background:#f0f0f0;min-width:100px;color:#000;';
             headerRow.appendChild(th);
         });
@@ -414,7 +420,6 @@
 
                 var textarea = document.createElement('textarea');
                 textarea.value = line.variableValues[v.idx] || '';
-                textarea.placeholder = v.content;
                 textarea.rows = 2;
                 textarea.style.cssText = 'width:100%;border:none;padding:4px;font-size:10px;font-family:inherit;resize:vertical;box-sizing:border-box;';
                 textarea.dataset.line = li;
