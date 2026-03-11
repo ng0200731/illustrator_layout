@@ -34,7 +34,9 @@ class Order:
     @staticmethod
     def get_all():
         rows = execute_query(
-            """SELECT o.*, c.company_name
+            """SELECT o.*, c.company_name,
+               (SELECT COUNT(*) FROM order_lines WHERE order_id = o.order_id) as line_count,
+               (SELECT COALESCE(SUM(quantity), 0) FROM order_lines WHERE order_id = o.order_id) as total_qty
                FROM orders o
                JOIN customers c ON c.customer_id = o.customer_id
                ORDER BY o.created_at DESC""",
@@ -83,18 +85,35 @@ class Order:
         layout_data = json.loads(dict(row)['data'])
         data = copy.deepcopy(layout_data)
         if variable_values:
-            # Apply variable values to components (overlay-only, for variable indexing)
-            for idx, comp in enumerate(data.get('components', [])):
+            # FIXED: Apply variable values using actual variable IDs, not enumerated indices
+            for comp in data.get('components', []):
                 if comp.get('isVariable'):
-                    idx_key = str(idx)
-                    if idx_key in variable_values:
-                        comp['content'] = variable_values[idx_key]
-            # Apply to overlays (source of truth for export flattening)
-            for idx, ov in enumerate(data.get('overlays', [])):
+                    # Use the actual variable ID, not enumerated index
+                    var_id = comp.get('variableId') or comp.get('idx')
+                    if var_id is not None:
+                        var_key = str(var_id)
+                        if var_key in variable_values:
+                            if comp.get('type') == 'barcoderegion':
+                                comp['barcodeData'] = variable_values[var_key]
+                            elif comp.get('type') == 'qrcoderegion':
+                                comp['qrData'] = variable_values[var_key]
+                            else:
+                                comp['content'] = variable_values[var_key]
+
+            # FIXED: Apply to overlays using actual variable IDs
+            for ov in data.get('overlays', []):
                 if ov.get('isVariable'):
-                    idx_key = str(idx)
-                    if idx_key in variable_values:
-                        ov['content'] = variable_values[idx_key]
+                    # Use the actual variable ID, not enumerated index
+                    var_id = ov.get('variableId') or ov.get('idx')
+                    if var_id is not None:
+                        var_key = str(var_id)
+                        if var_key in variable_values:
+                            if ov.get('type') == 'barcoderegion':
+                                ov['barcodeData'] = variable_values[var_key]
+                            elif ov.get('type') == 'qrcoderegion':
+                                ov['qrData'] = variable_values[var_key]
+                            else:
+                                ov['content'] = variable_values[var_key]
         # Build full export-ready payload (flattened tree + overlays with variables applied)
         data['exportPayload'] = flatten_layout_for_export(data)
         return data

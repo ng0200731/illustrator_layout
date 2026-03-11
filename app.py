@@ -50,6 +50,7 @@ def export_ai():
     try:
         data = request.get_json()
         outlined = data.get('outlined', False)
+        print(f"DEBUG /export/ai: outlined={outlined}, type={type(outlined)}")
 
         # Import export tool (reload to pick up changes)
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'tools'))

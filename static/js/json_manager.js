@@ -2911,13 +2911,7 @@ function jRenderLayerTree() {
                 for (var ci = 0; ci < buckets[li].length; ci++) {
                     jRenderTreeNode(tree, buckets[li][ci], 1, false, layerId);
                 }
-                // Render overlays belonging to this layer
-                for (var oi = 0; oi < jState.overlays.length; oi++) {
-                    var ov = jState.overlays[oi];
-                    if (ov._boundsRectIdx === li) {
-                        jRenderOverlayTreeItem(tree, ov, oi, 1);
-                    }
-                }
+                // Overlays are not shown in layer tree (managed separately in overlay input block)
             }
         }
     } else {
@@ -3162,7 +3156,7 @@ function jRenderOverlayTreeItem(parent, ov, ovIdx, depth) {
     if (ov.type === 'textregion' && ov.content) txt += ': "' + ov.content.substring(0, 15) + '"';
     var ovRot = ov._rotation || 0;
     if (ovRot) txt += ' [' + ovRot + '°]';
-    label.textContent = '[OV] ' + txt;
+    label.textContent = txt;
 
     // Rotate buttons for overlay
     var rotCW = document.createElement('button');
@@ -3652,13 +3646,28 @@ function jRenderOverlayList() {
 
         var varBtn = document.createElement('button');
         varBtn.className = 'icon-btn' + (ov.isVariable ? ' var-active' : '');
-        varBtn.textContent = ov.isVariable ? '⚡' : '○';
+        varBtn.textContent = ov.isVariable ? 'f(x)' : '○';
         varBtn.title = ov.isVariable ? 'Variable (on)' : 'Variable (off)';
         varBtn.style.fontSize = '10px';
         (function(idx) {
             varBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
-                jState.overlays[idx].isVariable = !jState.overlays[idx].isVariable;
+                var wasVariable = jState.overlays[idx].isVariable;
+                jState.overlays[idx].isVariable = !wasVariable;
+
+                // If turning on, prompt for variable name
+                if (!wasVariable) {
+                    var varName = prompt('Enter variable name:', jState.overlays[idx].variableName || '');
+                    if (varName !== null) {
+                        jState.overlays[idx].variableName = varName.trim();
+                        console.log('Set variableName for overlay', idx, ':', jState.overlays[idx].variableName);
+                        console.log('Overlay after setting variableName:', jState.overlays[idx]);
+                    } else {
+                        // User cancelled, revert the toggle
+                        jState.overlays[idx].isVariable = false;
+                    }
+                }
+
                 jCaptureState();
                 jRenderCanvas();
                 jRenderOverlayList();
@@ -4685,6 +4694,7 @@ function saveLayoutToDatabase() {
                             barcodeData: ov.barcodeData || '',
                             barcodeFormat: ov.barcodeFormat || 'code128',
                             isVariable: ov.isVariable || false,
+                            variableName: ov.variableName || '',
                             rotation: ov._rotation || 0,
                             boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1
                         };

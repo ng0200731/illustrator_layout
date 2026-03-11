@@ -2,7 +2,10 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/order.css') }}">
 
     <div class="order-create">
-        <h2>Create Order</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h2>Create Order</h2>
+            <button onclick="backToOrders()" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;font-size:11px;">← Back to Orders</button>
+        </div>
 
         <div class="form-section">
             <div class="form-row">
@@ -10,6 +13,9 @@
                 <select id="order-customer" onchange="onCustomerChange()">
                     <option value="">-- Select customer --</option>
                 </select>
+            </div>
+            <div id="layout-name-display" style="display:none;margin-top:8px;padding:6px 8px;background:#f9f9f9;border:1px solid #ddd;font-size:11px;color:#444;">
+                <strong>Layout:</strong> <span id="layout-name-text"></span>
             </div>
         </div>
 
@@ -80,7 +86,36 @@
     var currentCustomerName = '';
     var currentLayoutVars = [];
     var currentLayoutName = '';
+    var editOrderId = null;
+    var editPoNumber = '';
+
     (function init() {
+        // Check if we're in edit mode
+        // First try URL params, then check if parent has the info
+        var urlParams = new URLSearchParams(window.location.search);
+        editOrderId = urlParams.get('edit');
+
+        // If not in URL params, check if we're in a tab and extract from tab URL
+        if (!editOrderId) {
+            var tabPane = document.querySelector('.tab-pane.active');
+            if (tabPane && tabPane.id) {
+                // Find the tab data from sessionStorage
+                var savedTabs = sessionStorage.getItem('tabs');
+                if (savedTabs) {
+                    var tabs = JSON.parse(savedTabs);
+                    var currentTab = tabs.find(function(t) { return t.id + '-content' === tabPane.id; });
+                    if (currentTab && currentTab.url) {
+                        var match = currentTab.url.match(/[?&]edit=([^&]+)/);
+                        if (match) {
+                            editOrderId = match[1];
+                        }
+                    }
+                }
+            }
+        }
+
+        console.log('Edit Order ID:', editOrderId);
+
         fetch('/customer/list')
             .then(function(r) { return r.json(); })
             .then(function(data) {
@@ -93,8 +128,115 @@
                     opt.dataset.name = c.company_name;
                     sel.appendChild(opt);
                 });
+
+                // If edit mode, load the order
+                if (editOrderId) {
+                    loadOrderForEdit(editOrderId);
+                }
             });
     })();
+
+    function loadOrderForEdit(orderId) {
+        console.log('Loading order for edit:', orderId);
+        fetch('/order/api/' + orderId)
+            .then(function(r) {
+                console.log('Order API response status:', r.status);
+                return r.json();
+            })
+            .then(function(data) {
+                console.log('Order data:', data);
+                var order = data.order;
+                var lines = data.lines;
+
+                if (!order) {
+                    alert('Order not found');
+                    return;
+                }
+
+                // Store PO number
+                editPoNumber = order.po_number;
+
+                // Set customer
+                var sel = document.getElementById('order-customer');
+                sel.value = order.customer_id;
+                sel.disabled = true;  // Disable customer selection in edit mode
+                currentCustomerId = order.customer_id;
+                currentCustomerName = order.company_name;
+                console.log('Set customer:', currentCustomerId, currentCustomerName);
+
+                // Load layouts for this customer
+                fetch('/order/api/layouts/' + order.customer_id)
+                    .then(function(r) {
+                        console.log('Layouts API response status:', r.status);
+                        return r.json();
+                    })
+                    .then(function(layouts) {
+                        console.log('Layouts:', layouts.length);
+                        availableLayouts = layouts;
+
+                        if (lines.length > 0) {
+                            var firstLine = lines[0];
+                            var layout = layouts.find(function(l) { return l.id === firstLine.layout_id; });
+                            console.log('Found layout:', layout ? layout.name : 'NOT FOUND');
+
+                            if (layout) {
+                                // Parse layout data for variables
+                                var data = layout.data ? (typeof layout.data === 'string' ? JSON.parse(layout.data) : layout.data) : {};
+                                var comps = data.components || [];
+                                var vars = [];
+                                comps.forEach(function(c, ci) {
+                                    if (!c.isVariable) return;
+                                    vars.push({
+                                        idx: ci,
+                                        content: c.content || '',
+                                        variableName: c.variableName || '',
+                                        fontFamily: c.fontFamily || '',
+                                        fontSize: c.fontSize || 12
+                                    });
+                                });
+                                console.log('Variables:', vars.length);
+
+                                currentLayoutVars = vars;
+                                currentLayoutName = layout.name;
+
+                                // Load all lines
+                                orderLinesList = [];
+                                lines.forEach(function(line) {
+                                    var varValues = line.variable_values ? JSON.parse(line.variable_values) : {};
+                                    orderLinesList.push({
+                                        layout_id: firstLine.layout_id,
+                                        layoutName: layout.name,
+                                        vars: vars,
+                                        variableValues: varValues,
+                                        quantity: line.quantity
+                                    });
+                                });
+                                console.log('Order lines:', orderLinesList.length);
+
+                                // Render the form
+                                renderOrderLines();
+                                showSection('submit-section');
+                                if (vars.length > 0) {
+                                    showSection('excel-section');
+                                }
+
+                                // Update the header and button text
+                                document.querySelector('.order-create h2').textContent = 'Edit Order (' + orderId + ')';
+                                document.querySelector('#submit-section .btn-primary').textContent = 'Update Order';
+                                console.log('Edit mode setup complete');
+                            }
+                        }
+                    })
+                    .catch(function(err) {
+                        console.error('Layouts API error:', err);
+                        alert('Failed to load layouts: ' + err.message);
+                    });
+            })
+            .catch(function(err) {
+                console.error('Order API error:', err);
+                alert('Failed to load order: ' + err.message);
+            });
+    }
 
     function onCustomerChange() {
         var sel = document.getElementById('order-customer');
@@ -165,7 +307,13 @@
         var vars = [];
         comps.forEach(function(c, ci) {
             if (!c.isVariable) return;
-            vars.push({ idx: ci, content: c.content || '', fontFamily: c.fontFamily || '', fontSize: c.fontSize || 12 });
+            vars.push({
+                idx: ci,
+                content: c.content || '',
+                variableName: c.variableName || '',
+                fontFamily: c.fontFamily || '',
+                fontSize: c.fontSize || 12
+            });
         });
 
         // Add to orderLinesList
@@ -190,48 +338,226 @@
     function renderOrderLines() {
         var container = document.getElementById('order-lines');
         container.innerHTML = '';
-        orderLinesList.forEach(function(line, li) {
-            var card = document.createElement('div');
-            card.className = 'order-line-card';
 
-            var header = '<div class="line-card-header">' +
-                '<span>' + escHtml(line.layoutName) + ' (qty: ' + (line.quantity || 1) + ')</span>' +
-                '<button class="btn-remove" onclick="removeLine(' + li + ')">✕</button>' +
-                '</div>';
+        // Show layout name at the top
+        if (orderLinesList.length > 0) {
+            document.getElementById('layout-name-display').style.display = '';
+            document.getElementById('layout-name-text').textContent = orderLinesList[0].layoutName;
+        } else {
+            document.getElementById('layout-name-display').style.display = 'none';
+            return;
+        }
 
-            var varsHtml = '';
-            if (line.vars.length === 0) {
-                varsHtml = '<span class="no-vars">No variable fields</span>';
-            } else {
-                line.vars.forEach(function(v) {
-                    varsHtml +=
-                        '<div class="var-row-side">' +
-                            '<div class="var-left">' + escHtml(v.content) + '</div>' +
-                            '<textarea class="var-right" data-line="' + li + '" data-idx="' + v.idx + '" ' +
-                                'placeholder="Enter value" rows="2" oninput="onVarInput(this)">' +
-                                escHtml(line.variableValues[v.idx] || '') +
-                            '</textarea>' +
-                        '</div>';
-                });
-            }
+        if (orderLinesList.length === 0) return;
 
-            card.innerHTML = header + '<div class="line-card-vars">' + varsHtml + '</div>';
-            container.appendChild(card);
+        var vars = orderLinesList[0].vars;
+        if (vars.length === 0) {
+            container.innerHTML = '<div class="no-vars">No variable fields</div>';
+            return;
+        }
+
+        // Create SET #1 header
+        var setHeader = document.createElement('div');
+        setHeader.style.cssText = 'margin:16px 0 8px 0;padding:8px;background:#000;color:#fff;font-size:11px;font-weight:600;text-align:center;';
+        setHeader.textContent = 'SET #1';
+        container.appendChild(setHeader);
+
+        // Create table
+        var table = document.createElement('table');
+        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:10px;';
+
+        // Create header row
+        var thead = document.createElement('thead');
+        var headerRow = document.createElement('tr');
+
+        // # column
+        var thNum = document.createElement('th');
+        thNum.textContent = '#';
+        thNum.style.cssText = 'border:1px solid #000;padding:4px;background:#f0f0f0;width:30px;text-align:center;color:#000;';
+        headerRow.appendChild(thNum);
+
+        // Variable columns
+        vars.forEach(function(v) {
+            var th = document.createElement('th');
+            var varName = v.variableName || ('#' + (vars.indexOf(v) + 1));
+            var content = v.content || '';
+            th.innerHTML = '<div style="font-weight:600;">' + escHtml(varName) + '</div>' +
+                           '<div style="font-weight:400;font-size:9px;color:#666;margin-top:2px;">' + escHtml(content) + '</div>';
+            th.style.cssText = 'border:1px solid #000;padding:4px;background:#f0f0f0;min-width:100px;color:#000;';
+            headerRow.appendChild(th);
         });
 
-        // Add "+" button to duplicate same layout with new variable set
-        var addBtn = document.createElement('button');
-        addBtn.className = 'btn-add-layout';
-        addBtn.textContent = '+ Add Set';
-        addBtn.onclick = addVariableSet;
-        container.appendChild(addBtn);
+        // qty column
+        var thQty = document.createElement('th');
+        thQty.textContent = 'qty';
+        thQty.style.cssText = 'border:1px solid #000;padding:4px;background:#f0f0f0;width:60px;color:#000;';
+        headerRow.appendChild(thQty);
+
+        // Actions column
+        var thActions = document.createElement('th');
+        thActions.textContent = 'Actions';
+        thActions.style.cssText = 'border:1px solid #000;padding:4px;background:#f0f0f0;width:80px;color:#000;';
+        headerRow.appendChild(thActions);
+
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Create tbody
+        var tbody = document.createElement('tbody');
+
+        orderLinesList.forEach(function(line, li) {
+            var tr = document.createElement('tr');
+
+            // Sequence number
+            var tdNum = document.createElement('td');
+            tdNum.textContent = li + 1;
+            tdNum.style.cssText = 'border:1px solid #000;padding:4px;text-align:center;background:#f9f9f9;';
+            tr.appendChild(tdNum);
+
+            // Variable inputs
+            line.vars.forEach(function(v) {
+                var td = document.createElement('td');
+                td.style.cssText = 'border:1px solid #000;padding:2px;';
+
+                var textarea = document.createElement('textarea');
+                textarea.value = line.variableValues[v.idx] || '';
+                textarea.rows = 2;
+                textarea.style.cssText = 'width:100%;border:none;padding:4px;font-size:10px;font-family:inherit;resize:vertical;box-sizing:border-box;';
+                textarea.dataset.line = li;
+                textarea.dataset.idx = v.idx;
+                textarea.oninput = function() {
+                    onVarInput(this);
+                    updateRowButtons(li);
+                };
+
+                td.appendChild(textarea);
+                tr.appendChild(td);
+            });
+
+            // Quantity input
+            var tdQty = document.createElement('td');
+            tdQty.style.cssText = 'border:1px solid #000;padding:2px;';
+
+            var qtyInput = document.createElement('input');
+            qtyInput.type = 'text';
+            qtyInput.inputMode = 'numeric';
+            qtyInput.pattern = '[0-9]*';
+            qtyInput.value = line.quantity && line.quantity > 0 ? line.quantity : '';
+            qtyInput.placeholder = '1';
+            qtyInput.style.cssText = 'width:100%;border:none;padding:4px;font-size:10px;text-align:center;box-sizing:border-box;';
+            qtyInput.dataset.line = li;
+            qtyInput.oninput = function() {
+                var lineIdx = parseInt(this.dataset.line);
+                var val = parseInt(this.value);
+                orderLinesList[lineIdx].quantity = isNaN(val) ? 0 : val;
+                updateRowButtons(lineIdx);
+            };
+
+            tdQty.appendChild(qtyInput);
+            tr.appendChild(tdQty);
+
+            // Actions
+            var tdActions = document.createElement('td');
+            tdActions.style.cssText = 'border:1px solid #000;padding:4px;text-align:center;';
+            tdActions.id = 'actions-' + li;
+
+            tr.appendChild(tdActions);
+            tbody.appendChild(tr);
+        });
+
+        table.appendChild(tbody);
+        container.appendChild(table);
+
+        // Update all row buttons
+        orderLinesList.forEach(function(line, li) {
+            updateRowButtons(li);
+        });
+    }
+
+    function updateRowButtons(lineIndex) {
+        var actionsCell = document.getElementById('actions-' + lineIndex);
+        if (!actionsCell) return;
+
+        var isComplete = checkRowComplete(lineIndex);
+        var isLastRow = lineIndex === orderLinesList.length - 1;
+
+        actionsCell.innerHTML = '';
+
+        // Show duplicate button if row is complete
+        if (isComplete) {
+            var dupBtn = document.createElement('button');
+            dupBtn.textContent = '[⎘]';
+            dupBtn.title = 'Duplicate this row';
+            dupBtn.style.cssText = 'padding:2px 8px;margin:0 2px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;';
+            dupBtn.onclick = function() { duplicateLine(lineIndex); };
+            actionsCell.appendChild(dupBtn);
+        }
+
+        // Show [-] button if not the only row
+        if (orderLinesList.length > 1) {
+            var removeBtn = document.createElement('button');
+            removeBtn.textContent = '[-]';
+            removeBtn.style.cssText = 'padding:2px 8px;margin:0 2px;border:1px solid #c00;background:#fff;color:#c00;cursor:pointer;font-size:10px;';
+            removeBtn.onclick = function() { removeLine(lineIndex); };
+            actionsCell.appendChild(removeBtn);
+        }
+
+        // Show [+] button only if row is complete and it's the last row
+        if (isComplete && isLastRow) {
+            var addBtn = document.createElement('button');
+            addBtn.textContent = '[+]';
+            addBtn.style.cssText = 'padding:2px 8px;margin:0 2px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;';
+            addBtn.onclick = addVariableSet;
+            actionsCell.appendChild(addBtn);
+        }
+    }
+
+    function checkRowComplete(lineIndex) {
+        var line = orderLinesList[lineIndex];
+
+        // Check quantity
+        if (!line.quantity || line.quantity < 1) return false;
+
+        // Check all variables are filled
+        for (var i = 0; i < line.vars.length; i++) {
+            var v = line.vars[i];
+            var value = line.variableValues[v.idx];
+            if (!value || value.trim() === '') return false;
+        }
+
+        return true;
+    }
+
+    function duplicateLine(lineIndex) {
+        var src = orderLinesList[lineIndex];
+        var lineObj = {
+            layout_id: src.layout_id,
+            layoutName: src.layoutName,
+            vars: src.vars,
+            variableValues: {},
+            quantity: src.quantity
+        };
+        // Copy all variable values
+        for (var key in src.variableValues) {
+            lineObj.variableValues[key] = src.variableValues[key];
+        }
+        // Insert after the current line
+        orderLinesList.splice(lineIndex + 1, 0, lineObj);
+        renderOrderLines();
     }
 
     function addVariableSet() {
         if (orderLinesList.length === 0) return;
+        // Copy structure from first set with empty values
         var src = orderLinesList[0];
-        var lineObj = { layout_id: src.layout_id, layoutName: src.layoutName, vars: src.vars, variableValues: {} };
-        src.vars.forEach(function(v) { lineObj.variableValues[v.idx] = v.content; });
+        var lineObj = {
+            layout_id: src.layout_id,
+            layoutName: src.layoutName,
+            vars: src.vars,
+            variableValues: {},
+            quantity: 0
+        };
+        // Leave variableValues empty for new row
         orderLinesList.push(lineObj);
         renderOrderLines();
     }
@@ -259,7 +585,8 @@
     }
     function showPoModal() {
         if (orderLinesList.length === 0) { alert('Add at least one layout.'); return; }
-        document.getElementById('po-input').value = '';
+        // Pre-fill PO number if editing
+        document.getElementById('po-input').value = editPoNumber || '';
         document.getElementById('po-modal').classList.add('active');
     }
 
@@ -295,8 +622,11 @@
             };
         });
 
-        fetch('/order/api/create', {
-            method: 'POST',
+        var apiUrl = editOrderId ? '/order/api/' + editOrderId : '/order/api/create';
+        var method = editOrderId ? 'PUT' : 'POST';
+
+        fetch(apiUrl, {
+            method: method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ customer_id: currentCustomerId, po_number: poNumber, lines: lines })
         })
@@ -337,7 +667,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                variables: currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content }; }),
+                variables: currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content, variableName: v.variableName }; }),
                 layout_name: currentLayoutName
             })
         })
@@ -362,7 +692,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                variables: currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content }; }),
+                variables: currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content, variableName: v.variableName }; }),
                 layout_name: currentLayoutName,
                 row_count: rowCount
             })
@@ -393,7 +723,7 @@
         var formData = new FormData();
         formData.append('file', file);
         formData.append('variables', JSON.stringify(
-            currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content }; })
+            currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content, variableName: v.variableName }; })
         ));
 
         fetch('/order/api/excel/upload', {
@@ -456,5 +786,26 @@
             });
         }, 200);
     })();
+
+    function backToOrders() {
+        if (confirm('Close this tab and return to Orders?')) {
+            // Get current tab ID
+            var activePane = document.querySelector('.tab-pane.active');
+            if (activePane && activePane.id) {
+                var tabId = activePane.id.replace('-content', '');
+                // Open Orders tab first
+                openTab('Orders', '/order/view');
+                // Close current tab using the closeTab function
+                setTimeout(function() {
+                    if (typeof closeTab === 'function') {
+                        closeTab(tabId, new Event('click'));
+                    }
+                }, 100);
+            } else {
+                // Fallback: just open Orders tab
+                openTab('Orders', '/order/view');
+            }
+        }
+    }
     </script>
 </div>

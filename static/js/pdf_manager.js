@@ -2790,6 +2790,14 @@ function saveLayoutToDatabase() {
             return;
         }
 
+        // Debug: Check if variableName is in components
+        var varComps = components.filter(function(c) { return c.isVariable; });
+        if (varComps.length > 0) {
+            console.log('Variable components before save:', varComps.map(function(c) {
+                return { type: c.type, content: c.content, isVariable: c.isVariable, variableName: c.variableName };
+            }));
+        }
+
         const layoutData = {
             name: layoutName,
             type: 'pdf',
@@ -4163,13 +4171,28 @@ function renderOverlayList() {
 
         var varBtn = document.createElement('button');
         varBtn.className = 'icon-btn' + (comp.isVariable ? ' var-active' : '');
-        varBtn.textContent = comp.isVariable ? '\u26a1' : '\u25cb';
+        varBtn.textContent = comp.isVariable ? 'f(x)' : '\u25cb';
         varBtn.title = comp.isVariable ? 'Variable (on)' : 'Variable (off)';
         varBtn.style.fontSize = '10px';
         (function(idx) {
             varBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
-                components[idx].isVariable = !components[idx].isVariable;
+                var wasVariable = components[idx].isVariable;
+                components[idx].isVariable = !wasVariable;
+
+                // If turning on, prompt for variable name
+                if (!wasVariable) {
+                    var varName = prompt('Enter variable name:', components[idx].variableName || '');
+                    if (varName !== null) {
+                        components[idx].variableName = varName.trim();
+                        console.log('Set variableName for component', idx, ':', components[idx].variableName);
+                        console.log('Component after setting variableName:', components[idx]);
+                    } else {
+                        // User cancelled, revert the toggle
+                        components[idx].isVariable = false;
+                    }
+                }
+
                 captureState();
                 renderCanvas();
                 renderOverlayList();

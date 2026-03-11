@@ -1,5 +1,11 @@
-<div class="tab-pane">
+<div class="tab-pane" style="position:relative;min-height:100vh;">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/order.css') }}">
+    <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 
     <div class="order-view">
         <h2>Orders</h2>
@@ -7,8 +13,6 @@
             <button onclick="refreshOrders()" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">Refresh</button>
             <button onclick="selectAll()" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">Select All</button>
             <button onclick="deleteSelected()" style="padding:3px 10px;border:1px solid #c00;background:#fff;color:#c00;cursor:pointer;font-size:10px;">Delete Selected</button>
-            <button onclick="exportAllSelected(false)" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">AI E All</button>
-            <button onclick="exportAllSelected(true)" style="padding:3px 10px;border:1px solid #000;background:#fff;cursor:pointer;font-size:10px;">AI O All</button>
         </div>
         <table id="orders-table" class="layout-search-table">
             <thead>
@@ -17,6 +21,8 @@
                     <th><input type="text" placeholder="Order ID..." oninput="filterOrders()"></th>
                     <th><input type="text" placeholder="Customer..." oninput="filterOrders()"></th>
                     <th><input type="text" placeholder="PO #..." oninput="filterOrders()"></th>
+                    <th style="width:60px;"><input type="text" placeholder="# Lines..." oninput="filterOrders()"></th>
+                    <th style="width:60px;"><input type="text" placeholder="Qty..." oninput="filterOrders()"></th>
                     <th><input type="text" placeholder="Status..." oninput="filterOrders()"></th>
                     <th><input type="text" placeholder="Created..." oninput="filterOrders()"></th>
                     <th>Action</th>
@@ -28,21 +34,16 @@
     </div>
 
     <!-- Loading overlay -->
-    <div id="export-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.3);z-index:9999;justify-content:center;align-items:center;">
-        <div style="background:#fff;border:1px solid #000;padding:20px 32px;font-size:12px;text-align:center;">
-            <div class="spinner"></div>
-            <div id="export-status" style="margin-top:10px;">Exporting...</div>
-        </div>
+    <div id="export-overlay" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(128,128,128,0.5);z-index:9999;justify-content:center;align-items:center;">
+        <div class="spinner" style="width:40px;height:40px;border:4px solid #fff;border-top-color:#000;border-radius:50%;animation:spin 1s linear infinite;"></div>
     </div>
 
     <script>
     var allOrders = [];
     var orderDetailCache = {};
 
-    function showExportOverlay(msg) {
-        var el = document.getElementById('export-overlay');
-        el.style.display = 'flex';
-        document.getElementById('export-status').textContent = msg || 'Exporting...';
+    function showExportOverlay() {
+        document.getElementById('export-overlay').style.display = 'flex';
     }
     function hideExportOverlay() {
         document.getElementById('export-overlay').style.display = 'none';
@@ -78,13 +79,16 @@
                 '<td>' + o.order_id + '</td>' +
                 '<td>' + o.company_name + '</td>' +
                 '<td>' + o.po_number + '</td>' +
+                '<td style="text-align:center;">' + (o.line_count || 0) + '</td>' +
+                '<td style="text-align:center;">' + (o.total_qty || 0) + '</td>' +
                 '<td>' + o.status + '</td>' +
                 '<td>' + o.created_at + '</td>' +
                 '<td style="white-space:nowrap;">' +
                     '<button onclick="exportOrder(\'' + o.order_id + '\', false)">AI E</button> ' +
                     '<button onclick="exportOrder(\'' + o.order_id + '\', true)">AI O</button> ' +
                     '<button onclick="confirmOrder(\'' + o.order_id + '\')">Confirm</button> ' +
-                    '<button onclick="openTab(\'Order (' + o.order_id + ')\', \'/order/detail/' + o.order_id + '\')">View</button> ' +
+                    '<button onclick="editOrder(\'' + o.order_id + '\')">Edit</button> ' +
+                    '<button onclick="openTab(\'View Order (' + o.order_id + ')\', \'/order/detail/' + o.order_id + '\')">View</button> ' +
                     '<button style="border-color:#c00;color:#c00;" onclick="deleteSingle(\'' + o.order_id + '\')">Del</button>' +
                 '</td>';
             tbody.appendChild(tr);
@@ -97,7 +101,15 @@
         inputs.forEach(function(inp) { filters.push(inp.value.toLowerCase()); });
 
         var filtered = allOrders.filter(function(o) {
-            var vals = [o.order_id, o.company_name, o.po_number, o.status, o.created_at];
+            var vals = [
+                o.order_id,
+                o.company_name,
+                o.po_number,
+                String(o.line_count || 0),
+                String(o.total_qty || 0),
+                o.status,
+                o.created_at
+            ];
             for (var i = 0; i < filters.length; i++) {
                 if (filters[i] && vals[i].toLowerCase().indexOf(filters[i]) === -1) return false;
             }
@@ -158,6 +170,10 @@
             });
     }
 
+    function editOrder(orderId) {
+        openTab('Edit Order (' + orderId + ')', '/order/create?edit=' + orderId);
+    }
+
     // --- Export functions ---
 
     function getOrderDetail(orderId) {
@@ -182,7 +198,7 @@
     }
 
     function exportOrder(orderId, outlined) {
-        showExportOverlay('Exporting ' + orderId + '...');
+        showExportOverlay();
         getOrderDetail(orderId).then(function(data) {
             var lines = data.lines || [];
             // Check if lines have generated_data
@@ -282,7 +298,7 @@
         checks.forEach(function(c) { ids.push(c.value); });
         if (ids.length === 0) { alert('No orders selected.'); return; }
 
-        showExportOverlay('Exporting ' + ids.length + ' order(s)...');
+        showExportOverlay();
         var idx = 0;
 
         function exportNext() {
@@ -291,7 +307,6 @@
                 return;
             }
             var orderId = ids[idx];
-            document.getElementById('export-status').textContent = 'Exporting ' + (idx + 1) + '/' + ids.length + ' (' + orderId + ')...';
 
             getOrderDetail(orderId).then(function(data) {
                 var lines = data.lines || [];

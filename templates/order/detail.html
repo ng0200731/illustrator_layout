@@ -1,8 +1,17 @@
-<div class="tab-pane">
+<div class="tab-pane" style="position:relative;min-height:100vh;">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/order.css') }}">
+    <style>
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 
     <div class="order-detail">
-        <h2>Order: {{ order_id }}</h2>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h2>Order: {{ order_id }}</h2>
+            <button onclick="backToOrders()" style="padding:6px 12px;border:1px solid #000;background:#fff;cursor:pointer;font-size:11px;">← Back to Orders</button>
+        </div>
         <div id="order-info"></div>
 
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
@@ -13,6 +22,7 @@
         <table id="lines-table">
             <thead>
                 <tr>
+                    <th style="width:40px;">#</th>
                     <th>Qty</th>
                     <th>Variables</th>
                     <th>Export</th>
@@ -22,12 +32,14 @@
         </table>
     </div>
 
-    <!-- Loading overlay -->
-    <div id="export-overlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.3);z-index:9999;justify-content:center;align-items:center;">
-        <div style="background:#fff;border:1px solid #000;padding:20px 32px;font-size:12px;text-align:center;">
-            <div class="spinner"></div>
-            <div style="margin-top:10px;">Exporting...</div>
-        </div>
+    <!-- Loading overlay for page load -->
+    <div id="loading-overlay" style="display:flex;position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,0.9);z-index:9998;justify-content:center;align-items:center;">
+        <div class="spinner" style="width:40px;height:40px;border:4px solid #ddd;border-top-color:#000;border-radius:50%;animation:spin 1s linear infinite;"></div>
+    </div>
+
+    <!-- Export overlay -->
+    <div id="export-overlay-detail" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(128,128,128,0.5);z-index:9999;justify-content:center;align-items:center;">
+        <div class="spinner" style="width:40px;height:40px;border:4px solid #fff;border-top-color:#000;border-radius:50%;animation:spin 1s linear infinite;"></div>
     </div>
 
     <div id="layout-preview-modal" class="preview-modal-overlay" onclick="closePreview(event)">
@@ -45,12 +57,16 @@
     var generatedCache = {};
 
     function showExportOverlay() {
-        var el = document.getElementById('export-overlay');
+        console.log('showExportOverlay called');
+        var el = document.getElementById('export-overlay-detail');
+        console.log('export-overlay-detail element:', el);
         el.style.display = 'flex';
     }
     function hideExportOverlay() {
-        document.getElementById('export-overlay').style.display = 'none';
+        document.getElementById('export-overlay-detail').style.display = 'none';
     }
+
+    var layoutVariableNames = {};
 
     (function() {
         fetch('/order/api/{{ order_id }}')
@@ -73,25 +89,80 @@
                     '<div class="info-row"><label>Created:</label><span>' + order.created_at + '</span></div>' +
                     '</div>';
 
-                var tbody = document.querySelector('#lines-table tbody');
-                orderLines.forEach(function(l, idx) {
-                    var vars = l.variable_values ? JSON.parse(l.variable_values) : {};
-                    var varParts = [];
-                    for (var k in vars) { varParts.push('#' + (parseInt(k) + 1) + ': ' + vars[k]); }
-                    var varDisplay = varParts.length ? varParts.join(', ') : '—';
+                // Get variable names from generated_data or fetch layout directly
+                if (orderLines.length > 0) {
+                    var firstLine = orderLines[0];
 
-                    var tr = document.createElement('tr');
-                    tr.innerHTML =
-                        '<td>' + l.quantity + '</td>' +
-                        '<td>' + varDisplay + '</td>' +
-                        '<td class="export-cell">' +
-                            '<button onclick="exportLine(' + idx + ', false)">AI E</button>' +
-                            '<button onclick="exportLine(' + idx + ', true)">AI O</button>' +
-                        '</td>';
-                    tbody.appendChild(tr);
-                });
+                    // Try to get from generated_data first
+                    if (firstLine.generated_data) {
+                        try {
+                            var genData = typeof firstLine.generated_data === 'string' ? JSON.parse(firstLine.generated_data) : firstLine.generated_data;
+                            var comps = genData.components || [];
+                            comps.forEach(function(c, idx) {
+                                if (c.isVariable) {
+                                    layoutVariableNames[idx] = c.variableName || ('#' + (idx + 1));
+                                }
+                            });
+                            renderOrderLinesTable();
+                            document.getElementById('loading-overlay').style.display = 'none';
+                        } catch (e) {
+                            console.error('Error parsing generated_data:', e);
+                            renderOrderLinesTable();
+                            document.getElementById('loading-overlay').style.display = 'none';
+                        }
+                    } else {
+                        // Fallback: fetch layout data directly (faster than generate)
+                        fetch('/layout/api/' + firstLine.layout_id)
+                            .then(function(r) { return r.json(); })
+                            .then(function(layout) {
+                                var comps = layout.components || [];
+                                comps.forEach(function(c, idx) {
+                                    if (c.isVariable) {
+                                        layoutVariableNames[idx] = c.variableName || ('#' + (idx + 1));
+                                    }
+                                });
+                                renderOrderLinesTable();
+                                document.getElementById('loading-overlay').style.display = 'none';
+                            })
+                            .catch(function(err) {
+                                console.error('Error fetching layout data:', err);
+                                renderOrderLinesTable();
+                                document.getElementById('loading-overlay').style.display = 'none';
+                            });
+                    }
+                } else {
+                    renderOrderLinesTable();
+                    document.getElementById('loading-overlay').style.display = 'none';
+                }
             });
     })();
+
+    function renderOrderLinesTable() {
+        var tbody = document.querySelector('#lines-table tbody');
+        tbody.innerHTML = '';
+
+        orderLines.forEach(function(l, idx) {
+            var vars = l.variable_values ? JSON.parse(l.variable_values) : {};
+            var varParts = [];
+
+            for (var k in vars) {
+                var varName = layoutVariableNames[k] || ('#' + (parseInt(k) + 1));
+                varParts.push(varName + ': ' + vars[k]);
+            }
+            var varDisplay = varParts.length ? varParts.join(', ') : '—';
+
+            var tr = document.createElement('tr');
+            tr.innerHTML =
+                '<td style="text-align:center;">' + (idx + 1) + '</td>' +
+                '<td>' + l.quantity + '</td>' +
+                '<td>' + varDisplay + '</td>' +
+                '<td class="export-cell">' +
+                    '<button onclick="exportLine(' + idx + ', false)">AI E</button>' +
+                    '<button onclick="exportLine(' + idx + ', true)">AI O</button>' +
+                '</td>';
+            tbody.appendChild(tr);
+        });
+    }
 
     function previewLayout(layoutId, layoutType, layoutName) {
         var route = layoutType === 'json' ? '/layout/create/json/order' : '/layout/create/pdf';
@@ -313,6 +384,27 @@
             alert('Batch export failed: ' + err.message);
         });
         });
+    }
+
+    function backToOrders() {
+        if (confirm('Close this tab and return to Orders?')) {
+            // Get current tab ID
+            var activePane = document.querySelector('.tab-pane.active');
+            if (activePane && activePane.id) {
+                var tabId = activePane.id.replace('-content', '');
+                // Open Orders tab first
+                openTab('Orders', '/order/view');
+                // Close current tab using the closeTab function
+                setTimeout(function() {
+                    if (typeof closeTab === 'function') {
+                        closeTab(tabId, new Event('click'));
+                    }
+                }, 100);
+            } else {
+                // Fallback: just open Orders tab
+                openTab('Orders', '/order/view');
+            }
+        }
     }
     </script>
 </div>

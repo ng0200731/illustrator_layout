@@ -1532,6 +1532,17 @@ function saveComponents() {
 }
 
 function exportFile(type, outlined) {
+    // Check if we're on an order page and should use order data
+    var orderId = getOrderIdFromPage();
+    var lineIndex = getLineIndexFromPage();
+
+    if (orderId && lineIndex !== null) {
+        // Export using order data with variables applied
+        exportOrderFile(orderId, lineIndex, type, outlined);
+        return;
+    }
+
+    // Default export using template data
     var data = {
         label: { width: pdfWidth, height: pdfHeight },
         components: components.map(function(c) {
@@ -1542,6 +1553,8 @@ function exportFile(type, outlined) {
                 width: c.w,
                 height: c.h,
                 content: c.content,
+                barcodeData: c.barcodeData,  // Include barcode data
+                qrData: c.qrData,            // Include QR data
                 fontFamily: c.fontFamily,
                 fontSize: c.fontSize,
                 pathData: c.pathData,
@@ -1581,5 +1594,102 @@ function exportFile(type, outlined) {
     })
     .catch(function(err) {
         alert('Export failed: ' + err.message);
+    });
+}
+
+// Helper functions to detect if we're on an order page
+function getOrderIdFromPage() {
+    // Check URL for order ID pattern
+    var match = window.location.pathname.match(/\/orders\/([^\/]+)/);
+    return match ? match[1] : null;
+}
+
+function getLineIndexFromPage() {
+    // For now, default to first line (index 0)
+    // This could be enhanced to detect which line is being exported
+    return 0;
+}
+
+// Export function for order pages that uses variable-substituted data
+function exportOrderFile(orderId, lineIndex, type, outlined) {
+    console.log('Exporting order data for:', orderId, 'line:', lineIndex);
+
+    // First get the processed layout data with variables applied
+    fetch('/api/' + orderId + '/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+    .then(function(response) {
+        if (!response.ok) throw new Error('Failed to generate layout data');
+        return response.json();
+    })
+    .then(function(result) {
+        if (!result.lines || !result.lines[lineIndex]) {
+            throw new Error('Invalid line index: ' + lineIndex);
+        }
+
+        var layoutData = result.lines[lineIndex];
+        console.log('Got layout data with variables:', layoutData);
+
+        // Convert layout data to export format
+        var data = {
+            label: {
+                width: layoutData.docWidth || pdfWidth || 100,
+                height: layoutData.docHeight || pdfHeight || 100
+            },
+            components: layoutData.components.map(function(c) {
+                return {
+                    type: c.type,
+                    x: c.x,
+                    y: c.y,
+                    width: c.w,
+                    height: c.h,
+                    content: c.content,
+                    barcodeData: c.barcodeData,  // Variable-substituted barcode data
+                    qrData: c.qrData,            // Variable-substituted QR data
+                    fontFamily: c.fontFamily,
+                    fontSize: c.fontSize,
+                    pathData: c.pathData,
+                    isCompound: c.isCompound || false,
+                    visible: c.visible !== false,
+                    page: 0
+                };
+            })
+        };
+
+        if (type === 'ai' || type === 'ai-separate') {
+            data.outlined = outlined || false;
+        }
+
+        if (type === 'ai-separate') {
+            data.separateInvisible = true;
+        }
+
+        var endpoint = type === 'pdf' ? '/export/pdf' : '/export/ai';
+        console.log('Exporting with variable data to:', endpoint);
+
+        // Now export with the variable-substituted data
+        return fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+    })
+    .then(function(response) {
+        if (!response.ok) throw new Error('Export failed');
+        return response.blob();
+    })
+    .then(function(blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'export.' + (type === 'pdf' ? 'pdf' : 'ai');
+        a.click();
+        URL.revokeObjectURL(url);
+        console.log('Export completed successfully');
+    })
+    .catch(function(error) {
+        console.error('Export error:', error);
+        alert('Export failed: ' + error.message);
     });
 }

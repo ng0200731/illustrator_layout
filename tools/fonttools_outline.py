@@ -110,6 +110,7 @@ def _get_font_path(font_family):
     from models.font import Font
 
     try:
+        # Try exact match first
         uploaded_font = Font.get_by_name(font_family)
         if uploaded_font:
             file_path = uploaded_font['file_path']
@@ -119,6 +120,19 @@ def _get_font_path(font_family):
             file_path = file_path.replace('\\', '/')
             if os.path.exists(file_path):
                 return file_path
+
+        # Try case-insensitive match
+        all_fonts = Font.get_all()
+        font_family_lower = font_family.lower()
+        for font in all_fonts:
+            if font['font_name'].lower() == font_family_lower:
+                file_path = font['file_path']
+                if not os.path.isabs(file_path):
+                    file_path = os.path.join(os.path.dirname(__file__), '..', file_path)
+                file_path = os.path.normpath(file_path)
+                file_path = file_path.replace('\\', '/')
+                if os.path.exists(file_path):
+                    return file_path
     except Exception as e:
         print(f"Warning: Could not check uploaded fonts: {e}")
 
@@ -126,16 +140,46 @@ def _get_font_path(font_family):
     # Common Windows font paths
     windows_fonts = os.path.join(os.environ.get('WINDIR', 'C:\\Windows'), 'Fonts')
 
-    # Font mapping
+    # Font mapping (including Chinese fonts)
     font_map = {
         'Arial': 'arial.ttf',
         'Helvetica': 'arial.ttf',
         'Times New Roman': 'times.ttf',
         'Times-Roman': 'times.ttf',
         'Courier New': 'cour.ttf',
-        'Courier': 'cour.ttf'
+        'Courier': 'cour.ttf',
+        'SimSun': 'simsun.ttc',
+        'SimSun-Bold': 'simsunb.ttf',
+        'simsunb': 'simsunb.ttf',  # Database name for uploaded SimSun Bold
+        'SimHei': 'simhei.ttf',
+        'Microsoft YaHei': 'msyh.ttc',
+        'Microsoft YaHei Bold': 'msyhbd.ttc',
+        'KaiTi': 'simkai.ttf',
+        'FangSong': 'simfang.ttf'
     }
 
+    # Try exact match
+    if font_family in font_map:
+        font_path = os.path.join(windows_fonts, font_map[font_family])
+        if os.path.exists(font_path):
+            return font_path
+
+    # Try case-insensitive match
+    font_family_lower = font_family.lower()
+    for key, value in font_map.items():
+        if key.lower() == font_family_lower:
+            font_path = os.path.join(windows_fonts, value)
+            if os.path.exists(font_path):
+                return font_path
+
+    # Try partial match (e.g., "simsunb" matches "SimSun-Bold")
+    for key, value in font_map.items():
+        if font_family_lower in key.lower() or key.lower() in font_family_lower:
+            font_path = os.path.join(windows_fonts, value)
+            if os.path.exists(font_path):
+                return font_path
+
+    # Default fallback
     font_file = font_map.get(font_family, 'arial.ttf')
     font_path = os.path.join(windows_fonts, font_file)
 

@@ -8,9 +8,9 @@ TMP_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), '.tmp')
 
 
 def generate_template(variables):
-    """Generate an xlsx template with column headers from variable content.
+    """Generate an xlsx template with column headers from variable names.
     Args:
-        variables: list of dicts [{idx: int, content: str}, ...]
+        variables: list of dicts [{idx: int, content: str, variableName: str}, ...]
     Returns:
         filepath to the generated .xlsx in .tmp/
     """
@@ -18,7 +18,9 @@ def generate_template(variables):
     ws = wb.active
     ws.title = "Data"
     for col_idx, var in enumerate(variables, start=1):
-        ws.cell(row=1, column=col_idx, value=var['content'])
+        # Use variableName if available, otherwise fall back to content
+        header = var.get('variableName', '').strip() or var['content']
+        ws.cell(row=1, column=col_idx, value=header)
     ws.cell(row=1, column=len(variables) + 1, value='qty')
 
     _write_metadata(wb, variables)
@@ -32,7 +34,7 @@ def generate_template(variables):
 def generate_dummy(variables, row_count=10):
     """Generate an xlsx with random placeholder data rows.
     Args:
-        variables: list of dicts [{idx: int, content: str}, ...]
+        variables: list of dicts [{idx: int, content: str, variableName: str}, ...]
         row_count: number of dummy rows to generate
     Returns:
         filepath to the generated .xlsx in .tmp/
@@ -43,7 +45,9 @@ def generate_dummy(variables, row_count=10):
     ws.title = "Data"
 
     for col_idx, var in enumerate(variables, start=1):
-        ws.cell(row=1, column=col_idx, value=var['content'])
+        # Use variableName if available, otherwise fall back to content
+        header = var.get('variableName', '').strip() or var['content']
+        ws.cell(row=1, column=col_idx, value=header)
     ws.cell(row=1, column=len(variables) + 1, value='qty')
 
     for row in range(2, num_rows + 2):
