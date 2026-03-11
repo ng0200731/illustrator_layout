@@ -505,6 +505,10 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 
+    # Handle problematic fonts gracefully
+    if not font_family or not isinstance(font_family, str):
+        return ('Helvetica', False)
+
     def _normalize_font_name(name):
         if not name:
             return ''
@@ -545,26 +549,60 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
         return uniq
 
     def _find_font_file(font_name):
-        """Search for font file in fonts directory"""
+        """Search for font file in fonts directory and system fonts"""
+        # First check local fonts directory
         fonts_dir = os.path.join(os.path.dirname(__file__), '..', 'fonts')
-        if not os.path.exists(fonts_dir):
-            return None
+        if os.path.exists(fonts_dir):
+            # Normalize search name
+            target = _normalize_font_name(font_name)
+            if target:
+                # Search for TTF files first (preferred), then OTF
+                for ext in ['.ttf', '.otf']:
+                    for filename in os.listdir(fonts_dir):
+                        if not filename.lower().endswith(ext):
+                            continue
 
-        # Normalize search name
-        target = _normalize_font_name(font_name)
-        if not target:
-            return None
+                        # Check if filename matches (without extension)
+                        file_base = os.path.splitext(filename)[0]
+                        if _normalize_font_name(file_base) == target:
+                            return os.path.join(fonts_dir, filename)
 
-        # Search for TTF files first (preferred), then OTF
-        for ext in ['.ttf', '.otf']:
-            for filename in os.listdir(fonts_dir):
-                if not filename.lower().endswith(ext):
+        # If not found in local fonts, check system fonts (Windows)
+        if os.name == 'nt':  # Windows
+            system_font_dirs = [
+                r'C:\Windows\Fonts',
+                os.path.expanduser(r'~\AppData\Local\Microsoft\Windows\Fonts')
+            ]
+
+            for sys_dir in system_font_dirs:
+                if not os.path.exists(sys_dir):
                     continue
 
-                # Check if filename matches (without extension)
-                file_base = os.path.splitext(filename)[0]
-                if _normalize_font_name(file_base) == target:
-                    return os.path.join(fonts_dir, filename)
+                try:
+                    for filename in os.listdir(sys_dir):
+                        if not filename.lower().endswith(('.ttf', '.otf', '.ttc')):
+                            continue
+
+                        # For Chinese fonts like 微软雅黑, check the actual font name
+                        font_path = os.path.join(sys_dir, filename)
+                        try:
+                            from fontTools.ttLib import TTFont as FTFont
+                            ft_font = FTFont(font_path)
+                            for record in ft_font['name'].names:
+                                if record.nameID == 1:  # Font family name
+                                    try:
+                                        family_name = record.toUnicode()
+                                        if family_name == font_name:
+                                            ft_font.close()
+                                            return font_path
+                                    except:
+                                        pass
+                            ft_font.close()
+                        except:
+                            pass
+                except Exception as e:
+                    print(f"DEBUG: Error scanning system fonts in {sys_dir}: {e}")
+                    continue
 
         return None
 
@@ -576,13 +614,28 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
 
         # Search for font file
         file_path = None
-        for candidate in candidates:
-            file_path = _find_font_file(candidate)
+
+        # First try direct lookup by exact font name (for system fonts like 微软雅黑)
+        try:
+            file_path = _find_font_file(font_family)
             if file_path:
-                print(f"DEBUG: Found font file: {candidate} -> {file_path}")
-                break
-            else:
-                print(f"DEBUG: No file found for: {candidate}")
+                print(f"DEBUG: Found font file by direct lookup: {font_family} -> {file_path}")
+        except Exception as e:
+            print(f"DEBUG: Error in direct font lookup for '{font_family}': {e}")
+
+        # If direct lookup failed, try candidates
+        if not file_path:
+            for candidate in candidates:
+                try:
+                    file_path = _find_font_file(candidate)
+                    if file_path:
+                        print(f"DEBUG: Found font file: {candidate} -> {file_path}")
+                        break
+                    else:
+                        print(f"DEBUG: No file found for: {candidate}")
+                except Exception as e:
+                    print(f"DEBUG: Error searching for font '{candidate}': {e}")
+                    continue
 
         if file_path and os.path.exists(file_path):
             # Normalize path
@@ -602,12 +655,14 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
                     if record.nameID == 6 and record.platformID == 3:  # PostScript name (Windows)
                         try:
                             ps_name = record.toUnicode()
-                        except:
+                        except Exception as unicode_err:
+                            print(f"DEBUG: Unicode error reading PostScript name: {unicode_err}")
                             pass
                     elif record.nameID == 4 and record.platformID == 3:  # Full name
                         try:
                             full_name = record.toUnicode()
-                        except:
+                        except Exception as unicode_err:
+                            print(f"DEBUG: Unicode error reading full name: {unicode_err}")
                             pass
                 ft_font.close()
                 # Prefer PostScript name (matches web font naming: "MangoNew-Bold")
@@ -617,11 +672,20 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
                 elif full_name:
                     reg_name = full_name
             except Exception as e:
+                print(f"Warning: Could not read font name from '{file_path}': {e}")
+                # Use a safe fallback name
+                reg_name = f"CustomFont_{hash(font_family) % 10000}"
                 print(f"Warning: Could not read font name: {e}")
 
             # Fallback to font_family if we couldn't read from file
             if not reg_name:
-                reg_name = font_family
+                # For problematic fonts like Chinese fonts, use a safe ASCII name
+                try:
+                    reg_name = font_family.encode('ascii', 'ignore').decode('ascii')
+                    if not reg_name:
+                        reg_name = f"Font_{hash(font_family) % 10000}"
+                except:
+                    reg_name = f"Font_{hash(font_family) % 10000}"
 
             # Check if already registered
             try:
@@ -644,33 +708,30 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
                 import traceback
                 traceback.print_exc()
 
-                # Fallback: use Helvetica metrics but keep font name
+                # Fallback: use Helvetica metrics but keep a safe font name
                 # This allows Illustrator to see the font name and substitute locally
                 try:
                     from reportlab.pdfbase.pdfmetrics import Font as RLFont
+                    safe_name = f"SafeFont_{hash(font_family) % 10000}"
                     try:
-                        pdfmetrics.getFont(reg_name)
+                        pdfmetrics.getFont(safe_name)
                     except:
-                        pdfmetrics.registerFont(RLFont(reg_name, 'Helvetica', 'WinAnsiEncoding'))
-                    print(f"Using Helvetica metrics for font: {reg_name}")
-                    return (reg_name, False)
+                        pdfmetrics.registerFont(RLFont(safe_name, 'Helvetica', 'WinAnsiEncoding'))
+                    print(f"Using Helvetica metrics for font: {safe_name}")
+                    return (safe_name, False)
                 except Exception as e2:
                     print(f"Warning: Could not register fallback font: {e2}")
-                    return (reg_name, False)
+                    return ('Helvetica', False)
         else:
             print(f"Warning: Font file not found for '{font_family}'")
     except Exception as e:
-        print(f"Warning: Font registration error: {e}")
+        print(f"Warning: Font registration error for '{font_family}': {e}")
         import traceback
         traceback.print_exc()
 
-    # If font couldn't be found/registered, return the font name anyway
-    # This allows Illustrator to see the font name and substitute locally
-    if font_family:
-        return (font_family, False)
-
-    # If no font_family provided at all, return empty string
-    return ('', False)
+    # If font couldn't be found/registered, return Helvetica as safe fallback
+    print(f"Warning: Font '{font_family}' not available, using Helvetica")
+    return ('Helvetica', False)
 
 def _hex_to_rgb(hex_color):
     """Convert hex color string to RGB tuple (0-1 range)"""
