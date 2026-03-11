@@ -32,6 +32,11 @@ def export_ai(data, outlined=False):
     _draw_page(c, data, outlined, page_w, page_h)
 
     _save_with_fonts(c, outlined)
+
+    # Remove subset prefix from font names if not outlined
+    if not outlined:
+        _remove_font_subset_prefix(filepath)
+
     return filepath
 
 
@@ -123,12 +128,13 @@ def _draw_page(c, data, outlined, page_w, page_h):
 
 def _save_with_fonts(c, outlined):
     """Save canvas with full font embedding when not outlined."""
-    # Embed full fonts (not subsetted) so Illustrator can match local fonts
+    # For non-outlined exports, embed fonts (except system fonts which are handled separately)
     # Only for fonts under 2MB to avoid huge file sizes
     if not outlined:
         from reportlab.pdfbase.ttfonts import TTFontFile
         _orig_makeSubset = TTFontFile.makeSubset
         _max_full_embed_size = 2 * 1024 * 1024  # 2MB limit
+
         def _full_makeSubset(self, subset):
             try:
                 fn = self.filename
@@ -140,6 +146,7 @@ def _save_with_fonts(c, outlined):
             except Exception as e:
                 print(f"Warning: Full font embed failed, using subset: {e}")
             return _orig_makeSubset(self, subset)
+
         TTFontFile.makeSubset = _full_makeSubset
         try:
             c.save()
@@ -147,6 +154,34 @@ def _save_with_fonts(c, outlined):
             TTFontFile.makeSubset = _orig_makeSubset
     else:
         c.save()
+
+
+def _remove_font_subset_prefix(filepath):
+    """Remove subset prefix from font names in PDF."""
+    try:
+        import re
+        with open(filepath, 'rb') as f:
+            content = f.read()
+
+        # Pattern to match subset prefix in BaseFont names: /AAAAAA+FontName
+        # Replace with just /FontName
+        pattern = rb'/([A-Z]{6}\+)([A-Za-z0-9\-]+)'
+
+        def replace_font_name(match):
+            prefix = match.group(1)  # e.g., b'AAAAAA+'
+            font_name = match.group(2)  # e.g., b'MicrosoftYaHei'
+            # Return just the font name without prefix
+            return b'/' + font_name
+
+        modified_content = re.sub(pattern, replace_font_name, content)
+
+        # Write back
+        with open(filepath, 'wb') as f:
+            f.write(modified_content)
+
+        print(f"Removed font subset prefixes from {filepath}")
+    except Exception as e:
+        print(f"Warning: Could not remove font subset prefix: {e}")
 
 
 def export_ai_batch(pages_data, outlined=False):
@@ -173,6 +208,11 @@ def export_ai_batch(pages_data, outlined=False):
             c.showPage()
 
     _save_with_fonts(c, outlined)
+
+    # Remove subset prefix from font names if not outlined
+    if not outlined:
+        _remove_font_subset_prefix(filepath)
+
     return filepath
 
 def _apply_rotation(c, comp, bounds_rects, page_h):
@@ -630,42 +670,64 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
             # Use database font name if available (source of truth for uploaded fonts)
             # Otherwise, read PostScript name from font file for system fonts
             reg_name = None
-            if db_font_name:
-                # Database is source of truth - use the name stored there
-                reg_name = db_font_name
-                print(f"DEBUG: Using database font name for registration: '{reg_name}'")
-            else:
-                # System font - read PostScript name from file
-                try:
-                    from fontTools.ttLib import TTFont as FTFont
-                    ft_font = FTFont(file_path)
-                    ps_name = None
-                    full_name = None
-                    for record in ft_font['name'].names:
-                        if record.nameID == 6 and record.platformID == 3:  # PostScript name (Windows)
-                            try:
-                                ps_name = record.toUnicode()
-                            except:
-                                pass
-                        elif record.nameID == 4 and record.platformID == 3:  # Full name
-                            try:
-                                full_name = record.toUnicode()
-                            except:
-                                pass
-                    ft_font.close()
-                    # Prefer PostScript name (matches web font naming: "MangoNew-Bold")
-                    # Fallback to full name if PostScript name not available
-                    if ps_name:
-                        reg_name = ps_name
-                    elif full_name:
-                        reg_name = full_name
-                    print(f"DEBUG: Using PostScript name from font file: '{reg_name}'")
-                except Exception as e:
-                    print(f"Warning: Could not read font name: {e}")
+            ps_name = None
 
-            # Fallback to font_family if we couldn't determine a name
-            if not reg_name:
-                reg_name = font_family
+            # Always read the PostScript name from the font file
+            try:
+                from fontTools.ttLib import TTFont as FTFont
+                ft_font = FTFont(file_path)
+                full_name = None
+                for record in ft_font['name'].names:
+                    if record.nameID == 6 and record.platformID == 3:  # PostScript name (Windows)
+                        try:
+                            ps_name = record.toUnicode()
+                        except:
+                            pass
+                    elif record.nameID == 4 and record.platformID == 3:  # Full name
+                        try:
+                            full_name = record.toUnicode()
+                        except:
+                            pass
+                ft_font.close()
+                # Prefer PostScript name, fallback to full name
+                if not ps_name and full_name:
+                    ps_name = full_name
+                print(f"DEBUG: Font PostScript name: '{ps_name}'")
+            except Exception as e:
+                print(f"Warning: Could not read font name: {e}")
+
+            # Decide which name to use for registration
+            # First check if this is a system font (regardless of database)
+            system_font_names = [
+                'MicrosoftYaHei', 'Microsoft YaHei', 'SimSun', 'SimHei',
+                'KaiTi', 'FangSong', 'Arial', 'Helvetica', 'Times', 'Courier'
+            ]
+            is_system_font = False
+            if ps_name:
+                ps_name_normalized = ps_name.lower().replace(' ', '').replace('-', '')
+                for sf in system_font_names:
+                    sf_normalized = sf.lower().replace(' ', '').replace('-', '')
+                    if ps_name_normalized.startswith(sf_normalized) or sf_normalized in ps_name_normalized:
+                        is_system_font = True
+                        break
+
+            if is_system_font and db_font_name:
+                # For system fonts in database, use the database name (what user expects)
+                # This allows Illustrator to match the font name exactly
+                reg_name = db_font_name
+                print(f"DEBUG: Using database name for system font: '{reg_name}'")
+            elif is_system_font:
+                # For system fonts not in database, use PostScript name
+                reg_name = ps_name
+                print(f"DEBUG: Using PostScript name for system font (no database): '{reg_name}'")
+            elif db_font_name:
+                # Use database name for custom uploaded fonts
+                reg_name = db_font_name
+                print(f"DEBUG: Using database font name for custom font: '{reg_name}'")
+            else:
+                # No database entry and not a known system font - use PostScript name or font_family
+                reg_name = ps_name if ps_name else font_family
+                print(f"DEBUG: Using PostScript name (no database entry): '{reg_name}'")
 
             # Check if already registered
             try:
@@ -681,16 +743,17 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
                 font = TTFont(reg_name, file_path_rl)
                 font.substitutionFonts = []
 
-                # Override the font's internal name to match registration name
-                # This ensures the embedded PDF uses the database name, not PostScript name
-                if db_font_name:
+                # Override the font's internal name for custom fonts and system fonts with database names
+                # This ensures Illustrator sees the expected font name
+                if db_font_name and reg_name == db_font_name:
+                    # This is a custom font - override the name to match database
                     original_name = font.face.name
                     # Convert to bytes if needed (ReportLab expects bytes)
                     reg_name_bytes = reg_name.encode('utf-8') if isinstance(reg_name, str) else reg_name
                     font.face.name = reg_name_bytes
                     font.face.familyName = reg_name_bytes
                     font.face.fullName = reg_name_bytes
-                    print(f"DEBUG: Overrode font name from '{original_name}' to '{reg_name_bytes}'")
+                    print(f"DEBUG: Overrode font name from '{original_name}' to '{reg_name_bytes}' (custom font)")
 
                 pdfmetrics.registerFont(font)
                 print(f"Font registered: {reg_name} from {file_path}")

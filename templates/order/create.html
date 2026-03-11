@@ -667,7 +667,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                variables: currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content }; }),
+                variables: currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content, variableName: v.variableName }; }),
                 layout_name: currentLayoutName
             })
         })
@@ -692,7 +692,7 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                variables: currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content }; }),
+                variables: currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content, variableName: v.variableName }; }),
                 layout_name: currentLayoutName,
                 row_count: rowCount
             })
@@ -723,7 +723,7 @@
         var formData = new FormData();
         formData.append('file', file);
         formData.append('variables', JSON.stringify(
-            currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content }; })
+            currentLayoutVars.map(function(v) { return { idx: v.idx, content: v.content, variableName: v.variableName }; })
         ));
 
         fetch('/order/api/excel/upload', {
