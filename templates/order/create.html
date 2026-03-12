@@ -678,24 +678,11 @@
         .then(function(res) {
             closePoModal();
             if (res.ok) {
-                // After creating the order, confirm it to generate layout data with variables
-                var orderId = res.data.order_id;
-                return fetch('/order/api/' + orderId + '/confirm', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
+                // Order created successfully - redirect to orders view
+                openTab('Orders', '/order/view');
             } else {
                 document.getElementById('order-result').innerHTML = '<p class="error">' + res.data.error + '</p>';
                 throw new Error(res.data.error);
-            }
-        })
-        .then(function(confirmRes) {
-            if (confirmRes && confirmRes.ok) {
-                openTab('Orders', '/order/view');
-            } else {
-                return confirmRes.json().then(function(errorData) {
-                    document.getElementById('order-result').innerHTML = '<p class="error">Order created but confirmation failed: ' + errorData.error + '</p>';
-                });
             }
         })
         .catch(function(err) {
