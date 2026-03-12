@@ -3655,13 +3655,18 @@ function jRenderOverlayList() {
                 var wasVariable = jState.overlays[idx].isVariable;
                 jState.overlays[idx].isVariable = !wasVariable;
 
-                // If turning on, prompt for variable name
+                // If turning on, prompt for variable name and assign variableId
                 if (!wasVariable) {
                     var varName = prompt('Enter variable name:', jState.overlays[idx].variableName || '');
                     if (varName !== null) {
                         jState.overlays[idx].variableName = varName.trim();
+                        // Assign unique variableId if not already set
+                        if (!jState.overlays[idx].variableId) {
+                            jState.overlays[idx].variableId = 'ov_' + idx + '_' + Date.now();
+                        }
                         console.log('Set variableName for overlay', idx, ':', jState.overlays[idx].variableName);
-                        console.log('Overlay after setting variableName:', jState.overlays[idx]);
+                        console.log('Set variableId for overlay', idx, ':', jState.overlays[idx].variableId);
+                        console.log('Overlay after setting variable:', jState.overlays[idx]);
                     } else {
                         // User cancelled, revert the toggle
                         jState.overlays[idx].isVariable = false;
@@ -4695,6 +4700,7 @@ function saveLayoutToDatabase() {
                             barcodeFormat: ov.barcodeFormat || 'code128',
                             isVariable: ov.isVariable || false,
                             variableName: ov.variableName || '',
+                            variableId: ov.variableId || '',
                             rotation: ov._rotation || 0,
                             boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1
                         };

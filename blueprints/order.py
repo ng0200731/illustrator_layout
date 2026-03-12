@@ -145,8 +145,13 @@ def api_layouts(customer_id):
         if d.get('data'):
             try:
                 layout_data = json.loads(d['data']) if isinstance(d['data'], str) else d['data']
+                # Count variables in components
                 for c in layout_data.get('components', []):
                     if c.get('isVariable'):
+                        var_count += 1
+                # Count variables in overlays
+                for ov in layout_data.get('overlays', []):
+                    if ov.get('isVariable'):
                         var_count += 1
             except Exception:
                 pass

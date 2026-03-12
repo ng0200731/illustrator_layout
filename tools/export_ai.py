@@ -550,6 +550,23 @@ def _register_custom_font(c, font_family, font_id=None, font_style=''):
 
     def _find_font_file(font_name):
         """Search for font file in fonts directory and system fonts"""
+        # Special mappings for common fonts
+        font_mappings = {
+            '微软雅黑': 'chinese.msyh.ttf',
+            'Microsoft YaHei': 'chinese.msyh.ttf',
+            'SimSun': 'simsunb.ttf',
+            'SimHei': 'simsunb.ttf'
+        }
+
+        # Check if we have a direct mapping
+        if font_name in font_mappings:
+            mapped_file = font_mappings[font_name]
+            fonts_dir = os.path.join(os.path.dirname(__file__), '..', 'fonts')
+            mapped_path = os.path.join(fonts_dir, mapped_file)
+            if os.path.exists(mapped_path):
+                print(f"DEBUG: Using font mapping: '{font_name}' -> {mapped_path}")
+                return mapped_path
+
         # First check local fonts directory
         fonts_dir = os.path.join(os.path.dirname(__file__), '..', 'fonts')
         if os.path.exists(fonts_dir):

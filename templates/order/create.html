@@ -184,14 +184,29 @@
                                 var data = layout.data ? (typeof layout.data === 'string' ? JSON.parse(layout.data) : layout.data) : {};
                                 var comps = data.components || [];
                                 var vars = [];
+
+                                // Process components for variables
                                 comps.forEach(function(c, ci) {
                                     if (!c.isVariable) return;
                                     vars.push({
-                                        idx: ci,
+                                        idx: c.variableId || c.idx || ci,
                                         content: c.content || '',
                                         variableName: c.variableName || '',
                                         fontFamily: c.fontFamily || '',
                                         fontSize: c.fontSize || 12
+                                    });
+                                });
+
+                                // Also process overlays for variables
+                                var overlays = data.overlays || [];
+                                overlays.forEach(function(ov, oi) {
+                                    if (!ov.isVariable) return;
+                                    vars.push({
+                                        idx: ov.variableId || ov.idx || (comps.length + oi),
+                                        content: ov.content || '',
+                                        variableName: ov.variableName || '',
+                                        fontFamily: ov.fontFamily || '',
+                                        fontSize: ov.fontSize || 12
                                     });
                                 });
                                 console.log('Variables:', vars.length);
@@ -304,15 +319,30 @@
         // Parse layout data for variables
         var data = layout.data ? (typeof layout.data === 'string' ? JSON.parse(layout.data) : layout.data) : {};
         var comps = data.components || [];
+        var overlays = data.overlays || [];
         var vars = [];
+
+        // Extract variables from components
         comps.forEach(function(c, ci) {
             if (!c.isVariable) return;
             vars.push({
-                idx: ci,
+                idx: c.variableId || c.idx || ci,
                 content: c.content || '',
                 variableName: c.variableName || '',
                 fontFamily: c.fontFamily || '',
                 fontSize: c.fontSize || 12
+            });
+        });
+
+        // Extract variables from overlays
+        overlays.forEach(function(ov, oi) {
+            if (!ov.isVariable) return;
+            vars.push({
+                idx: ov.variableId || ov.idx || ('ov_' + oi),
+                content: ov.content || '',
+                variableName: ov.variableName || '',
+                fontFamily: ov.fontFamily || '',
+                fontSize: ov.fontSize || 12
             });
         });
 
@@ -634,9 +664,29 @@
         .then(function(res) {
             closePoModal();
             if (res.ok) {
-                openTab('Orders', '/order/view');
+                // After creating the order, confirm it to generate layout data with variables
+                var orderId = res.data.order_id;
+                return fetch('/order/api/' + orderId + '/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
             } else {
                 document.getElementById('order-result').innerHTML = '<p class="error">' + res.data.error + '</p>';
+                throw new Error(res.data.error);
+            }
+        })
+        .then(function(confirmRes) {
+            if (confirmRes && confirmRes.ok) {
+                openTab('Orders', '/order/view');
+            } else {
+                return confirmRes.json().then(function(errorData) {
+                    document.getElementById('order-result').innerHTML = '<p class="error">Order created but confirmation failed: ' + errorData.error + '</p>';
+                });
+            }
+        })
+        .catch(function(err) {
+            if (err.message !== res.data.error) { // Don't show duplicate error
+                document.getElementById('order-result').innerHTML = '<p class="error">Error: ' + err.message + '</p>';
             }
         });
     }
