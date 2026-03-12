@@ -202,11 +202,16 @@ def api_excel_upload():
     if ext != 'xlsx':
         return jsonify({'error': 'Only .xlsx files are allowed'}), 400
 
-    variables_json = request.form.get('variables', '[]')
-    expected_variables = json.loads(variables_json)
+    try:
+        variables_json = request.form.get('variables', '[]')
+        expected_variables = json.loads(variables_json)
 
-    result = parse_upload(file, expected_variables)
-    if result['success']:
-        return jsonify({'success': True, 'rows': result['rows']})
-    else:
-        return jsonify({'success': False, 'error': result['error']}), 400
+        result = parse_upload(file, expected_variables)
+        if result['success']:
+            return jsonify({'success': True, 'rows': result['rows']})
+        else:
+            return jsonify({'success': False, 'error': result['error']}), 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500

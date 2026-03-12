@@ -186,10 +186,14 @@
                                 var vars = [];
 
                                 // Process components for variables
+                                var seenVarIds = {};
                                 comps.forEach(function(c, ci) {
                                     if (!c.isVariable) return;
+                                    var varId = c.variableId || c.idx || ci;
+                                    if (seenVarIds[varId]) return; // Skip duplicates
+                                    seenVarIds[varId] = true;
                                     vars.push({
-                                        idx: c.variableId || c.idx || ci,
+                                        idx: varId,
                                         content: c.content || '',
                                         variableName: c.variableName || '',
                                         fontFamily: c.fontFamily || '',
@@ -201,8 +205,11 @@
                                 var overlays = data.overlays || [];
                                 overlays.forEach(function(ov, oi) {
                                     if (!ov.isVariable) return;
+                                    var varId = ov.variableId || ov.idx || (comps.length + oi);
+                                    if (seenVarIds[varId]) return; // Skip duplicates
+                                    seenVarIds[varId] = true;
                                     vars.push({
-                                        idx: ov.variableId || ov.idx || (comps.length + oi),
+                                        idx: varId,
                                         content: ov.content || '',
                                         variableName: ov.variableName || '',
                                         fontFamily: ov.fontFamily || '',
@@ -321,12 +328,16 @@
         var comps = data.components || [];
         var overlays = data.overlays || [];
         var vars = [];
+        var seenVarIds = {};
 
         // Extract variables from components
         comps.forEach(function(c, ci) {
             if (!c.isVariable) return;
+            var varId = c.variableId || c.idx || ci;
+            if (seenVarIds[varId]) return; // Skip duplicates
+            seenVarIds[varId] = true;
             vars.push({
-                idx: c.variableId || c.idx || ci,
+                idx: varId,
                 content: c.content || '',
                 variableName: c.variableName || '',
                 fontFamily: c.fontFamily || '',
@@ -337,8 +348,11 @@
         // Extract variables from overlays
         overlays.forEach(function(ov, oi) {
             if (!ov.isVariable) return;
+            var varId = ov.variableId || ov.idx || ('ov_' + oi);
+            if (seenVarIds[varId]) return; // Skip duplicates
+            seenVarIds[varId] = true;
             vars.push({
-                idx: ov.variableId || ov.idx || ('ov_' + oi),
+                idx: varId,
                 content: ov.content || '',
                 variableName: ov.variableName || '',
                 fontFamily: ov.fontFamily || '',
@@ -770,6 +784,14 @@
         errDiv.style.display = 'none';
         successDiv.style.display = 'none';
 
+        // Validate that we have layout variables
+        if (!currentLayoutVars || currentLayoutVars.length === 0) {
+            errDiv.textContent = 'No layout selected or layout has no variables';
+            errDiv.style.display = '';
+            input.value = '';
+            return;
+        }
+
         var formData = new FormData();
         formData.append('file', file);
         formData.append('variables', JSON.stringify(
@@ -780,7 +802,20 @@
             method: 'POST',
             body: formData
         })
-        .then(function(r) { return r.json(); })
+        .then(function(r) {
+            if (!r.ok) {
+                // Try to parse error as JSON, fallback to text
+                return r.text().then(function(text) {
+                    try {
+                        var json = JSON.parse(text);
+                        throw new Error(json.error || 'Upload failed');
+                    } catch (e) {
+                        throw new Error('Upload failed: ' + text.substring(0, 100));
+                    }
+                });
+            }
+            return r.json();
+        })
         .then(function(data) {
             if (data.success) {
                 var src = orderLinesList[0];

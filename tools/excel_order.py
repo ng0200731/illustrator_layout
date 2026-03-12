@@ -82,6 +82,7 @@ def parse_upload(file_storage, expected_variables):
         # Read metadata for index mapping
         idx_mapping = _read_metadata(wb)
         if not idx_mapping:
+            # Fallback: use the idx from expected_variables
             idx_mapping = [v['idx'] for v in expected_variables]
 
         # Validate column count (variables + optional qty)
@@ -120,6 +121,7 @@ def parse_upload(file_storage, expected_variables):
 
             vv = {}
             for ci in range(var_cols):
+                # Convert variable ID to string for consistent key format
                 vv[str(idx_mapping[ci])] = str(values[ci])
             if has_qty:
                 qty_val = values[var_cols]
@@ -153,7 +155,8 @@ def _write_metadata(wb, variables):
     meta.cell(row=1, column=3, value="default_content")
     for row_idx, var in enumerate(variables, start=2):
         meta.cell(row=row_idx, column=1, value=row_idx - 1)
-        meta.cell(row=row_idx, column=2, value=var['idx'])
+        # Store variable index as string to support both numeric and string IDs
+        meta.cell(row=row_idx, column=2, value=str(var['idx']))
         meta.cell(row=row_idx, column=3, value=var['content'])
 
 
@@ -164,8 +167,15 @@ def _read_metadata(wb):
     meta = wb['_metadata']
     mapping = []
     for row in meta.iter_rows(min_row=2, values_only=True):
-        if row[0] is not None:
-            mapping.append(int(row[1]))
+        if row[0] is not None and row[1] is not None:
+            # Support both numeric and string variable IDs
+            var_id = row[1]
+            # Try to convert to int if it's a numeric string, otherwise keep as string
+            try:
+                var_id = int(var_id)
+            except (ValueError, TypeError):
+                var_id = str(var_id)
+            mapping.append(var_id)
     return mapping if mapping else None
 
 

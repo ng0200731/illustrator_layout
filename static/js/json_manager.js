@@ -2497,40 +2497,70 @@ function jRenderAutoOverlays(c) {
     }
 }
 
+// Sort overlays by spatial position (top-left to bottom-right reading order)
+function jSortOverlaysBySpatialPosition(overlayIndices) {
+    return overlayIndices.sort(function(a, b) {
+        var ovA = jState.overlays[a];
+        var ovB = jState.overlays[b];
+
+        // Primary sort: top to bottom (by y coordinate)
+        if (ovA.y !== ovB.y) {
+            return ovA.y - ovB.y;
+        }
+
+        // Secondary sort: left to right (by x coordinate)
+        return ovA.x - ovB.x;
+    });
+}
+
 function jRenderOverlays(c) {
     if (!jState.overlays) return;
     var brs = jState.boundsRects;
 
-    // Render in two passes to control z-order:
-    // Pass 1: Manual overlays (_fromAddButton) - render first (bottom layer)
+    // Separate overlays into groups
+    var manualIndices = [];
+    var autoIndices = [];
+    var variableActiveIndices = [];
+
     for (var i = 0; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
-        if (!ov._fromAddButton) continue; // Skip non-manual overlays in this pass
         if (!ov.visible) continue;
         if (jState.editingComponentIdx === i && jState.pendingContentRegion) continue;
-        var rot = 0;
-        if (brs && ov._boundsRectIdx >= 0 && ov._boundsRectIdx < brs.length) {
-            rot = brs[ov._boundsRectIdx]._rotation || 0;
+
+        if (ov.isVariable) {
+            variableActiveIndices.push(i);
+        } else if (ov._fromAddButton) {
+            manualIndices.push(i);
+        } else {
+            autoIndices.push(i);
         }
-        if (rot !== 0) {
-            var pbr = brs[ov._boundsRectIdx];
-            var cx = pbr.x + pbr.w / 2;
-            var cy = pbr.y + pbr.h / 2;
-            c.save();
-            c.translate(cx, cy);
-            c.rotate(rot * Math.PI / 180);
-            c.translate(-cx, -cy);
-        }
-        jRenderOverlayItem(c, ov, i);
-        if (rot !== 0) c.restore();
     }
 
-    // Pass 2: Auto overlays (no _fromAddButton) - render second (middle layer)
-    for (var i = 0; i < jState.overlays.length; i++) {
+    // Sort each group by spatial position
+    manualIndices = jSortOverlaysBySpatialPosition(manualIndices);
+    autoIndices = jSortOverlaysBySpatialPosition(autoIndices);
+
+    // Variable-active overlays maintain their manual/auto grouping but render on top
+    var variableManualIndices = [];
+    var variableAutoIndices = [];
+    for (var i = 0; i < variableActiveIndices.length; i++) {
+        var idx = variableActiveIndices[i];
+        if (jState.overlays[idx]._fromAddButton) {
+            variableManualIndices.push(idx);
+        } else {
+            variableAutoIndices.push(idx);
+        }
+    }
+    variableManualIndices = jSortOverlaysBySpatialPosition(variableManualIndices);
+    variableAutoIndices = jSortOverlaysBySpatialPosition(variableAutoIndices);
+
+    // Render in order: manual (bottom) → auto (middle) → variable-active (top)
+    var renderOrder = manualIndices.concat(autoIndices, variableManualIndices, variableAutoIndices);
+
+    for (var j = 0; j < renderOrder.length; j++) {
+        var i = renderOrder[j];
         var ov = jState.overlays[i];
-        if (ov._fromAddButton) continue; // Skip manual overlays in this pass
-        if (!ov.visible) continue;
-        if (jState.editingComponentIdx === i && jState.pendingContentRegion) continue;
+
         var rot = 0;
         if (brs && ov._boundsRectIdx >= 0 && ov._boundsRectIdx < brs.length) {
             rot = brs[ov._boundsRectIdx]._rotation || 0;
@@ -3664,6 +3694,8 @@ function jRenderOverlayList() {
                         if (!jState.overlays[idx].variableId) {
                             jState.overlays[idx].variableId = 'ov_' + idx + '_' + Date.now();
                         }
+                        // Store original render index for z-index management
+                        jState.overlays[idx]._originalRenderIndex = idx;
                         console.log('Set variableName for overlay', idx, ':', jState.overlays[idx].variableName);
                         console.log('Set variableId for overlay', idx, ':', jState.overlays[idx].variableId);
                         console.log('Overlay after setting variable:', jState.overlays[idx]);
@@ -3671,6 +3703,9 @@ function jRenderOverlayList() {
                         // User cancelled, revert the toggle
                         jState.overlays[idx].isVariable = false;
                     }
+                } else {
+                    // Turning off - clear the original render index
+                    delete jState.overlays[idx]._originalRenderIndex;
                 }
 
                 jCaptureState();
@@ -3746,18 +3781,47 @@ function jRenderOverlayList() {
         return item;
     }
 
-    // First, render overlays with _fromAddButton flag (manual overlays at top of UI list)
+    // Separate overlays into groups
+    var manualIndices = [];
+    var autoIndices = [];
+    var variableActiveIndices = [];
+
     for (var i = 0; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
-        if (!ov._fromAddButton) continue;
-        list.appendChild(createOverlayItem(ov, i));
+        if (ov.isVariable) {
+            variableActiveIndices.push(i);
+        } else if (ov._fromAddButton) {
+            manualIndices.push(i);
+        } else {
+            autoIndices.push(i);
+        }
     }
 
-    // Then, render overlays without _fromAddButton flag (auto overlays at bottom of UI list)
-    for (var i = 0; i < jState.overlays.length; i++) {
-        var ov = jState.overlays[i];
-        if (ov._fromAddButton) continue;
-        list.appendChild(createOverlayItem(ov, i));
+    // Sort each group by spatial position
+    manualIndices = jSortOverlaysBySpatialPosition(manualIndices);
+    autoIndices = jSortOverlaysBySpatialPosition(autoIndices);
+
+    // Variable-active overlays maintain their manual/auto grouping
+    var variableManualIndices = [];
+    var variableAutoIndices = [];
+    for (var i = 0; i < variableActiveIndices.length; i++) {
+        var idx = variableActiveIndices[i];
+        if (jState.overlays[idx]._fromAddButton) {
+            variableManualIndices.push(idx);
+        } else {
+            variableAutoIndices.push(idx);
+        }
+    }
+    variableManualIndices = jSortOverlaysBySpatialPosition(variableManualIndices);
+    variableAutoIndices = jSortOverlaysBySpatialPosition(variableAutoIndices);
+
+    // Render in UI order: variable-active (top) → manual → auto (bottom)
+    // This matches the visual z-order on canvas
+    var uiOrder = variableManualIndices.concat(variableAutoIndices, manualIndices, autoIndices);
+
+    for (var j = 0; j < uiOrder.length; j++) {
+        var i = uiOrder[j];
+        list.appendChild(createOverlayItem(jState.overlays[i], i));
     }
 }
 
