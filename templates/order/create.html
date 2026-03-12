@@ -362,8 +362,7 @@
 
         // Add to orderLinesList
         var lineObj = { layout_id: layoutId, layoutName: layout.name, vars: vars, variableValues: {} };
-        // Pre-fill variable values with original content
-        vars.forEach(function(v) { lineObj.variableValues[v.idx] = v.content; });
+        // Leave variable values empty for the first set
         orderLinesList.push(lineObj);
 
         currentLayoutVars = vars;
@@ -485,7 +484,6 @@
             var qtyInput = document.createElement('input');
             qtyInput.type = 'text';
             qtyInput.inputMode = 'numeric';
-            qtyInput.pattern = '[0-9]*';
             qtyInput.value = line.quantity && line.quantity > 0 ? line.quantity : '';
             qtyInput.placeholder = '1';
             qtyInput.style.cssText = 'width:100%;border:none;padding:4px;font-size:10px;text-align:center;box-sizing:border-box;';

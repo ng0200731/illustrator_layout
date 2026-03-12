@@ -3639,7 +3639,7 @@ function jRenderOverlayList() {
     }
 
     // Helper function to create overlay list item
-    function createOverlayItem(ov, i) {
+    function createOverlayItem(ov, i, displayNumber) {
         var item = document.createElement('div');
         item.className = 'component-item';
         if (i === jState.selectedOverlayIdx) item.classList.add('selected');
@@ -3724,7 +3724,13 @@ function jRenderOverlayList() {
         };
         var ovRot = ov._rotation || 0;
         var rotSuffix = ovRot ? ' [' + ovRot + '°]' : '';
-        label.textContent = (labelMap[ov.type] || ov.type) + rotSuffix;
+        var labelText = (labelMap[ov.type] || ov.type) + rotSuffix;
+
+        // Prepend display number if provided
+        if (displayNumber) {
+            labelText = '#' + displayNumber + ' - ' + labelText;
+        }
+        label.textContent = labelText;
 
         var rotCW = document.createElement('button');
         rotCW.className = 'icon-btn';
@@ -3830,17 +3836,8 @@ function jRenderOverlayList() {
 
     for (var j = 0; j < uiOrder.length; j++) {
         var i = uiOrder[j];
-        var item = createOverlayItem(jState.overlays[i], i);
-
-        // Update the label to show the spatial number
-        var label = item.querySelector('.component-label');
-        if (label) {
-            var displayNum = displayNumberMap[i];
-            var originalText = label.textContent;
-            label.textContent = '#' + displayNum + ' - ' + originalText;
-        }
-
-        list.appendChild(item);
+        var displayNum = displayNumberMap[i];
+        list.appendChild(createOverlayItem(jState.overlays[i], i, displayNum));
     }
 }
 

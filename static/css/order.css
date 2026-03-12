@@ -276,6 +276,21 @@ textarea:focus:invalid {
     outline: none !important;
 }
 
+/* Override table cell and row borders that might be red */
+table td {
+    border: 1px solid #000 !important;
+}
+
+table tr {
+    border: none !important;
+    outline: none !important;
+}
+
+table td:has(input:invalid),
+table td:has(textarea:invalid) {
+    border: 1px solid #000 !important;
+}
+
 .no-vars {
     font-size: 10px;
     color: #999;
