@@ -254,6 +254,28 @@
     resize: vertical;
 }
 
+/* Remove red border from empty inputs */
+input:invalid,
+textarea:invalid,
+input[type="text"]:invalid,
+input[inputmode="numeric"]:invalid,
+.var-row input:invalid,
+.var-row textarea:invalid,
+table input:invalid,
+table textarea:invalid {
+    border-color: #999 !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+/* Also override focus states */
+input:focus:invalid,
+textarea:focus:invalid {
+    border-color: #999 !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
 .no-vars {
     font-size: 10px;
     color: #999;

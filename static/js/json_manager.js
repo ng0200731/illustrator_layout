@@ -3819,9 +3819,28 @@ function jRenderOverlayList() {
     // This matches the visual z-order on canvas
     var uiOrder = variableManualIndices.concat(variableAutoIndices, manualIndices, autoIndices);
 
+    // Create a map of overlay index to display number based on spatial order
+    var displayNumberMap = {};
+    var allOverlaysSorted = jSortOverlaysBySpatialPosition(
+        Array.from({length: jState.overlays.length}, function(_, i) { return i; })
+    );
+    for (var j = 0; j < allOverlaysSorted.length; j++) {
+        displayNumberMap[allOverlaysSorted[j]] = j + 1;
+    }
+
     for (var j = 0; j < uiOrder.length; j++) {
         var i = uiOrder[j];
-        list.appendChild(createOverlayItem(jState.overlays[i], i));
+        var item = createOverlayItem(jState.overlays[i], i);
+
+        // Update the label to show the spatial number
+        var label = item.querySelector('.component-label');
+        if (label) {
+            var displayNum = displayNumberMap[i];
+            var originalText = label.textContent;
+            label.textContent = '#' + displayNum + ' - ' + originalText;
+        }
+
+        list.appendChild(item);
     }
 }
 
