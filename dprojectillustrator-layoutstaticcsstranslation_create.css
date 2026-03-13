@@ -1,0 +1,193 @@
+.translation-create {
+    padding: 20px;
+}
+
+.translation-create h2 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+}
+
+.translation-create h3 {
+    margin: 20px 0 12px 0;
+    font-size: 14px;
+}
+
+.excel-upload-section {
+    margin-bottom: 20px;
+}
+
+.excel-upload-area {
+    border: 2px dashed #000;
+    padding: 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.excel-upload-area:hover,
+.excel-upload-area.dragover {
+    background: #f5f5f5;
+}
+
+.excel-upload-area p {
+    margin: 8px 0;
+    font-size: 12px;
+}
+
+.btn-upload {
+    padding: 8px 16px;
+    border: 1px solid #000;
+    background: #fff;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.btn-upload:hover {
+    background: #000;
+    color: #fff;
+}
+
+.error {
+    color: #d00;
+    padding: 8px;
+    margin-top: 8px;
+    border: 1px solid #d00;
+    background: #fee;
+    font-size: 11px;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+    margin-bottom: 16px;
+    border: 1px solid #000;
+}
+
+.translation-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.translation-table th,
+.translation-table td {
+    border: 1px solid #000;
+    padding: 6px 8px;
+    text-align: left;
+}
+
+.translation-table th {
+    background: #f5f5f5;
+    font-weight: bold;
+}
+
+.translation-table td[contenteditable="true"]:focus {
+    background: #ffffcc;
+    outline: 2px solid #000;
+}
+
+.btn-save {
+    padding: 8px 16px;
+    border: 1px solid #000;
+    background: #000;
+    color: #fff;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.btn-save:hover {
+    background: #333;
+}
+
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: #fff;
+    border: 2px solid #000;
+    width: 400px;
+    max-width: 90%;
+}
+
+.modal-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid #000;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+.modal-close {
+    border: none;
+    background: none;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+}
+
+.modal-body {
+    padding: 16px;
+}
+
+.form-row {
+    margin-bottom: 12px;
+}
+
+.form-row label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.form-row input,
+.form-row select {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #000;
+    font-size: 11px;
+}
+
+.form-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.btn-primary {
+    padding: 8px 16px;
+    border: 1px solid #000;
+    background: #000;
+    color: #fff;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.btn-primary:hover {
+    background: #333;
+}
+
+.btn-secondary {
+    padding: 8px 16px;
+    border: 1px solid #000;
+    background: #fff;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.btn-secondary:hover {
+    background: #f5f5f5;
+}

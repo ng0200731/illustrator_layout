@@ -1,0 +1,53 @@
+<div class="tab-pane">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/translation_create.css') }}">
+
+    <div class="translation-create">
+        <h2>Create Translation Table</h2>
+
+        <div class="excel-upload-section">
+            <div class="excel-upload-area" id="excel-upload-area">
+                <p>Drop .xlsx file here</p>
+                <p>or</p>
+                <button onclick="document.getElementById('excel-input').click()" class="btn-upload">Choose File</button>
+            </div>
+            <input type="file" id="excel-input" accept=".xlsx,.xls" style="display:none;" onchange="handleExcelUpload(this)">
+            <div id="excel-error" class="error" style="display:none;"></div>
+        </div>
+
+        <div id="preview-section" style="display:none;">
+            <h3>Preview & Edit</h3>
+            <div class="table-wrapper">
+                <table id="preview-table" class="translation-table"></table>
+            </div>
+            <button onclick="showSaveModal()" class="btn-save">Save Translation Table</button>
+        </div>
+    </div>
+
+    <!-- Save Modal -->
+    <div id="save-modal" class="modal-overlay" onclick="closeSaveModal(event)">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Save Translation Table</span>
+                <button class="modal-close" onclick="closeSaveModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-row">
+                    <label>Table Name</label>
+                    <input type="text" id="table-name-input" placeholder="Enter table name">
+                </div>
+                <div class="form-row">
+                    <label>Customer</label>
+                    <select id="customer-select">
+                        <option value="">Public</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button onclick="saveTranslationTable()" class="btn-primary">Save</button>
+                    <button onclick="closeSaveModal()" class="btn-secondary">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/translation_create.js') }}"></script>
+</div>

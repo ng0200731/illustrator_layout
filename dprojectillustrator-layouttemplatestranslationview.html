@@ -1,0 +1,49 @@
+<div class="tab-pane">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/translation_view.css') }}">
+
+    <div class="translation-view">
+        <h2>Translation Tables</h2>
+
+        <div class="filter-section">
+            <div class="filter-row">
+                <input type="text" id="search-name" placeholder="Search table name..." oninput="filterTranslations()">
+                <select id="search-customer" onchange="filterTranslations()">
+                    <option value="">All Customers</option>
+                    <option value="__public__">Public</option>
+                </select>
+            </div>
+        </div>
+
+        <table class="translation-list-table">
+            <thead>
+                <tr>
+                    <th>Customer</th>
+                    <th>Table Name</th>
+                    <th>Last Updated</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="translation-tbody"></tbody>
+        </table>
+    </div>
+
+    <!-- View Modal -->
+    <div id="view-modal" class="view-modal-overlay" onclick="closeViewModal(event)">
+        <div class="view-modal-content">
+            <div class="view-modal-header">
+                <span id="modal-title">Translation Table</span>
+                <button class="view-modal-close" onclick="closeViewModal()">&times;</button>
+            </div>
+            <div class="view-modal-body">
+                <div class="modal-actions">
+                    <button onclick="exportToExcel()" class="btn-export">Export to Excel</button>
+                </div>
+                <div class="table-wrapper">
+                    <table id="modal-table" class="translation-table"></table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/translation_view.js') }}"></script>
+</div>

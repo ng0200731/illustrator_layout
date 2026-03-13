@@ -84,6 +84,19 @@ def init_db():
         )
     ''')
 
+    # Create translations table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS translations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            table_name TEXT NOT NULL,
+            customer_id TEXT,
+            data TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+        )
+    ''')
+
     conn.commit()
     conn.close()
     print(f"Database initialized at {DATABASE_PATH}")

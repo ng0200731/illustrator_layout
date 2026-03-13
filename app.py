@@ -8,6 +8,7 @@ from models import init_db
 from blueprints.customer import customer_bp
 from blueprints.layout import layout_bp
 from blueprints.font import font_bp
+from blueprints.translation import translation_bp
 from blueprints.order import order_bp
 
 app = Flask(__name__)
@@ -23,6 +24,7 @@ init_db()
 app.register_blueprint(customer_bp)
 app.register_blueprint(layout_bp)
 app.register_blueprint(font_bp)
+app.register_blueprint(translation_bp)
 app.register_blueprint(order_bp)
 
 @app.route('/')

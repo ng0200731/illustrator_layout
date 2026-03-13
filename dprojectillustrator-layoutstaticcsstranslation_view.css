@@ -1,0 +1,184 @@
+.translation-view {
+    padding: 20px;
+}
+
+.translation-view h2 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+}
+
+.filter-section {
+    margin-bottom: 16px;
+}
+
+.filter-row {
+    display: flex;
+    gap: 12px;
+}
+
+.filter-row input,
+.filter-row select {
+    padding: 6px 8px;
+    border: 1px solid #000;
+    font-size: 11px;
+}
+
+.filter-row input {
+    flex: 1;
+}
+
+.filter-row select {
+    width: 200px;
+}
+
+.translation-list-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.translation-list-table th,
+.translation-list-table td {
+    border: 1px solid #000;
+    padding: 8px;
+    text-align: left;
+}
+
+.translation-list-table th {
+    background: #f5f5f5;
+    font-weight: bold;
+}
+
+.actions {
+    display: flex;
+    gap: 4px;
+}
+
+.btn-view,
+.btn-rename,
+.btn-delete {
+    padding: 4px 8px;
+    border: 1px solid #000;
+    background: #fff;
+    cursor: pointer;
+    font-size: 10px;
+}
+
+.btn-view:hover {
+    background: #000;
+    color: #fff;
+}
+
+.btn-rename:hover {
+    background: #f5f5f5;
+}
+
+.btn-delete:hover {
+    background: #d00;
+    color: #fff;
+    border-color: #d00;
+}
+
+.view-modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.view-modal-content {
+    background: #fff;
+    border: 2px solid #000;
+    width: 90%;
+    max-width: 1200px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.view-modal-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid #000;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+    font-size: 13px;
+}
+
+.view-modal-close {
+    border: none;
+    background: none;
+    font-size: 20px;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+}
+
+.view-modal-body {
+    padding: 16px;
+    overflow: auto;
+}
+
+.modal-actions {
+    margin-bottom: 12px;
+}
+
+.btn-export {
+    padding: 6px 12px;
+    border: 1px solid #000;
+    background: #000;
+    color: #fff;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.btn-export:hover {
+    background: #333;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+    border: 1px solid #000;
+}
+
+.translation-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.translation-table th,
+.translation-table td {
+    border: 1px solid #000;
+    padding: 6px 8px;
+    text-align: left;
+}
+
+.translation-table th {
+    background: #f5f5f5;
+    font-weight: bold;
+}
+
+.translation-table th div {
+    margin-bottom: 4px;
+}
+
+.translation-table th input.column-search {
+    width: 100%;
+    padding: 3px 4px;
+    border: 1px solid #999;
+    font-size: 10px;
+}
+
+.translation-table td[contenteditable="true"]:focus {
+    background: #ffffcc;
+    outline: 2px solid #000;
+}
