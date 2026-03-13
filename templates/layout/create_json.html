@@ -35,6 +35,7 @@
                                 <option value="image">Image</option>
                                 <option value="qrcode">QR Code</option>
                                 <option value="barcode">Barcode</option>
+                                <option value="translation">Translation</option>
                             </select>
                         </div>
                         <div id="ct-dimensions-row" class="ts-row" style="display: none;">
@@ -136,6 +137,60 @@
                         <div class="ts-row">
                             <label>Color</label>
                             <input type="color" id="ct-barcode-color" value="#000000">
+                        </div>
+                    </div>
+                    <div id="ct-form-translation" class="ct-form" style="display: none;">
+                        <div class="ts-row">
+                            <label>Translation Table</label>
+                            <select id="ct-translation-table">
+                                <option value="">Select translation table...</option>
+                            </select>
+                        </div>
+                        <div class="ts-row">
+                            <label>Source Key</label>
+                            <input type="text" id="ct-translation-key" placeholder="e.g., COTTON">
+                        </div>
+                        <div class="ts-row">
+                            <label>Target Language</label>
+                            <select id="ct-translation-lang">
+                                <option value="">Select language...</option>
+                            </select>
+                        </div>
+                        <div class="ts-row">
+                            <label>Font</label>
+                            <select id="ct-translation-font"><option value="">Select a font...</option></select>
+                        </div>
+                        <div class="ts-row">
+                            <label>Size (pt)</label>
+                            <input type="number" id="ct-translation-font-size" value="12" min="1" max="200">
+                        </div>
+                        <div class="ts-row">
+                            <label>Color</label>
+                            <input type="color" id="ct-translation-color" value="#000000">
+                        </div>
+                        <div class="ts-row">
+                            <label>Line Spacing</label>
+                            <input type="number" id="ct-translation-line-spacing" value="1.2" step="0.1" min="0.5" max="3">
+                        </div>
+                        <div class="ts-row">
+                            <label>Hyphenate</label>
+                            <input type="checkbox" id="ct-translation-hyphenate" checked>
+                        </div>
+                        <div class="ts-row">
+                            <label>H-Align</label>
+                            <div class="alignment-buttons" id="ct-translation-align-h">
+                                <button type="button" data-val="left" class="active" title="Align left">&#8676;</button>
+                                <button type="button" data-val="center" title="Align center">&#8596;</button>
+                                <button type="button" data-val="right" title="Align right">&#8677;</button>
+                            </div>
+                        </div>
+                        <div class="ts-row">
+                            <label>V-Align</label>
+                            <div class="alignment-buttons" id="ct-translation-align-v">
+                                <button type="button" data-val="top" class="active" title="Align top">&#8673;</button>
+                                <button type="button" data-val="center" title="Align middle">&#8597;</button>
+                                <button type="button" data-val="bottom" title="Align bottom">&#8675;</button>
+                            </div>
                         </div>
                     </div>
                     <div id="ct-rotate-buttons" class="ts-buttons" style="display: none;">

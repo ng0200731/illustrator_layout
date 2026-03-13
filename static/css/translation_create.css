@@ -8,16 +8,19 @@
     gap: 20px;
 }
 
+.excel-upload-section h2,
 .translation-create h2 {
     font-size: 14px;
     font-weight: 600;
     margin: 0 0 15px 0;
+    color: #000 !important;
 }
 
 .translation-create h3 {
     font-size: 14px;
     font-weight: 600;
     margin: 20px 0 12px 0;
+    color: #000 !important;
 }
 
 .excel-upload-section {
@@ -69,6 +72,11 @@
 #preview-section {
     border: 1px solid black;
     padding: 20px;
+    background: white;
+}
+
+#preview-section h2 {
+    color: #000 !important;
 }
 
 .table-wrapper {

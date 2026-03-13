@@ -2706,6 +2706,55 @@ function jRenderOverlayItem(c, ov, idx) {
         c.textAlign = 'center';
         c.fillText('Barcode', x + w / 2, y + h / 2);
         c.textAlign = 'left';
+    } else if (ov.type === 'translationregion') {
+        // Translation region - render translated text with word wrapping and hyphenation
+        if (ov._translatedText) {
+            var fontSizeMm = ov.fontSize * PT_TO_MM;
+            var fontStyle = fontSizeMm + 'px ';
+            fontStyle += "'" + ov.font + "', sans-serif";
+            c.font = fontStyle;
+            c.fillStyle = ov.color || '#000000';
+
+            var lineSpacing = ov.lineSpacing || 1.2;
+            var lineHeight = fontSizeMm * lineSpacing;
+
+            // Word wrap with hyphenation
+            var lines = jWrapTextWithHyphenation(c, ov._translatedText, w, ov.hyphenate);
+
+            // Horizontal alignment
+            if (ov.hAlign === 'center') c.textAlign = 'center';
+            else if (ov.hAlign === 'right') c.textAlign = 'right';
+            else c.textAlign = 'left';
+
+            var tx = x;
+            if (ov.hAlign === 'center') tx = x + w / 2;
+            else if (ov.hAlign === 'right') tx = x + w;
+
+            // Vertical alignment
+            var totalH = lines.length * lineHeight;
+            var startY = y;
+            if (ov.vAlign === 'center') startY = y + (h - totalH) / 2;
+            else if (ov.vAlign === 'bottom') startY = y + h - totalH;
+
+            c.save();
+            c.beginPath();
+            c.rect(x, y, w, h);
+            c.clip();
+            for (var li = 0; li < lines.length; li++) {
+                c.fillText(lines[li], tx, startY + li * lineHeight);
+            }
+            c.restore();
+            c.textAlign = 'left';
+        } else {
+            // Placeholder when no translation loaded
+            c.fillStyle = 'rgba(200, 0, 200, 0.1)';
+            c.fillRect(x, y, w, h);
+            c.fillStyle = '#999';
+            c.font = '3px sans-serif';
+            c.textAlign = 'center';
+            c.fillText('Translation', x + w / 2, y + h / 2);
+            c.textAlign = 'left';
+        }
     }
 
     // Label
@@ -2719,7 +2768,7 @@ function jRenderOverlayItem(c, ov, idx) {
     c.font = '1.5px sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'bottom';
-    var label = ov.type === 'textregion' ? 'Text' : ov.type === 'imageregion' ? 'Image' : ov.type === 'qrcoderegion' ? 'QR' : 'Barcode';
+    var label = ov.type === 'textregion' ? 'Text' : ov.type === 'imageregion' ? 'Image' : ov.type === 'qrcoderegion' ? 'QR' : ov.type === 'barcoderegion' ? 'Barcode' : ov.type === 'translationregion' ? 'Translation' : 'Unknown';
     c.fillText(label, x, y - 0.3);
     }
     c.restore();
@@ -3925,7 +3974,7 @@ function jOnContentTypeChange() {
     var sel = _jel('ct-type-select');
     if (!sel) return;
     var val = sel.value;
-    ['ct-form-text', 'ct-form-image', 'ct-form-qrcode', 'ct-form-barcode'].forEach(function(id) {
+    ['ct-form-text', 'ct-form-image', 'ct-form-qrcode', 'ct-form-barcode', 'ct-form-translation'].forEach(function(id) {
         var el = _jel(id);
         if (el) el.style.display = 'none';
     });
@@ -3935,6 +3984,13 @@ function jOnContentTypeChange() {
     else if (val === 'image') { var f = _jel('ct-form-image'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; if (rotBtns) rotBtns.style.display = ''; }
     else if (val === 'qrcode') { var f = _jel('ct-form-qrcode'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; if (rotBtns) rotBtns.style.display = ''; }
     else if (val === 'barcode') { var f = _jel('ct-form-barcode'); if (f) f.style.display = ''; if (btns) btns.style.display = ''; if (rotBtns) rotBtns.style.display = ''; }
+    else if (val === 'translation') {
+        var f = _jel('ct-form-translation');
+        if (f) f.style.display = '';
+        if (btns) btns.style.display = '';
+        if (rotBtns) rotBtns.style.display = '';
+        jLoadTranslationTables();
+    }
     else { if (btns) btns.style.display = 'none'; if (rotBtns) rotBtns.style.display = 'none'; }
 
     if (jState && jState.pendingContentRegion) {
@@ -3971,6 +4027,33 @@ function applyContentSettings() {
             barcodeData: (_jel('ct-barcode-data') || {}).value || '',
             barcodeFormat: (_jel('ct-barcode-format') || {}).value || 'code128',
             color: (_jel('ct-barcode-color') || {}).value || '#000000',
+            visible: true, locked: false, isVariable: false
+        };
+    } else if (type === 'translation') {
+        var hAlign = 'left';
+        var hBtns = _jel('ct-translation-align-h');
+        if (hBtns) {
+            var activeH = hBtns.querySelector('.active');
+            if (activeH) hAlign = activeH.getAttribute('data-val');
+        }
+        var vAlign = 'top';
+        var vBtns = _jel('ct-translation-align-v');
+        if (vBtns) {
+            var activeV = vBtns.querySelector('.active');
+            if (activeV) vAlign = activeV.getAttribute('data-val');
+        }
+        comp = {
+            type: 'translationregion', x: region.x, y: region.y, w: region.w, h: region.h,
+            translationTableId: (_jel('ct-translation-table') || {}).value || '',
+            translationKey: (_jel('ct-translation-key') || {}).value || '',
+            translationLang: (_jel('ct-translation-lang') || {}).value || '',
+            font: (_jel('ct-translation-font') || {}).value || '',
+            fontSize: parseFloat((_jel('ct-translation-font-size') || {}).value || 12),
+            color: (_jel('ct-translation-color') || {}).value || '#000000',
+            lineSpacing: parseFloat((_jel('ct-translation-line-spacing') || {}).value || 1.2),
+            hyphenate: (_jel('ct-translation-hyphenate') || {}).checked || false,
+            hAlign: hAlign,
+            vAlign: vAlign,
             visible: true, locked: false, isVariable: false
         };
     }
@@ -4036,7 +4119,7 @@ function applyContentSettings() {
     if (btns) btns.style.display = 'none';
     var rotBtns = _jel('ct-rotate-buttons');
     if (rotBtns) rotBtns.style.display = 'none';
-    ['ct-form-text', 'ct-form-image', 'ct-form-qrcode', 'ct-form-barcode'].forEach(function(id) {
+    ['ct-form-text', 'ct-form-image', 'ct-form-qrcode', 'ct-form-barcode', 'ct-form-translation'].forEach(function(id) {
         var el = _jel(id); if (el) el.style.display = 'none';
     });
     var dimRow = _jel('ct-dimensions-row');
@@ -4045,6 +4128,11 @@ function applyContentSettings() {
     if (dimRowHeight) dimRowHeight.style.display = 'none';
     var aiFontRow = _jel('ct-ai-font-row');
     if (aiFontRow) aiFontRow.style.display = 'none';
+
+    // Fetch translation data if it's a translation region
+    if (comp && comp.type === 'translationregion') {
+        jFetchTranslationData(comp);
+    }
 
     jRenderCanvas();
     jRenderOverlayList();
@@ -4964,6 +5052,9 @@ function jLoadLayoutFromDatabase(layoutId) {
         jRenderLayerTree();
         jRenderOverlayList();
         jRenderEdgeList();
+
+        // Load translation data for all translation regions
+        jLoadAllTranslationData();
     }).catch(function(err) {
         alert('Error loading layout: ' + err.message);
     });
@@ -5494,3 +5585,207 @@ function jColorToRGBArray(color) {
     if (color.type === 'gradient' && color.stops && color.stops.length > 0) return jColorToRGBArray(color.stops[0].color);
     return null;
 }
+
+// ─── Translation Functions ───
+
+function jWrapTextWithHyphenation(ctx, text, maxWidth, hyphenate) {
+    var words = text.split(' ');
+    var lines = [];
+    var currentLine = '';
+
+    for (var i = 0; i < words.length; i++) {
+        var word = words[i];
+        var testLine = currentLine + (currentLine ? ' ' : '') + word;
+        var metrics = ctx.measureText(testLine);
+
+        if (metrics.width > maxWidth && currentLine) {
+            // Line would be too long
+            if (hyphenate && ctx.measureText(word).width > maxWidth) {
+                // Word itself is too long, need to hyphenate
+                var hyphenated = jHyphenateWord(ctx, word, maxWidth - ctx.measureText(currentLine + (currentLine ? ' ' : '')).width);
+                if (hyphenated.first) {
+                    lines.push(currentLine + (currentLine ? ' ' : '') + hyphenated.first + '-');
+                    currentLine = hyphenated.rest;
+                } else {
+                    lines.push(currentLine);
+                    currentLine = word;
+                }
+            } else {
+                // Push current line and start new line with current word
+                lines.push(currentLine);
+                currentLine = word;
+            }
+        } else {
+            currentLine = testLine;
+        }
+    }
+
+    if (currentLine) {
+        lines.push(currentLine);
+    }
+
+    return lines;
+}
+
+function jHyphenateWord(ctx, word, availableWidth) {
+    // Try to fit as many characters as possible with a hyphen
+    for (var i = word.length - 1; i > 0; i--) {
+        var part = word.substring(0, i);
+        if (ctx.measureText(part + '-').width <= availableWidth) {
+            return { first: part, rest: word.substring(i) };
+        }
+    }
+    return { first: '', rest: word };
+}
+
+function jLoadTranslationTables() {
+    var customerId = jState ? jState.currentCustomerId : null;
+    var url = customerId ? '/translation/list/' + customerId : '/translation/list';
+
+    fetch(url)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            var sel = _jel('ct-translation-table');
+            if (!sel) return;
+            sel.innerHTML = '<option value="">Select translation table...</option>';
+            if (data.translations && data.translations.length > 0) {
+                data.translations.forEach(function(t) {
+                    var opt = document.createElement('option');
+                    opt.value = t.id;
+                    opt.textContent = t.table_name;
+                    sel.appendChild(opt);
+                });
+            }
+        })
+        .catch(function(err) {
+            console.error('Failed to load translation tables:', err);
+        });
+
+    // Load fonts for translation font dropdown
+    var fontSel = _jel('ct-translation-font');
+    if (fontSel) {
+        var fontUrl = customerId ? '/font/list/' + encodeURIComponent(customerId) : '/font/list';
+        fetch(fontUrl)
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                fontSel.innerHTML = '<option value="">Select a font...</option>';
+                if (data.success && data.fonts) {
+                    data.fonts.forEach(function(f) {
+                        var opt = document.createElement('option');
+                        opt.value = f.font_name;
+                        opt.textContent = f.font_name;
+                        fontSel.appendChild(opt);
+                    });
+                }
+            })
+            .catch(function(err) {
+                console.error('Failed to load fonts:', err);
+            });
+    }
+
+    // Setup event listener for table selection
+    var sel = _jel('ct-translation-table');
+    if (sel && !sel._translationListenerAdded) {
+        sel.addEventListener('change', jOnTranslationTableChange);
+        sel._translationListenerAdded = true;
+    }
+
+    // Setup alignment button handlers
+    var hBtns = _jel('ct-translation-align-h');
+    if (hBtns && !hBtns._translationListenerAdded) {
+        hBtns.querySelectorAll('button').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                hBtns.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+            });
+        });
+        hBtns._translationListenerAdded = true;
+    }
+
+    var vBtns = _jel('ct-translation-align-v');
+    if (vBtns && !vBtns._translationListenerAdded) {
+        vBtns.querySelectorAll('button').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                vBtns.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+                btn.classList.add('active');
+            });
+        });
+        vBtns._translationListenerAdded = true;
+    }
+}
+
+function jOnTranslationTableChange() {
+    var sel = _jel('ct-translation-table');
+    if (!sel || !sel.value) return;
+
+    fetch('/translation/' + sel.value)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (!data.translation || !data.translation.data) return;
+            var tableData = JSON.parse(data.translation.data);
+            var langSel = _jel('ct-translation-lang');
+            if (!langSel) return;
+
+            langSel.innerHTML = '<option value="">Select language...</option>';
+            if (tableData.headers && tableData.headers.length > 1) {
+                // Skip first column (source key column)
+                for (var i = 1; i < tableData.headers.length; i++) {
+                    var opt = document.createElement('option');
+                    opt.value = i;
+                    opt.textContent = tableData.headers[i];
+                    langSel.appendChild(opt);
+                }
+            }
+        })
+        .catch(function(err) {
+            console.error('Failed to load translation table data:', err);
+        });
+}
+
+function jFetchTranslationData(comp) {
+    if (!comp.translationTableId || !comp.translationKey || !comp.translationLang) {
+        comp._translatedText = '';
+        return;
+    }
+
+    fetch('/translation/' + comp.translationTableId)
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (!data.translation || !data.translation.data) return;
+            var tableData = JSON.parse(data.translation.data);
+
+            // Find the row with matching key
+            var langColIdx = parseInt(comp.translationLang);
+            var translatedText = '';
+
+            if (tableData.rows) {
+                for (var i = 0; i < tableData.rows.length; i++) {
+                    var row = tableData.rows[i];
+                    if (row[0] === comp.translationKey && row[langColIdx]) {
+                        translatedText = row[langColIdx];
+                        break;
+                    }
+                }
+            }
+
+            comp._translatedText = translatedText;
+            jRenderCanvas();
+        })
+        .catch(function(err) {
+            console.error('Failed to fetch translation data:', err);
+            comp._translatedText = '';
+        });
+}
+
+function jLoadAllTranslationData() {
+    if (!jState || !jState.overlays) return;
+
+    jState.overlays.forEach(function(ov) {
+        if (ov.type === 'translationregion') {
+            jFetchTranslationData(ov);
+        }
+    });
+}
+
+
+
