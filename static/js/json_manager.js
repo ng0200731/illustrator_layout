@@ -2597,8 +2597,14 @@ function jRenderOverlayItem(c, ov, idx) {
     // Draw region border
     c.save();
     if (!jState.hideGuides) {
-    c.strokeStyle = isSelected ? '#0066ff' : '#00aa00';
-    c.lineWidth = 0.15;
+    // Red for variable overlays, blue for selected, green for normal
+    if (ov.isVariable) {
+        c.strokeStyle = '#ff0000';
+        c.lineWidth = 0.5;
+    } else {
+        c.strokeStyle = isSelected ? '#0066ff' : '#00aa00';
+        c.lineWidth = 0.15;
+    }
     c.setLineDash([1, 1]);
     c.strokeRect(x, y, w, h);
     c.setLineDash([]);
@@ -2674,7 +2680,7 @@ function jRenderOverlayItem(c, ov, idx) {
             c.fillText('QR Error', x + 1, y + h / 2);
         }
     } else if (ov.type === 'qrcoderegion') {
-        c.fillStyle = '#999';
+        c.fillStyle = ov.isVariable ? '#ff0000' : '#999';
         c.font = '3px sans-serif';
         c.textAlign = 'center';
         c.fillText('QR', x + w / 2, y + h / 2);
@@ -2695,7 +2701,7 @@ function jRenderOverlayItem(c, ov, idx) {
             c.fillText('Barcode Error', x + 1, y + h / 2);
         }
     } else if (ov.type === 'barcoderegion') {
-        c.fillStyle = '#999';
+        c.fillStyle = ov.isVariable ? '#ff0000' : '#999';
         c.font = '3px sans-serif';
         c.textAlign = 'center';
         c.fillText('Barcode', x + w / 2, y + h / 2);
@@ -2704,7 +2710,12 @@ function jRenderOverlayItem(c, ov, idx) {
 
     // Label
     if (!jState.hideGuides) {
-    c.fillStyle = isSelected ? '#0066ff' : '#00aa00';
+    // Red for variable overlays, blue for selected, green for normal
+    if (ov.isVariable) {
+        c.fillStyle = '#ff0000';
+    } else {
+        c.fillStyle = isSelected ? '#0066ff' : '#00aa00';
+    }
     c.font = '1.5px sans-serif';
     c.textAlign = 'left';
     c.textBaseline = 'bottom';
@@ -3643,6 +3654,11 @@ function jRenderOverlayList() {
         var item = document.createElement('div');
         item.className = 'component-item';
         if (i === jState.selectedOverlayIdx) item.classList.add('selected');
+
+        // Add red dotted border for variable overlays
+        if (ov.isVariable) {
+            item.style.border = '2px dotted red';
+        }
 
         // Add green styling for overlays created from + button
         if (ov._fromAddButton) {
