@@ -104,20 +104,28 @@
                             comps.forEach(function(c) {
                                 if (c.isVariable) {
                                     var varId = c.variableId || c.idx;
-                                    layoutVariableNames[varId] = c.variableName || '';
+                                    var varName = c.variableName || '';
+                                    // Prepend sequence number in parentheses if available
+                                    if (c.seq) {
+                                        varName = '(#' + c.seq + ')' + varName;
+                                    }
+                                    layoutVariableNames[varId] = varName;
                                 }
                             });
 
-                            // Get variable names from overlays
+                            // Get variable names from overlays (fallback if not in components)
                             overlays.forEach(function(ov) {
                                 if (ov.isVariable) {
                                     var varId = ov.variableId || ov.idx;
-                                    var varName = ov.variableName || '';
-                                    // Prepend sequence number in parentheses if available
-                                    if (ov.seq) {
-                                        varName = '(#' + ov.seq + ')' + varName;
+                                    // Only set if not already set by components
+                                    if (!layoutVariableNames[varId]) {
+                                        var varName = ov.variableName || '';
+                                        // Prepend sequence number in parentheses if available
+                                        if (ov.seq) {
+                                            varName = '(#' + ov.seq + ')' + varName;
+                                        }
+                                        layoutVariableNames[varId] = varName;
                                     }
-                                    layoutVariableNames[varId] = varName;
                                 }
                             });
 
@@ -141,20 +149,28 @@
                                 comps.forEach(function(c) {
                                     if (c.isVariable) {
                                         var varId = c.variableId || c.idx;
-                                        layoutVariableNames[varId] = c.variableName || '';
+                                        var varName = c.variableName || '';
+                                        // Prepend sequence number in parentheses if available
+                                        if (c.seq) {
+                                            varName = '(#' + c.seq + ')' + varName;
+                                        }
+                                        layoutVariableNames[varId] = varName;
                                     }
                                 });
 
-                                // Get variable names from overlays
+                                // Get variable names from overlays (fallback if not in components)
                                 overlays.forEach(function(ov) {
                                     if (ov.isVariable) {
                                         var varId = ov.variableId || ov.idx;
-                                        var varName = ov.variableName || '';
-                                        // Prepend sequence number in parentheses if available
-                                        if (ov.seq) {
-                                            varName = '(#' + ov.seq + ')' + varName;
+                                        // Only set if not already set by components
+                                        if (!layoutVariableNames[varId]) {
+                                            var varName = ov.variableName || '';
+                                            // Prepend sequence number in parentheses if available
+                                            if (ov.seq) {
+                                                varName = '(#' + ov.seq + ')' + varName;
+                                            }
+                                            layoutVariableNames[varId] = varName;
                                         }
-                                        layoutVariableNames[varId] = varName;
                                     }
                                 });
 
