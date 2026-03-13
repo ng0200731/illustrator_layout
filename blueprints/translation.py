@@ -26,6 +26,7 @@ def view_page():
 @translation_bp.route('/upload', methods=['POST'])
 def upload_excel():
     """Upload Excel file and return parsed data"""
+    temp_path = None
     try:
         if 'file' not in request.files:
             return jsonify({'success': False, 'error': 'No file provided'}), 400
@@ -40,15 +41,19 @@ def upload_excel():
 
         # Save to temp file
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
-        file.save(temp_file.name)
+        temp_path = temp_file.name
+        file.save(temp_path)
         temp_file.close()
 
         # Parse Excel
         from tools.excel_translation import parse_translation_excel
-        data = parse_translation_excel(temp_file.name)
+        data = parse_translation_excel(temp_path)
 
         # Clean up temp file
-        os.unlink(temp_file.name)
+        try:
+            os.unlink(temp_path)
+        except:
+            pass  # Ignore cleanup errors on Windows
 
         return jsonify({
             'success': True,
@@ -56,6 +61,12 @@ def upload_excel():
         }), 200
 
     except Exception as e:
+        # Clean up temp file on error
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @translation_bp.route('/save', methods=['POST'])
