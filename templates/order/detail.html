@@ -98,11 +98,29 @@
                         try {
                             var genData = typeof firstLine.generated_data === 'string' ? JSON.parse(firstLine.generated_data) : firstLine.generated_data;
                             var comps = genData.components || [];
-                            comps.forEach(function(c, idx) {
+                            var overlays = genData.overlays || [];
+
+                            // Get variable names from components
+                            comps.forEach(function(c) {
                                 if (c.isVariable) {
-                                    layoutVariableNames[idx] = c.variableName || ('#' + (idx + 1));
+                                    var varId = c.variableId || c.idx;
+                                    layoutVariableNames[varId] = c.variableName || '';
                                 }
                             });
+
+                            // Get variable names from overlays
+                            overlays.forEach(function(ov) {
+                                if (ov.isVariable) {
+                                    var varId = ov.variableId || ov.idx;
+                                    var varName = ov.variableName || '';
+                                    // Prepend sequence number if available
+                                    if (ov.seq) {
+                                        varName = '#' + ov.seq + (varName ? ' ' + varName : '');
+                                    }
+                                    layoutVariableNames[varId] = varName;
+                                }
+                            });
+
                             renderOrderLinesTable();
                             document.getElementById('loading-overlay').style.display = 'none';
                         } catch (e) {
@@ -115,12 +133,31 @@
                         fetch('/layout/api/' + firstLine.layout_id)
                             .then(function(r) { return r.json(); })
                             .then(function(layout) {
-                                var comps = layout.components || [];
-                                comps.forEach(function(c, idx) {
+                                var data = layout.data ? (typeof layout.data === 'string' ? JSON.parse(layout.data) : layout.data) : {};
+                                var comps = data.components || [];
+                                var overlays = data.overlays || [];
+
+                                // Get variable names from components
+                                comps.forEach(function(c) {
                                     if (c.isVariable) {
-                                        layoutVariableNames[idx] = c.variableName || ('#' + (idx + 1));
+                                        var varId = c.variableId || c.idx;
+                                        layoutVariableNames[varId] = c.variableName || '';
                                     }
                                 });
+
+                                // Get variable names from overlays
+                                overlays.forEach(function(ov) {
+                                    if (ov.isVariable) {
+                                        var varId = ov.variableId || ov.idx;
+                                        var varName = ov.variableName || '';
+                                        // Prepend sequence number if available
+                                        if (ov.seq) {
+                                            varName = '#' + ov.seq + (varName ? ' ' + varName : '');
+                                        }
+                                        layoutVariableNames[varId] = varName;
+                                    }
+                                });
+
                                 renderOrderLinesTable();
                                 document.getElementById('loading-overlay').style.display = 'none';
                             })
@@ -146,7 +183,7 @@
             var varParts = [];
 
             for (var k in vars) {
-                var varName = layoutVariableNames[k] || ('#' + (parseInt(k) + 1));
+                var varName = layoutVariableNames[k] || k;
                 varParts.push(varName + ': ' + vars[k]);
             }
             var varDisplay = varParts.length ? varParts.join(', ') : '—';

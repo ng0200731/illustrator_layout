@@ -4745,6 +4745,15 @@ function saveLayoutToDatabase() {
                 return;
             }
 
+            // Calculate sequence numbers for overlays (same logic as jRenderOverlayList)
+            var displayNumberMap = {};
+            var allOverlaysSorted = jSortOverlaysBySpatialPosition(
+                Array.from({length: jState.overlays.length}, function(_, i) { return i; })
+            );
+            for (var j = 0; j < allOverlaysSorted.length; j++) {
+                displayNumberMap[allOverlaysSorted[j]] = j + 1;
+            }
+
             var layoutData = {
                 name: layoutName,
                 type: 'json',
@@ -4758,7 +4767,7 @@ function saveLayoutToDatabase() {
                     scale: jState.scale,
                     edges: jState.edges,
                     boundsRectRotations: (jState.boundsRects || []).map(function(br) { return br._rotation || 0; }),
-                    components: jState.overlays.map(function(ov) {
+                    components: jState.overlays.map(function(ov, idx) {
                         return {
                             type: ov.type,
                             x: ov.x, y: ov.y, w: ov.w, h: ov.h,
@@ -4781,6 +4790,7 @@ function saveLayoutToDatabase() {
                             isVariable: ov.isVariable || false,
                             variableName: ov.variableName || '',
                             variableId: ov.variableId || '',
+                            seq: displayNumberMap[idx] || (idx + 1),
                             rotation: ov._rotation || 0,
                             boundsRectIdx: ov._boundsRectIdx >= 0 ? ov._boundsRectIdx : -1
                         };
@@ -4876,6 +4886,14 @@ function jLoadLayoutFromDatabase(layoutId) {
         jState.currentLayoutId = layout.id;
         jState.currentLayoutName = layout.name;
         jState.currentCustomerId = layout.customer_id;
+
+        // Ensure all variable overlays have a variableId
+        for (var i = 0; i < jState.overlays.length; i++) {
+            var ov = jState.overlays[i];
+            if (ov.isVariable && !ov.variableId) {
+                ov.variableId = 'ov_' + i + '_' + Date.now();
+            }
+        }
 
         if (jState.documentTree) {
             jAssignNodeIds(jState.documentTree, '');
@@ -5061,6 +5079,14 @@ function jLoadLayoutFromExport(data) {
     jState.currentLayoutId = null;
     jState.currentLayoutName = null;
     jState.currentCustomerId = null;
+
+    // Ensure all variable overlays have a variableId
+    for (var i = 0; i < jState.overlays.length; i++) {
+        var ov = jState.overlays[i];
+        if (ov.isVariable && !ov.variableId) {
+            ov.variableId = 'ov_' + i + '_' + Date.now();
+        }
+    }
 
     if (jState.documentTree) {
         jAssignNodeIds(jState.documentTree, '');
