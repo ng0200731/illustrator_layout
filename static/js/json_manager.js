@@ -2600,7 +2600,7 @@ function jRenderOverlayItem(c, ov, idx) {
     // Red for variable overlays, blue for selected, green for normal
     if (ov.isVariable) {
         c.strokeStyle = '#ff0000';
-        c.lineWidth = 0.5;
+        c.lineWidth = 0.15;
     } else {
         c.strokeStyle = isSelected ? '#0066ff' : '#00aa00';
         c.lineWidth = 0.15;
