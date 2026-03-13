@@ -113,9 +113,9 @@
                                 if (ov.isVariable) {
                                     var varId = ov.variableId || ov.idx;
                                     var varName = ov.variableName || '';
-                                    // Prepend sequence number if available
+                                    // Prepend sequence number in parentheses if available
                                     if (ov.seq) {
-                                        varName = '#' + ov.seq + (varName ? ' ' + varName : '');
+                                        varName = '(#' + ov.seq + ')' + varName;
                                     }
                                     layoutVariableNames[varId] = varName;
                                 }
@@ -150,9 +150,9 @@
                                     if (ov.isVariable) {
                                         var varId = ov.variableId || ov.idx;
                                         var varName = ov.variableName || '';
-                                        // Prepend sequence number if available
+                                        // Prepend sequence number in parentheses if available
                                         if (ov.seq) {
-                                            varName = '#' + ov.seq + (varName ? ' ' + varName : '');
+                                            varName = '(#' + ov.seq + ')' + varName;
                                         }
                                         layoutVariableNames[varId] = varName;
                                     }
