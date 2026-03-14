@@ -5931,9 +5931,15 @@ function confirmTranslationLangSelection() {
         langInput.value = orderedLangs.map(function(l) { return l.index; }).join(',');
     }
 
-    // Render tabs in both modal and main form
-    renderLanguageTabs(orderedLangs);
-    renderLanguageTabsInModal(orderedLangs);
+    // Update display text in main form
+    var langDisplay = _jel('ct-translation-lang-display');
+    if (langDisplay) {
+        var displayText = orderedLangs.map(function(l, idx) {
+            return '#' + (idx + 1) + ' ' + l.name;
+        }).join(' - ');
+        langDisplay.value = displayText;
+        langDisplay.title = displayText;
+    }
 
     closeTranslationLangModal();
 }
@@ -6112,10 +6118,12 @@ function renderLanguageTabs(orderedLangs) {
         container.appendChild(tab);
     });
 
-    // Update display input
+    // Update display input with numbered format
     var langDisplay = _jel('ct-translation-lang-display');
     if (langDisplay) {
-        var displayText = orderedLangs.map(function(l) { return l.name; }).join(', ');
+        var displayText = orderedLangs.map(function(l, idx) {
+            return '#' + (idx + 1) + ' ' + l.name;
+        }).join(' - ');
         langDisplay.value = displayText;
         langDisplay.title = displayText;
     }
@@ -6192,7 +6200,9 @@ function updateLanguageOrder() {
 
     if (langInput) langInput.value = orderedIndices.join(',');
     if (langDisplay) {
-        var displayText = orderedNames.join(', ');
+        var displayText = orderedNames.map(function(name, idx) {
+            return '#' + (idx + 1) + ' ' + name;
+        }).join(' - ');
         langDisplay.value = displayText;
         langDisplay.title = displayText;
     }
@@ -6256,8 +6266,15 @@ function jPrefillTranslationForm(data) {
                         }
                     });
 
-                    // Render tabs
-                    renderLanguageTabs(orderedLangs);
+                    // Update display text
+                    var langDisplay = _jel('ct-translation-lang-display');
+                    if (langDisplay) {
+                        var displayText = orderedLangs.map(function(l, idx) {
+                            return '#' + (idx + 1) + ' ' + l.name;
+                        }).join(' - ');
+                        langDisplay.value = displayText;
+                        langDisplay.title = displayText;
+                    }
                 })
                 .catch(function(err) {
                     console.error('Failed to load translation table for prefill:', err);
