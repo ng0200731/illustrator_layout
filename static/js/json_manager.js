@@ -5939,9 +5939,18 @@ function confirmTranslationLangSelection() {
         }).join(' - ');
         langDisplay.value = displayText;
         langDisplay.title = displayText;
+
+        // Auto-resize textarea
+        autoResizeTextarea(langDisplay);
     }
 
     closeTranslationLangModal();
+}
+
+function autoResizeTextarea(textarea) {
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
 }
 
 // Drag-and-drop state
@@ -6274,6 +6283,9 @@ function jPrefillTranslationForm(data) {
                         }).join(' - ');
                         langDisplay.value = displayText;
                         langDisplay.title = displayText;
+
+                        // Auto-resize textarea
+                        autoResizeTextarea(langDisplay);
                     }
                 })
                 .catch(function(err) {
