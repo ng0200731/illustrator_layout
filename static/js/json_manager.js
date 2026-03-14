@@ -854,7 +854,16 @@ function jEditOverlayRegion(ovIdx) {
     var picker = _jel('content-type-picker');
     if (picker) picker.style.display = '';
     var typeSelect = _jel('ct-type-select');
-    if (typeSelect) { typeSelect.value = contentType; jOnContentTypeChange(); }
+    if (typeSelect) {
+        typeSelect.value = contentType;
+        jOnContentTypeChange();
+        // Ensure the value sticks after change event
+        setTimeout(function() {
+            if (typeSelect.value !== contentType) {
+                typeSelect.value = contentType;
+            }
+        }, 50);
+    }
     var btns = _jel('ct-buttons');
     if (btns) btns.style.display = '';
     var rotBtns = _jel('ct-rotate-buttons');
@@ -1951,6 +1960,93 @@ function jRenderCanvas() {
                 c.textAlign = 'left';
             }
             c.restore();
+        } else if (pt === 'translation') {
+            c.save();
+            if (!jState.hideGuides) {
+            c.strokeStyle = '#00aa00';
+            c.lineWidth = 0.15;
+            c.setLineDash([1, 1]);
+            c.strokeRect(pr.x, pr.y, pr.w, pr.h);
+            c.setLineDash([]);
+            // Pink semi-transparent overlay
+            c.fillStyle = 'rgba(255, 200, 255, 0.15)';
+            c.fillRect(pr.x, pr.y, pr.w, pr.h);
+            }
+
+            // Try to render translation preview if data is available
+            var translationKey = (_jel('ct-translation-key') || {}).value || '';
+            var translationLang = (_jel('ct-translation-lang') || {}).value || '';
+            var translationTable = (_jel('ct-translation-table') || {}).value || '';
+
+            // Check if we have translation data loaded
+            var translatedText = '';
+            if (translationTable && translationKey && translationLang && jState.translationTables && jState.translationTables[translationTable]) {
+                var table = jState.translationTables[translationTable];
+                if (table[translationKey] && table[translationKey][translationLang]) {
+                    translatedText = table[translationKey][translationLang];
+                }
+            }
+
+            if (translatedText) {
+                // Render the translated text preview
+                var fontSize = parseFloat((_jel('ct-translation-font-size') || {}).value) || 12;
+                var fontSizeMm = fontSize * PT_TO_MM;
+                var fontSelect = _jel('ct-translation-font');
+                var fontName = 'sans-serif';
+                if (fontSelect && fontSelect.options[fontSelect.selectedIndex]) {
+                    var fn = fontSelect.options[fontSelect.selectedIndex].dataset.fontName;
+                    if (fn) fontName = "'" + fn + "', sans-serif";
+                }
+                c.font = fontSizeMm + 'px ' + fontName;
+                c.fillStyle = (_jel('ct-translation-color') || {}).value || '#000';
+
+                var lineSpacing = parseFloat((_jel('ct-translation-line-spacing') || {}).value) || 1.2;
+                var lineHeight = fontSizeMm * lineSpacing;
+
+                // Get alignment
+                var pAlignH = 'left';
+                var hBtns = _jel('ct-translation-align-h');
+                if (hBtns) { var ha = hBtns.querySelector('.active'); if (ha) pAlignH = ha.dataset.val; }
+                var pAlignV = 'top';
+                var vBtns = _jel('ct-translation-align-v');
+                if (vBtns) { var va = vBtns.querySelector('.active'); if (va) pAlignV = va.dataset.val; }
+
+                if (pAlignH === 'center') c.textAlign = 'center';
+                else if (pAlignH === 'right') c.textAlign = 'right';
+                else c.textAlign = 'left';
+                c.textBaseline = 'top';
+
+                var tx = pr.x;
+                if (pAlignH === 'center') tx = pr.x + pr.w / 2;
+                else if (pAlignH === 'right') tx = pr.x + pr.w;
+
+                // Word wrap with hyphenation
+                var hyphenate = (_jel('ct-translation-hyphenate') || {}).checked || false;
+                var lines = jWrapTextWithHyphenation(c, translatedText, pr.w, hyphenate);
+
+                var totalH = lines.length * lineHeight;
+                var startY = pr.y;
+                if (pAlignV === 'center') startY = pr.y + (pr.h - totalH) / 2;
+                else if (pAlignV === 'bottom') startY = pr.y + pr.h - totalH;
+
+                c.save();
+                c.beginPath();
+                c.rect(pr.x, pr.y, pr.w, pr.h);
+                c.clip();
+                for (var li = 0; li < lines.length; li++) {
+                    c.fillText(lines[li], tx, startY + li * lineHeight);
+                }
+                c.restore();
+                c.textAlign = 'left';
+            } else {
+                // Show placeholder when no translation data available
+                c.fillStyle = '#999';
+                c.font = '3px sans-serif';
+                c.textAlign = 'center';
+                c.fillText('Translation', pr.x + pr.w / 2, pr.y + pr.h / 2);
+                c.textAlign = 'left';
+            }
+            c.restore();
         }
         // Draw resize handles on pending region
         if (!jState.hideGuides) {
@@ -2484,7 +2580,8 @@ function jRenderAutoOverlays(c) {
         var ov = jState.overlays[i];
         if (ov._fromAddButton) continue; // Skip manual overlays
         if (!ov.visible) continue;
-        if (jState.editingComponentIdx === i && jState.pendingContentRegion) continue;
+        // Skip rendering if editing and has pending region, EXCEPT for translation regions
+        if (jState.editingComponentIdx === i && jState.pendingContentRegion && ov.type !== 'translationregion') continue;
         var rot = 0;
         if (brs && ov._boundsRectIdx >= 0 && ov._boundsRectIdx < brs.length) {
             rot = brs[ov._boundsRectIdx]._rotation || 0;
@@ -2531,7 +2628,8 @@ function jRenderOverlays(c) {
     for (var i = 0; i < jState.overlays.length; i++) {
         var ov = jState.overlays[i];
         if (!ov.visible) continue;
-        if (jState.editingComponentIdx === i && jState.pendingContentRegion) continue;
+        // Skip rendering if editing and has pending region, EXCEPT for translation regions
+        if (jState.editingComponentIdx === i && jState.pendingContentRegion && ov.type !== 'translationregion') continue;
 
         if (ov.isVariable) {
             variableActiveIndices.push(i);
@@ -5648,7 +5746,7 @@ function jLoadTranslationTables() {
     var customerId = jState ? jState.currentCustomerId : null;
     var url = customerId ? '/translation/list/' + customerId : '/translation/list';
 
-    fetch(url)
+    var tablesPromise = fetch(url)
         .then(function(res) { return res.json(); })
         .then(function(data) {
             var sel = _jel('ct-translation-table');
@@ -5669,9 +5767,10 @@ function jLoadTranslationTables() {
 
     // Load fonts for translation font dropdown
     var fontSel = _jel('ct-translation-font');
+    var fontsPromise = Promise.resolve();
     if (fontSel) {
         var fontUrl = customerId ? '/font/list/' + encodeURIComponent(customerId) : '/font/list';
-        fetch(fontUrl)
+        fontsPromise = fetch(fontUrl)
             .then(function(res) { return res.json(); })
             .then(function(data) {
                 fontSel.innerHTML = '<option value="">Select a font...</option>';
@@ -5718,6 +5817,9 @@ function jLoadTranslationTables() {
         });
         vBtns._translationListenerAdded = true;
     }
+
+    // Return a promise that resolves when both tables and fonts are loaded
+    return Promise.all([tablesPromise, fontsPromise]);
 }
 
 function jOnTranslationTableChange() {
