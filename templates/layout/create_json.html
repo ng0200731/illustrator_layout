@@ -152,9 +152,10 @@
                         </div>
                         <div class="ts-row">
                             <label>Target Language</label>
+                            <div id="ct-translation-tabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:32px;"></div>
                             <div style="display:flex;gap:4px;align-items:center;">
-                                <input type="text" id="ct-translation-lang-display" placeholder="Select languages..." readonly onclick="showTranslationLangModal()" style="flex:1;cursor:pointer;">
-                                <button type="button" onclick="showTranslationLangModal()" style="padding:4px 8px;">Select</button>
+                                <input type="text" id="ct-translation-lang-display" placeholder="Select languages..." readonly onclick="showTranslationLangModal()" style="flex:1;cursor:pointer;min-width:0;white-space:nowrap;overflow:visible;text-overflow:clip;" title="">
+                                <button type="button" onclick="showTranslationLangModal()" style="padding:4px 8px;flex-shrink:0;">Select</button>
                             </div>
                             <input type="hidden" id="ct-translation-lang">
                         </div>
@@ -378,6 +379,7 @@
     <div id="translation-lang-modal" class="modal-overlay" style="display:none;">
         <div class="modal-content">
             <h2>Select Languages</h2>
+            <div id="translation-lang-tabs-modal" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;min-height:32px;"></div>
             <div id="translation-lang-list" style="max-height:400px;overflow-y:auto;margin:12px 0;">
                 <!-- Language checkboxes will be populated here -->
             </div>

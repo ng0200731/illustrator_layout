@@ -839,7 +839,7 @@ function jEditOverlayRegion(ovIdx) {
     var ov = jState.overlays[ovIdx];
     if (!ov) return;
     if (ov.locked) return;
-    var typeMap = { 'textregion': 'text', 'imageregion': 'image', 'qrcoderegion': 'qrcode', 'barcoderegion': 'barcode' };
+    var typeMap = { 'textregion': 'text', 'imageregion': 'image', 'qrcoderegion': 'qrcode', 'barcoderegion': 'barcode', 'translationregion': 'translation' };
     var contentType = typeMap[ov.type];
     if (!contentType) return;
 
@@ -862,9 +862,15 @@ function jEditOverlayRegion(ovIdx) {
 
     jPopulateDimensionFields();
 
-    jLoadFontList().then(function() {
-        jPrefillContentForm(contentType, ov);
-    });
+    if (contentType === 'translation') {
+        jLoadTranslationTables().then(function() {
+            jPrefillTranslationForm(ov);
+        });
+    } else {
+        jLoadFontList().then(function() {
+            jPrefillContentForm(contentType, ov);
+        });
+    }
     jAttachContentPreviewListeners();
     var aiFontRow = _jel('ct-ai-font-row');
     if (aiFontRow) {
@@ -5787,6 +5793,21 @@ function showTranslationLangModalWithData(tableData) {
     var langInput = _jel('ct-translation-lang');
     var selectedLangs = langInput && langInput.value ? langInput.value.split(',') : [];
 
+    // Build ordered language list for tabs
+    var orderedLangs = [];
+    selectedLangs.forEach(function(idx) {
+        var langIdx = parseInt(idx);
+        if (langIdx > 0 && langIdx < tableData.headers.length) {
+            orderedLangs.push({
+                index: idx,
+                name: tableData.headers[langIdx]
+            });
+        }
+    });
+
+    // Render tabs in modal
+    renderLanguageTabsInModal(orderedLangs);
+
     // Build checkbox list (skip first column which is the source key)
     list.innerHTML = '';
     for (var i = 1; i < tableData.headers.length; i++) {
@@ -5798,6 +5819,11 @@ function showTranslationLangModalWithData(tableData) {
         div.style.padding = '8px';
         div.style.borderBottom = '1px solid #eee';
 
+        // Dim selected languages
+        if (isChecked) {
+            div.style.opacity = '0.4';
+        }
+
         var checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.id = 'lang-check-' + langIdx;
@@ -5805,6 +5831,36 @@ function showTranslationLangModalWithData(tableData) {
         checkbox.dataset.langName = langName;
         checkbox.checked = isChecked;
         checkbox.style.marginRight = '8px';
+
+        // Add change listener to update tabs immediately
+        (function(idx, name, divEl) {
+            checkbox.addEventListener('change', function() {
+                if (this.checked) {
+                    // Add tab
+                    var container = _jel('translation-lang-tabs-modal');
+                    if (container) {
+                        var existingTab = container.querySelector('.lang-tab[data-lang-index="' + idx + '"]');
+                        if (!existingTab) {
+                            var currentTabs = container.querySelectorAll('.lang-tab');
+                            var newLangs = [];
+                            currentTabs.forEach(function(t) {
+                                newLangs.push({
+                                    index: t.dataset.langIndex,
+                                    name: t.dataset.langName
+                                });
+                            });
+                            newLangs.push({ index: idx, name: name });
+                            renderLanguageTabsInModal(newLangs);
+                        }
+                    }
+                    divEl.style.opacity = '0.4';
+                } else {
+                    // Remove tab
+                    removeLanguageTabFromModal(idx);
+                    divEl.style.opacity = '1';
+                }
+            });
+        })(langIdx, langName, div);
 
         var label = document.createElement('label');
         label.htmlFor = 'lang-check-' + langIdx;
@@ -5828,23 +5884,434 @@ function confirmTranslationLangSelection() {
     var list = _jel('translation-lang-list');
     if (!list) return;
 
-    var checkboxes = list.querySelectorAll('input[type="checkbox"]:checked');
-    var selectedIndices = [];
-    var selectedNames = [];
+    // Get currently checked languages from checkboxes
+    var checkboxes = list.querySelectorAll('input[type="checkbox"]');
+    var selectedLangs = [];
 
     checkboxes.forEach(function(cb) {
-        selectedIndices.push(cb.value);
-        selectedNames.push(cb.dataset.langName);
+        if (cb.checked) {
+            selectedLangs.push({
+                index: cb.value,
+                name: cb.dataset.langName
+            });
+        }
+    });
+
+    // Get the current order from modal tabs
+    var modalContainer = _jel('translation-lang-tabs-modal');
+    var modalTabs = modalContainer ? modalContainer.querySelectorAll('.lang-tab') : [];
+
+    // Build ordered list: preserve existing tab order, then add new selections
+    var orderedLangs = [];
+    var addedIndices = [];
+
+    // First, add languages that are already in tabs (preserving order)
+    modalTabs.forEach(function(tab) {
+        var idx = tab.dataset.langIndex;
+        var isStillChecked = selectedLangs.some(function(l) { return l.index === idx; });
+        if (isStillChecked) {
+            orderedLangs.push({
+                index: idx,
+                name: tab.dataset.langName
+            });
+            addedIndices.push(idx);
+        }
+    });
+
+    // Then add newly checked languages
+    selectedLangs.forEach(function(lang) {
+        if (addedIndices.indexOf(lang.index) === -1) {
+            orderedLangs.push(lang);
+        }
+    });
+
+    // Update hidden input
+    var langInput = _jel('ct-translation-lang');
+    if (langInput) {
+        langInput.value = orderedLangs.map(function(l) { return l.index; }).join(',');
+    }
+
+    // Render tabs in both modal and main form
+    renderLanguageTabs(orderedLangs);
+    renderLanguageTabsInModal(orderedLangs);
+
+    closeTranslationLangModal();
+}
+
+// Drag-and-drop state
+var draggedTab = null;
+
+function renderLanguageTabsInModal(orderedLangs) {
+    var container = _jel('translation-lang-tabs-modal');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    orderedLangs.forEach(function(lang, index) {
+        var tab = document.createElement('div');
+        tab.className = 'lang-tab';
+        tab.draggable = true;
+        tab.dataset.langIndex = lang.index;
+        tab.dataset.langName = lang.name;
+
+        // Sequence number
+        var number = document.createElement('span');
+        number.className = 'lang-tab-number';
+        number.textContent = '#' + (index + 1);
+
+        // Language name
+        var name = document.createElement('span');
+        name.className = 'lang-tab-name';
+        name.textContent = lang.name;
+
+        // Remove button
+        var remove = document.createElement('span');
+        remove.className = 'lang-tab-remove';
+        remove.textContent = '×';
+        remove.onclick = function(e) {
+            e.stopPropagation();
+            removeLanguageTabFromModal(lang.index);
+        };
+
+        tab.appendChild(number);
+        tab.appendChild(name);
+        tab.appendChild(remove);
+
+        // Drag events
+        tab.addEventListener('dragstart', handleTabDragStartModal);
+        tab.addEventListener('dragover', handleTabDragOverModal);
+        tab.addEventListener('drop', handleTabDropModal);
+        tab.addEventListener('dragend', handleTabDragEndModal);
+
+        container.appendChild(tab);
+    });
+}
+
+function handleTabDragStartModal(e) {
+    draggedTab = this;
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleTabDragOverModal(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+
+    var target = e.target.closest('.lang-tab');
+    if (target && target !== draggedTab) {
+        var container = _jel('translation-lang-tabs-modal');
+        var tabs = Array.from(container.children);
+        var draggedIndex = tabs.indexOf(draggedTab);
+        var targetIndex = tabs.indexOf(target);
+
+        if (draggedIndex < targetIndex) {
+            target.parentNode.insertBefore(draggedTab, target.nextSibling);
+        } else {
+            target.parentNode.insertBefore(draggedTab, target);
+        }
+    }
+
+    return false;
+}
+
+function handleTabDropModal(e) {
+    if (e.stopPropagation) {
+        e.stopPropagation();
+    }
+    return false;
+}
+
+function handleTabDragEndModal(e) {
+    this.classList.remove('dragging');
+    draggedTab = null;
+
+    // Renumber tabs
+    var container = _jel('translation-lang-tabs-modal');
+    var tabs = container.querySelectorAll('.lang-tab');
+    tabs.forEach(function(tab, index) {
+        var numberSpan = tab.querySelector('.lang-tab-number');
+        if (numberSpan) {
+            numberSpan.textContent = '#' + (index + 1);
+        }
+    });
+}
+
+function removeLanguageTabFromModal(langIndex) {
+    var container = _jel('translation-lang-tabs-modal');
+    var tab = container.querySelector('.lang-tab[data-lang-index="' + langIndex + '"]');
+    if (tab) {
+        tab.remove();
+
+        // Uncheck the corresponding checkbox
+        var list = _jel('translation-lang-list');
+        if (list) {
+            var checkbox = list.querySelector('input[value="' + langIndex + '"]');
+            if (checkbox) {
+                checkbox.checked = false;
+                // Update dimming
+                var div = checkbox.closest('div');
+                if (div) div.style.opacity = '1';
+            }
+        }
+
+        // Renumber remaining tabs
+        var tabs = container.querySelectorAll('.lang-tab');
+        tabs.forEach(function(t, index) {
+            var numberSpan = t.querySelector('.lang-tab-number');
+            if (numberSpan) {
+                numberSpan.textContent = '#' + (index + 1);
+            }
+        });
+    }
+}
+
+function renderLanguageTabs(orderedLangs) {
+    var container = _jel('ct-translation-tabs');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    orderedLangs.forEach(function(lang, index) {
+        var tab = document.createElement('div');
+        tab.className = 'lang-tab';
+        tab.draggable = true;
+        tab.dataset.langIndex = lang.index;
+        tab.dataset.langName = lang.name;
+
+        // Sequence number
+        var number = document.createElement('span');
+        number.className = 'lang-tab-number';
+        number.textContent = '#' + (index + 1);
+
+        // Language name
+        var name = document.createElement('span');
+        name.className = 'lang-tab-name';
+        name.textContent = lang.name;
+
+        // Remove button
+        var remove = document.createElement('span');
+        remove.className = 'lang-tab-remove';
+        remove.textContent = '×';
+        remove.onclick = function(e) {
+            e.stopPropagation();
+            removeLanguageTab(lang.index);
+        };
+
+        tab.appendChild(number);
+        tab.appendChild(name);
+        tab.appendChild(remove);
+
+        // Drag events
+        tab.addEventListener('dragstart', handleTabDragStart);
+        tab.addEventListener('dragover', handleTabDragOver);
+        tab.addEventListener('drop', handleTabDrop);
+        tab.addEventListener('dragend', handleTabDragEnd);
+
+        container.appendChild(tab);
+    });
+
+    // Update display input
+    var langDisplay = _jel('ct-translation-lang-display');
+    if (langDisplay) {
+        var displayText = orderedLangs.map(function(l) { return l.name; }).join(', ');
+        langDisplay.value = displayText;
+        langDisplay.title = displayText;
+    }
+}
+
+function handleTabDragStart(e) {
+    draggedTab = this;
+    this.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleTabDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+
+    var target = e.target.closest('.lang-tab');
+    if (target && target !== draggedTab) {
+        var container = _jel('ct-translation-tabs');
+        var tabs = Array.from(container.children);
+        var draggedIndex = tabs.indexOf(draggedTab);
+        var targetIndex = tabs.indexOf(target);
+
+        if (draggedIndex < targetIndex) {
+            target.parentNode.insertBefore(draggedTab, target.nextSibling);
+        } else {
+            target.parentNode.insertBefore(draggedTab, target);
+        }
+    }
+
+    return false;
+}
+
+function handleTabDrop(e) {
+    if (e.stopPropagation) {
+        e.stopPropagation();
+    }
+
+    // Update the order in hidden input
+    updateLanguageOrder();
+
+    return false;
+}
+
+function handleTabDragEnd(e) {
+    this.classList.remove('dragging');
+    draggedTab = null;
+
+    // Renumber tabs
+    var container = _jel('ct-translation-tabs');
+    var tabs = container.querySelectorAll('.lang-tab');
+    tabs.forEach(function(tab, index) {
+        var numberSpan = tab.querySelector('.lang-tab-number');
+        if (numberSpan) {
+            numberSpan.textContent = '#' + (index + 1);
+        }
+    });
+}
+
+function updateLanguageOrder() {
+    var container = _jel('ct-translation-tabs');
+    var tabs = container.querySelectorAll('.lang-tab');
+    var orderedIndices = [];
+    var orderedNames = [];
+
+    tabs.forEach(function(tab) {
+        orderedIndices.push(tab.dataset.langIndex);
+        orderedNames.push(tab.dataset.langName);
     });
 
     var langInput = _jel('ct-translation-lang');
     var langDisplay = _jel('ct-translation-lang-display');
 
-    if (langInput) langInput.value = selectedIndices.join(',');
-    if (langDisplay) langDisplay.value = selectedNames.join(', ');
-
-    closeTranslationLangModal();
+    if (langInput) langInput.value = orderedIndices.join(',');
+    if (langDisplay) {
+        var displayText = orderedNames.join(', ');
+        langDisplay.value = displayText;
+        langDisplay.title = displayText;
+    }
 }
+
+function removeLanguageTab(langIndex) {
+    var container = _jel('ct-translation-tabs');
+    var tab = container.querySelector('.lang-tab[data-lang-index="' + langIndex + '"]');
+    if (tab) {
+        tab.remove();
+        updateLanguageOrder();
+
+        // Renumber remaining tabs
+        var tabs = container.querySelectorAll('.lang-tab');
+        tabs.forEach(function(t, index) {
+            var numberSpan = t.querySelector('.lang-tab-number');
+            if (numberSpan) {
+                numberSpan.textContent = '#' + (index + 1);
+            }
+        });
+    }
+}
+
+function jPrefillTranslationForm(data) {
+    // Prefill translation table
+    var tableSelect = _jel('ct-translation-table');
+    if (tableSelect && data.translationTableId) {
+        tableSelect.value = data.translationTableId;
+    }
+
+    // Prefill translation key
+    var keyInput = _jel('ct-translation-key');
+    if (keyInput && data.translationKey) {
+        keyInput.value = data.translationKey;
+    }
+
+    // Prefill translation languages and render tabs
+    var langInput = _jel('ct-translation-lang');
+    if (langInput && data.translationLang) {
+        langInput.value = data.translationLang;
+
+        // Fetch table data to get language names
+        if (data.translationTableId) {
+            fetch('/translation/' + data.translationTableId)
+                .then(function(res) { return res.json(); })
+                .then(function(response) {
+                    if (!response.translation || !response.translation.data) return;
+                    var tableData = JSON.parse(response.translation.data);
+                    if (!tableData.headers) return;
+
+                    // Build ordered language list
+                    var langIndices = data.translationLang.split(',');
+                    var orderedLangs = [];
+                    langIndices.forEach(function(idx) {
+                        var langIdx = parseInt(idx);
+                        if (langIdx > 0 && langIdx < tableData.headers.length) {
+                            orderedLangs.push({
+                                index: idx,
+                                name: tableData.headers[langIdx]
+                            });
+                        }
+                    });
+
+                    // Render tabs
+                    renderLanguageTabs(orderedLangs);
+                })
+                .catch(function(err) {
+                    console.error('Failed to load translation table for prefill:', err);
+                });
+        }
+    }
+
+    // Prefill font
+    var fontSelect = _jel('ct-translation-font');
+    if (fontSelect && data.font) {
+        fontSelect.value = data.font;
+    }
+
+    // Prefill font size
+    var fontSizeInput = _jel('ct-translation-font-size');
+    if (fontSizeInput && data.fontSize) {
+        fontSizeInput.value = data.fontSize;
+    }
+
+    // Prefill color
+    var colorInput = _jel('ct-translation-color');
+    if (colorInput && data.color) {
+        colorInput.value = data.color;
+    }
+
+    // Prefill line spacing
+    var lineSpacingInput = _jel('ct-translation-line-spacing');
+    if (lineSpacingInput && data.lineSpacing) {
+        lineSpacingInput.value = data.lineSpacing;
+    }
+
+    // Prefill hyphenate
+    var hyphenateCheckbox = _jel('ct-translation-hyphenate');
+    if (hyphenateCheckbox) {
+        hyphenateCheckbox.checked = data.hyphenate || false;
+    }
+
+    // Prefill horizontal alignment
+    var hAlignBtns = _jel('ct-translation-align-h');
+    if (hAlignBtns) {
+        hAlignBtns.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+        var hBtn = hAlignBtns.querySelector('[data-val="' + (data.hAlign || 'left') + '"]');
+        if (hBtn) hBtn.classList.add('active');
+    }
+
+    // Prefill vertical alignment
+    var vAlignBtns = _jel('ct-translation-align-v');
+    if (vAlignBtns) {
+        vAlignBtns.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+        var vBtn = vAlignBtns.querySelector('[data-val="' + (data.vAlign || 'top') + '"]');
+        if (vBtn) vBtn.classList.add('active');
+    }
+}
+
 
 function jFetchTranslationData(comp) {
     if (!comp.translationTableId || !comp.translationKey || !comp.translationLang) {

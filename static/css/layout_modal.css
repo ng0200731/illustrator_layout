@@ -171,3 +171,42 @@
     color: #d32f2f;
     border: 2px solid #d32f2f;
 }
+
+/* Language Tab Styles */
+.lang-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: #000;
+    color: #fff;
+    border: 1px solid #000;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: move;
+    user-select: none;
+}
+
+.lang-tab.dragging {
+    opacity: 0.5;
+}
+
+.lang-tab-number {
+    font-weight: 700;
+    font-size: 11px;
+}
+
+.lang-tab-name {
+    font-weight: 400;
+}
+
+.lang-tab-remove {
+    cursor: pointer;
+    font-weight: 700;
+    margin-left: 4px;
+    padding: 0 4px;
+}
+
+.lang-tab-remove:hover {
+    color: #ccc;
+}
