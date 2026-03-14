@@ -5723,28 +5723,133 @@ function jOnTranslationTableChange() {
         .then(function(data) {
             if (!data.translation || !data.translation.data) return;
             var tableData = JSON.parse(data.translation.data);
-            var langSel = _jel('ct-translation-lang');
-            if (!langSel) return;
 
-            langSel.innerHTML = '<option value="">Select language...</option>';
-            if (tableData.headers && tableData.headers.length > 1) {
-                // Skip first column (source key column)
-                for (var i = 1; i < tableData.headers.length; i++) {
-                    var opt = document.createElement('option');
-                    opt.value = i;
-                    opt.textContent = tableData.headers[i];
-                    langSel.appendChild(opt);
-                }
-            }
+            // Store table data for language modal
+            if (!jState._translationTableData) jState._translationTableData = {};
+            jState._translationTableData[sel.value] = tableData;
+
+            // Clear language selection
+            var langInput = _jel('ct-translation-lang');
+            var langDisplay = _jel('ct-translation-lang-display');
+            if (langInput) langInput.value = '';
+            if (langDisplay) langDisplay.value = '';
         })
         .catch(function(err) {
             console.error('Failed to load translation table data:', err);
         });
 }
 
+function showTranslationLangModal() {
+    var tableSel = _jel('ct-translation-table');
+    if (!tableSel || !tableSel.value) {
+        alert('Please select a translation table first');
+        return;
+    }
+
+    var tableId = tableSel.value;
+    var tableData = jState._translationTableData ? jState._translationTableData[tableId] : null;
+
+    // If data not loaded, fetch it first
+    if (!tableData) {
+        fetch('/translation/' + tableId)
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (!data.translation || !data.translation.data) {
+                    alert('Failed to load translation table data');
+                    return;
+                }
+                // Translation data is already parsed by the backend
+                var translationData = data.translation.data;
+                if (!jState._translationTableData) jState._translationTableData = {};
+                jState._translationTableData[tableId] = translationData;
+                showTranslationLangModalWithData(translationData);
+            })
+            .catch(function(err) {
+                console.error('Failed to load translation table data:', err);
+                alert('Failed to load translation table data');
+            });
+    } else {
+        showTranslationLangModalWithData(tableData);
+    }
+}
+
+function showTranslationLangModalWithData(tableData) {
+    if (!tableData || !tableData.headers) {
+        alert('Invalid translation table data');
+        return;
+    }
+
+    var modal = _jel('translation-lang-modal');
+    var list = _jel('translation-lang-list');
+    if (!modal || !list) return;
+
+    // Get currently selected languages
+    var langInput = _jel('ct-translation-lang');
+    var selectedLangs = langInput && langInput.value ? langInput.value.split(',') : [];
+
+    // Build checkbox list (skip first column which is the source key)
+    list.innerHTML = '';
+    for (var i = 1; i < tableData.headers.length; i++) {
+        var langName = tableData.headers[i];
+        var langIdx = i.toString();
+        var isChecked = selectedLangs.indexOf(langIdx) >= 0;
+
+        var div = document.createElement('div');
+        div.style.padding = '8px';
+        div.style.borderBottom = '1px solid #eee';
+
+        var checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = 'lang-check-' + langIdx;
+        checkbox.value = langIdx;
+        checkbox.dataset.langName = langName;
+        checkbox.checked = isChecked;
+        checkbox.style.marginRight = '8px';
+
+        var label = document.createElement('label');
+        label.htmlFor = 'lang-check-' + langIdx;
+        label.textContent = langName;
+        label.style.cursor = 'pointer';
+
+        div.appendChild(checkbox);
+        div.appendChild(label);
+        list.appendChild(div);
+    }
+
+    modal.style.display = 'flex';
+}
+
+function closeTranslationLangModal() {
+    var modal = _jel('translation-lang-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function confirmTranslationLangSelection() {
+    var list = _jel('translation-lang-list');
+    if (!list) return;
+
+    var checkboxes = list.querySelectorAll('input[type="checkbox"]:checked');
+    var selectedIndices = [];
+    var selectedNames = [];
+
+    checkboxes.forEach(function(cb) {
+        selectedIndices.push(cb.value);
+        selectedNames.push(cb.dataset.langName);
+    });
+
+    var langInput = _jel('ct-translation-lang');
+    var langDisplay = _jel('ct-translation-lang-display');
+
+    if (langInput) langInput.value = selectedIndices.join(',');
+    if (langDisplay) langDisplay.value = selectedNames.join(', ');
+
+    closeTranslationLangModal();
+}
+
 function jFetchTranslationData(comp) {
     if (!comp.translationTableId || !comp.translationKey || !comp.translationLang) {
         comp._translatedText = '';
+        comp._translatedTexts = {};
         return;
     }
 
@@ -5754,26 +5859,37 @@ function jFetchTranslationData(comp) {
             if (!data.translation || !data.translation.data) return;
             var tableData = JSON.parse(data.translation.data);
 
-            // Find the row with matching key
-            var langColIdx = parseInt(comp.translationLang);
-            var translatedText = '';
+            // Handle multiple languages (comma-separated indices)
+            var langIndices = comp.translationLang.split(',');
+            var translatedTexts = {};
+            var firstTranslation = '';
 
             if (tableData.rows) {
                 for (var i = 0; i < tableData.rows.length; i++) {
                     var row = tableData.rows[i];
-                    if (row[0] === comp.translationKey && row[langColIdx]) {
-                        translatedText = row[langColIdx];
+                    if (row[0] === comp.translationKey) {
+                        // Get translation for each selected language
+                        langIndices.forEach(function(langIdx) {
+                            var idx = parseInt(langIdx);
+                            if (row[idx]) {
+                                var langName = tableData.headers[idx];
+                                translatedTexts[langName] = row[idx];
+                                if (!firstTranslation) firstTranslation = row[idx];
+                            }
+                        });
                         break;
                     }
                 }
             }
 
-            comp._translatedText = translatedText;
+            comp._translatedText = firstTranslation; // For single display
+            comp._translatedTexts = translatedTexts; // Store all translations
             jRenderCanvas();
         })
         .catch(function(err) {
             console.error('Failed to fetch translation data:', err);
             comp._translatedText = '';
+            comp._translatedTexts = {};
         });
 }
 
