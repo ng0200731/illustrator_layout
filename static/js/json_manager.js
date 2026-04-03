@@ -401,10 +401,16 @@ function jParseJsonFile(file) {
             jState.boundsRects = [];
             jCollectBoundsRects(jState.documentTree);
             jAutoCreateTextOverlays(jState.documentTree);
-            // Assign overlay numbers to all auto-created overlays (sequential 1, 2, 3...)
+            // Assign overlay numbers based on spatial position (top-to-bottom, left-to-right)
+            var allIndices = [];
             for (var i = 0; i < jState.overlays.length; i++) {
-                if (!jState.overlays[i]._overlayNumber) {
-                    jState.overlays[i]._overlayNumber = i + 1;
+                allIndices.push(i);
+            }
+            var sortedIndices = jSortOverlaysBySpatialPosition(allIndices);
+            for (var j = 0; j < sortedIndices.length; j++) {
+                var idx = sortedIndices[j];
+                if (!jState.overlays[idx]._overlayNumber) {
+                    jState.overlays[idx]._overlayNumber = j + 1;
                 }
             }
             jLoadOverlayFonts();
@@ -2607,19 +2613,70 @@ function jRenderAutoOverlays(c) {
 }
 
 // Sort overlays by spatial position (top-left to bottom-right reading order)
+// Groups overlays into rows, then sorts left-to-right within each row
 function jSortOverlaysBySpatialPosition(overlayIndices) {
-    return overlayIndices.sort(function(a, b) {
-        var ovA = jState.overlays[a];
-        var ovB = jState.overlays[b];
+    if (overlayIndices.length === 0) return overlayIndices;
 
-        // Primary sort: top to bottom (by y coordinate)
-        if (ovA.y !== ovB.y) {
-            return ovA.y - ovB.y;
-        }
+    // Collect all overlays with their coordinates
+    var items = [];
+    for (var i = 0; i < overlayIndices.length; i++) {
+        var idx = overlayIndices[i];
+        var ov = jState.overlays[idx];
+        items.push({
+            index: idx,
+            x: ov.x,
+            y: ov.y,
+            height: ov.height || 0
+        });
+    }
 
-        // Secondary sort: left to right (by x coordinate)
-        return ovA.x - ovB.x;
+    // Sort by Y coordinate first
+    items.sort(function(a, b) {
+        return a.y - b.y;
     });
+
+    // Group into rows based on Y overlap/proximity
+    var rows = [];
+    var currentRow = [items[0]];
+    var currentRowMinY = items[0].y;
+    var currentRowMaxY = items[0].y + items[0].height;
+
+    for (var i = 1; i < items.length; i++) {
+        var item = items[i];
+        var itemMinY = item.y;
+        var itemMaxY = item.y + item.height;
+
+        // Check if this item overlaps with current row (with 5mm tolerance)
+        var tolerance = 5;
+        if (itemMinY <= currentRowMaxY + tolerance) {
+            // Add to current row
+            currentRow.push(item);
+            currentRowMaxY = Math.max(currentRowMaxY, itemMaxY);
+        } else {
+            // Start new row
+            rows.push(currentRow);
+            currentRow = [item];
+            currentRowMinY = itemMinY;
+            currentRowMaxY = itemMaxY;
+        }
+    }
+    rows.push(currentRow);
+
+    // Sort each row left-to-right by X coordinate
+    for (var r = 0; r < rows.length; r++) {
+        rows[r].sort(function(a, b) {
+            return a.x - b.x;
+        });
+    }
+
+    // Flatten rows back into single array of indices
+    var result = [];
+    for (var r = 0; r < rows.length; r++) {
+        for (var c = 0; c < rows[r].length; c++) {
+            result.push(rows[r][c].index);
+        }
+    }
+    return result;
 }
 
 // Validate overlay sequence numbers
@@ -5185,9 +5242,17 @@ function jLoadLayoutFromDatabase(layoutId) {
             if (ov.isVariable && !ov.variableId) {
                 ov.variableId = 'ov_' + i + '_' + Date.now();
             }
-            // Assign overlay numbers to ALL overlays if not present (sequential 1, 2, 3...)
-            if (!ov._overlayNumber) {
-                ov._overlayNumber = i + 1;
+        }
+        // Assign overlay numbers based on spatial position (top-to-bottom, left-to-right)
+        var allIndices = [];
+        for (var i = 0; i < jState.overlays.length; i++) {
+            allIndices.push(i);
+        }
+        var sortedIndices = jSortOverlaysBySpatialPosition(allIndices);
+        for (var j = 0; j < sortedIndices.length; j++) {
+            var idx = sortedIndices[j];
+            if (!jState.overlays[idx]._overlayNumber) {
+                jState.overlays[idx]._overlayNumber = j + 1;
             }
         }
 
@@ -5388,9 +5453,17 @@ function jLoadLayoutFromExport(data) {
         if (ov.isVariable && !ov.variableId) {
             ov.variableId = 'ov_' + i + '_' + Date.now();
         }
-        // Assign overlay numbers to ALL overlays if not present (sequential 1, 2, 3...)
-        if (!ov._overlayNumber) {
-            ov._overlayNumber = i + 1;
+    }
+    // Assign overlay numbers based on spatial position (top-to-bottom, left-to-right)
+    var allIndices = [];
+    for (var i = 0; i < jState.overlays.length; i++) {
+        allIndices.push(i);
+    }
+    var sortedIndices = jSortOverlaysBySpatialPosition(allIndices);
+    for (var j = 0; j < sortedIndices.length; j++) {
+        var idx = sortedIndices[j];
+        if (!jState.overlays[idx]._overlayNumber) {
+            jState.overlays[idx]._overlayNumber = j + 1;
         }
     }
 
