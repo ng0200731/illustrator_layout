@@ -130,19 +130,17 @@
             html += '<thead><tr>';
 
             if (labelType === 'GI001BAW' || labelType === 'GI000PRO') {
-                html += '<th>Label ID</th>';
-                html += '<th>Vendor</th>';
-                html += '<th>Order ID</th>';
-                html += '<th>Item Qty</th>';
-                html += '<th>Product Type</th>';
-                html += '<th>Line</th>';
-                html += '<th>Age</th>';
-                html += '<th>Gender</th>';
-                html += '<th>Ref (First 4)</th>';
-                html += '<th>Ref (Last 4)</th>';
-                html += '<th>Color</th>';
-                html += '<th>Size</th>';
-                html += '<th>Full Product</th>';
+                html += '<th>1 ITEM DATATQTY<br><small>StyleColor[0].ItemData[#].itemQty</small></th>';
+                html += '<th>2 Code of order<br><small>LabelOrder.Id</small></th>';
+                html += '<th>3 FAM CODE<br><small>StyleColor[0].ProductTypeCodeLegacy</small></th>';
+                html += '<th>4.0 FAM LINE DESCRIPTION<br><small>StyleColor[0].Line</small></th>';
+                html += '<th>4.1 FAM LINE DESCRIPTION<br><small>StyleColor[0].Age</small></th>';
+                html += '<th>4.2 FAM LINE DESCRIPTION<br><small>StyleColor[0].Gender</small></th>';
+                html += '<th>5.1 Reference number (First 4)<br><small>StyleColor[0].ReferenceID (first 4)</small></th>';
+                html += '<th>5.2 Reference number (Last 4)<br><small>StyleColor[0].ReferenceID (last 4)</small></th>';
+                html += '<th>6 The colour of the garment<br><small>StyleColor[0].MangoColorCode + ":" + StyleColor[0].Color</small></th>';
+                html += '<th>7 Size: EUR<br><small>StyleColor[0].ItemData[#].SizeNameES</small></th>';
+                html += '<th>8 Family+Generic+code design text<br><small>StyleColor[0].ProductType + StyleColor[0].ProductTypeCodeLegacy + StyleColor[0].Generic</small></th>';
             } else if (labelType === 'ADHEDIST') {
                 html += '<th>Label ID</th>';
                 html += '<th>Supplier Code</th>';
@@ -191,10 +189,8 @@
                 html += '<tr>';
 
                 if (labelType === 'GI001BAW' || labelType === 'GI000PRO') {
-                    html += '<td>' + escapeHtml(row.label_id || '') + '</td>';
-                    html += '<td>' + escapeHtml(row.vendor || '') + '</td>';
-                    html += '<td>' + escapeHtml(row.order_id || '') + '</td>';
                     html += '<td>' + escapeHtml(row.item_qty || '') + '</td>';
+                    html += '<td>' + escapeHtml(row.order_id || '') + '</td>';
                     html += '<td>' + escapeHtml(row.product_type || '') + '</td>';
                     html += '<td>' + escapeHtml(row.line || '') + '</td>';
                     html += '<td>' + escapeHtml(row.age || '') + '</td>';
@@ -203,7 +199,7 @@
                     html += '<td>' + escapeHtml(row.ref_last_4 || '') + '</td>';
                     html += '<td>' + escapeHtml(row.color || '') + '</td>';
                     html += '<td>' + escapeHtml(row.size || '') + '</td>';
-                    html += '<td>' + escapeHtml(row.full_product || '') + '</td>';
+                    html += '<td class="full-product-cell">' + escapeHtml(row.full_product || '') + '</td>';
                 } else if (labelType === 'ADHEDIST') {
                     html += '<td>' + escapeHtml(row.label_id || '') + '</td>';
                     html += '<td>' + escapeHtml(row.supplier_code || '') + '</td>';

@@ -688,6 +688,27 @@ table td:has(textarea:invalid) {
     min-width: 100%;
 }
 
+.label-type-content table th {
+    vertical-align: top;
+    padding: 8px;
+    white-space: nowrap;
+}
+
+.label-type-content table th small {
+    display: block;
+    font-weight: normal;
+    font-size: 10px;
+    color: #666;
+    margin-top: 4px;
+    white-space: normal;
+    line-height: 1.2;
+}
+
+.full-product-cell {
+    font-size: 120%;
+    font-weight: bold;
+}
+
 /* Spinner */
 .spinner {
     width: 24px;
