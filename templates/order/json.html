@@ -1,0 +1,24 @@
+<div class="tab-pane">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/order.css') }}">
+    <div class="order-json">
+        <h1>Import JSONL Data</h1>
+
+        <!-- File Upload Area -->
+        <div class="form-section">
+            <h2>Upload JSONL File</h2>
+            <div id="jsonl-upload-area" class="jsonl-upload-area">
+                <p>Drag JSONL file here or click to browse</p>
+                <input type="file" id="jsonl-file-input" accept=".jsonl,.json" style="display:none">
+            </div>
+            <div id="jsonl-upload-message" style="margin-top: 10px; display: none;"></div>
+        </div>
+
+        <!-- Results Display Area -->
+        <div id="jsonl-results" class="form-section" style="display:none;">
+            <h2>Matched Data</h2>
+            <div id="jsonl-table-container"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/order_jsonl.js') }}"></script>
+</div>

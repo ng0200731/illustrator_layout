@@ -4,6 +4,7 @@ from models.database import execute_query
 import sys, os, json
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tools'))
 from excel_order import generate_template, generate_dummy, parse_upload
+from jsonl_parser import parse_jsonl_file
 
 order_bp = Blueprint('order', __name__, url_prefix='/order')
 
@@ -21,6 +22,11 @@ def view_page():
 @order_bp.route('/detail/<order_id>')
 def detail_page(order_id):
     return render_template('order/detail.html', order_id=order_id)
+
+
+@order_bp.route('/json')
+def json_page():
+    return render_template('order/json.html')
 
 
 @order_bp.route('/api/create', methods=['POST'])
@@ -211,6 +217,38 @@ def api_excel_upload():
             return jsonify({'success': True, 'rows': result['rows']})
         else:
             return jsonify({'success': False, 'error': result['error']}), 400
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+
+
+@order_bp.route('/api/jsonl/parse', methods=['POST'])
+def api_jsonl_parse():
+    """Parse uploaded JSONL file and return matched data"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    if not file or file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in ['jsonl', 'json']:
+        return jsonify({'error': 'Only .jsonl or .json files are allowed'}), 400
+
+    try:
+        # Read file content
+        file_content = file.read().decode('utf-8')
+
+        # Parse JSONL
+        result = parse_jsonl_file(file_content)
+
+        if result['success']:
+            return jsonify({'success': True, 'rows': result['rows']})
+        else:
+            return jsonify({'success': False, 'error': result['error']}), 400
+
     except Exception as e:
         import traceback
         traceback.print_exc()

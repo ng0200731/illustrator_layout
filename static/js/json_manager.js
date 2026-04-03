@@ -1650,6 +1650,7 @@ function jResetToInitialState() {
 
     jAssignNodeIds(jState.documentTree, '');
     jMarkDoubledTextNodes(jState.documentTree);
+    jLoadOverlayFonts();
     jPreloadDocumentFonts();
 
     // Reset viewport
