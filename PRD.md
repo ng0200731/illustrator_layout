@@ -534,3 +534,107 @@ illustrator-layout/
 - **Single SQLite file** — not suitable for concurrent multi-user heavy load
 - **No undo/redo** — layout editor changes are immediate
 - **Font embedding** — fonts over 2MB are subsetted (may not match in Illustrator)
+
+---
+
+## 12. Feature: Layout Preview Modal (Order Creation)
+
+**Version:** 1.0
+**Date:** 2026-03-18
+**Status:** Implemented
+
+### 12.1 Overview
+Enable users to preview the selected layout directly from the order creation page by clicking on the layout name, which opens a modal displaying the full layout visualization.
+
+### 12.2 Problem Statement
+When creating orders, users need to verify which layout they've selected without navigating away from the order creation page. Previously, the layout name was displayed as plain text with no way to view the actual layout design, forcing users to remember layout details or switch between pages.
+
+### 12.3 User Story
+**As an** order creator
+**I want to** click on the layout name to see a preview of the layout
+**So that** I can verify I've selected the correct layout before completing the order
+
+### 12.4 Implementation
+
+#### UI Changes
+- **Location**: `templates/order/create.html`
+- **Layout name display**: Changed from plain text to clickable link
+  - Styling: Blue color (#0066cc), underlined, pointer cursor
+  - Click handler: `openLayoutPreview()`
+
+#### Modal Structure
+- **Overlay**: Full-screen semi-transparent backdrop (rgba(0,0,0,0.5))
+- **Modal dimensions**: 90% viewport width/height (max 1200px × 900px)
+- **Header**:
+  - Title: "Layout: {layout_name}"
+  - Close button (×) in top-right corner
+  - Background: #f9f9f9, 1px black border
+- **Body**: iframe loading existing layout viewer
+  - URL: `/layout/create/json/order?load={layout_id}`
+  - Full canvas controls: zoom, pan, reset view
+  - Read-only mode (right panel hidden)
+
+#### JavaScript Functions
+```javascript
+function openLayoutPreview() {
+  // Reads layout_id and layoutName from orderLinesList[0]
+  // Sets modal title
+  // Loads layout in iframe
+  // Shows modal with flex display + active class
+}
+
+function closeLayoutPreview(e) {
+  // Closes on X button click or backdrop click
+  // Hides modal
+  // Clears iframe src to stop operations
+}
+```
+
+#### CSS Classes Used
+- `.preview-modal-overlay` — Full-screen overlay with flexbox centering
+- `.layout-preview-modal-content` — Modal container with flex column layout
+- `.preview-modal-header` — Header with title and close button
+- `.preview-modal-close` — Close button styling
+- `.layout-preview-body` — Iframe container
+
+### 12.5 Technical Details
+
+**Dependencies:**
+- Existing layout viewer at `/layout/create/json/order`
+- CSS from `static/css/order.css`
+- No new backend routes required
+
+**Data Flow:**
+1. User selects layout → `orderLinesList[0]` populated with `layout_id` and `layoutName`
+2. User clicks layout name → `openLayoutPreview()` triggered
+3. Function reads `layout_id` from `orderLinesList[0]`
+4. Iframe src set to viewer URL with `load={layout_id}` parameter
+5. Modal displayed with flex layout
+6. User closes modal → iframe cleared, modal hidden
+
+**Browser Compatibility:**
+- Works in all modern browsers (Chrome, Firefox, Safari, Edge)
+- Responsive design maintains usability on different screen sizes
+- No conflicts with existing PO modal
+
+### 12.6 Testing Checklist
+- [x] Click layout name opens modal
+- [x] Modal displays correct layout
+- [x] Close button closes modal
+- [x] Click outside closes modal
+- [x] Multiple open/close cycles work correctly
+- [x] No console errors
+- [x] Works in edit order mode
+- [x] Works after Excel import
+- [x] No layout selected (function returns early)
+
+### 12.7 Future Enhancements
+- Keyboard navigation (Escape to close)
+- Accessibility improvements (ARIA labels, focus management)
+- Preview thumbnails in layout selection table
+- Side-by-side comparison of multiple layouts
+- Direct editing from preview modal
+- Loading indicator while iframe loads
+
+### 12.8 Files Modified
+- `templates/order/create.html` — Added clickable layout name, modal HTML, JavaScript functions

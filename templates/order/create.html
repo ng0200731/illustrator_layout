@@ -15,7 +15,7 @@
                 </select>
             </div>
             <div id="layout-name-display" style="display:none;margin-top:8px;padding:6px 8px;background:#f9f9f9;border:1px solid #ddd;font-size:11px;color:#444;">
-                <strong>Layout:</strong> <span id="layout-name-text"></span>
+                <strong>Layout:</strong> <span id="layout-name-text" onclick="openLayoutPreview()" style="cursor:pointer;text-decoration:underline;color:#0066cc;"></span>
             </div>
         </div>
 
@@ -75,6 +75,19 @@
                 <div class="form-actions" style="margin-top:12px;">
                     <button onclick="confirmOrder()" class="btn-primary">Confirm</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Layout Preview Modal -->
+    <div id="layout-preview-modal" class="preview-modal-overlay" onclick="closeLayoutPreview(event)">
+        <div class="layout-preview-modal-content" style="width:90%;max-width:1200px;height:90%;max-height:900px;background:#fff;border:1px solid #000;display:flex;flex-direction:column;">
+            <div class="preview-modal-header" style="display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid #000;background:#f9f9f9;">
+                <span id="layout-preview-title" style="font-weight:600;font-size:14px;">Layout Preview</span>
+                <button class="preview-modal-close" onclick="closeLayoutPreview()" style="border:none;background:none;font-size:24px;cursor:pointer;padding:0;width:30px;height:30px;line-height:1;">&times;</button>
+            </div>
+            <div class="layout-preview-body" style="flex:1;overflow:hidden;position:relative;">
+                <iframe id="layout-preview-iframe" style="width:100%;height:100%;border:none;"></iframe>
             </div>
         </div>
     </div>
@@ -877,5 +890,32 @@
             }
         }
     }
-    </script>
+
+    function openLayoutPreview() {
+        if (orderLinesList.length === 0) return;
+        var layoutId = orderLinesList[0].layout_id;
+        var layoutName = orderLinesList[0].layoutName;
+
+        // Set modal title
+        document.getElementById('layout-preview-title').textContent = 'Layout: ' + layoutName;
+
+        // Load layout in iframe
+        var iframe = document.getElementById('layout-preview-iframe');
+        iframe.src = '/layout/create/json/order?load=' + layoutId;
+
+        // Show modal
+        var modal = document.getElementById('layout-preview-modal');
+        modal.style.display = 'flex';
+        modal.classList.add('active');
+    }
+
+    function closeLayoutPreview(e) {
+        if (e && e.target !== e.currentTarget && e.target.className !== 'preview-modal-close') return;
+        var modal = document.getElementById('layout-preview-modal');
+        modal.style.display = 'none';
+        modal.classList.remove('active');
+        // Clear iframe to stop any ongoing operations
+        document.getElementById('layout-preview-iframe').src = 'about:blank';
+    }
+</script>
 </div>

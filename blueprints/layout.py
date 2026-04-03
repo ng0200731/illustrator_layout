@@ -67,7 +67,7 @@ def list_layouts():
     """Get all layouts as JSON with customer information"""
     try:
         layouts = Layout.get_all()
-        # Add customer name for each layout
+        # Add customer name and variable count for each layout
         for layout in layouts:
             if layout.get('customer_id'):
                 from models.customer import Customer
@@ -75,6 +75,9 @@ def list_layouts():
                 layout['customer_name'] = customer['company_name'] if customer else None
             else:
                 layout['customer_name'] = None
+
+            # Count variables in layout data
+            layout['variable_count'] = Layout.count_variables(layout.get('data'))
         return jsonify({'success': True, 'layouts': layouts}), 200
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400

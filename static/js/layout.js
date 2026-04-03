@@ -22,7 +22,7 @@ function displayLayouts(layouts) {
     if (!tbody) return;
 
     if (layouts.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 40px;">No layouts found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px;">No layouts found</td></tr>';
         return;
     }
 
@@ -43,6 +43,7 @@ function displayLayouts(layouts) {
         const createdDate = formatDateTime(layout.created_at);
         const updatedDate = formatDateTime(layout.updated_at);
         const customerName = layout.customer_name || '-';
+        const variableCount = layout.variable_count || 0;
 
         return `
             <tr>
@@ -50,6 +51,7 @@ function displayLayouts(layouts) {
                 <td>${layout.name}</td>
                 <td>${layout.type.toUpperCase()}</td>
                 <td>${customerName}</td>
+                <td>${variableCount}</td>
                 <td>${createdDate}</td>
                 <td>${updatedDate}</td>
                 <td class="actions">

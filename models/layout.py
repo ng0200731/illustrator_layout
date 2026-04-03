@@ -75,3 +75,22 @@ class Layout:
         """Delete layout"""
         query = 'DELETE FROM layouts WHERE id = ?'
         execute_query(query, (layout_id,))
+
+    @staticmethod
+    def count_variables(data):
+        """Count the number of variables in layout data"""
+        if not data:
+            return 0
+
+        try:
+            # Parse JSON if it's a string
+            if isinstance(data, str):
+                data = json.loads(data)
+
+            # Count overlays with isVariable flag
+            if isinstance(data, dict) and 'overlays' in data:
+                return sum(1 for overlay in data['overlays'] if overlay.get('isVariable'))
+
+            return 0
+        except:
+            return 0

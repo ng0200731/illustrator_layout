@@ -401,6 +401,12 @@ function jParseJsonFile(file) {
             jState.boundsRects = [];
             jCollectBoundsRects(jState.documentTree);
             jAutoCreateTextOverlays(jState.documentTree);
+            // Assign overlay numbers to all auto-created overlays (sequential 1, 2, 3...)
+            for (var i = 0; i < jState.overlays.length; i++) {
+                if (!jState.overlays[i]._overlayNumber) {
+                    jState.overlays[i]._overlayNumber = i + 1;
+                }
+            }
             jLoadOverlayFonts();
             jPreloadDocumentFonts();
 
@@ -2616,6 +2622,39 @@ function jSortOverlaysBySpatialPosition(overlayIndices) {
     });
 }
 
+// Validate overlay sequence numbers
+function jValidateOverlaySequence() {
+    if (!jState.overlays || jState.overlays.length === 0) return;
+
+    // Calculate expected sequence numbers based on spatial position
+    var allIndices = [];
+    for (var i = 0; i < jState.overlays.length; i++) {
+        allIndices.push(i);
+    }
+    var sortedIndices = jSortOverlaysBySpatialPosition(allIndices);
+
+    // Build expected sequence map
+    var expectedSeqMap = {};
+    for (var j = 0; j < sortedIndices.length; j++) {
+        expectedSeqMap[sortedIndices[j]] = j + 1;
+    }
+
+    // Check if any overlay has wrong sequence
+    var hasWrongSequence = false;
+    for (var i = 0; i < jState.overlays.length; i++) {
+        var ov = jState.overlays[i];
+        var expectedSeq = expectedSeqMap[i];
+        if (ov.seq && ov.seq !== expectedSeq) {
+            hasWrongSequence = true;
+            break;
+        }
+    }
+
+    if (hasWrongSequence) {
+        jShowMessage('Warning: Wrong progress sequence detected. Overlays may not be in the correct spatial order.', 'warning');
+    }
+}
+
 function jRenderOverlays(c) {
     if (!jState.overlays) return;
     var brs = jState.boundsRects;
@@ -3895,8 +3934,10 @@ function jRenderOverlayList() {
         var rotSuffix = ovRot ? ' [' + ovRot + '°]' : '';
         var labelText = (labelMap[ov.type] || ov.type) + rotSuffix;
 
-        // Prepend display number if provided
-        if (displayNumber) {
+        // Prepend overlay number if it exists
+        if (ov._overlayNumber) {
+            labelText = '#' + String(ov._overlayNumber).padStart(2, '0') + ' - ' + labelText;
+        } else if (displayNumber) {
             labelText = '#' + displayNumber + ' - ' + labelText;
         }
         label.textContent = labelText;
@@ -3940,6 +3981,34 @@ function jRenderOverlayList() {
         item.appendChild(label);
         item.appendChild(rotCW);
         item.appendChild(rotCCW);
+
+        // Add trash button for manually added overlays
+        if (ov._fromAddButton) {
+            var trashBtn = document.createElement('button');
+            trashBtn.className = 'icon-btn';
+            trashBtn.textContent = '🗑';
+            trashBtn.title = 'Delete overlay';
+            trashBtn.style.marginLeft = '4px';
+            trashBtn.style.color = '#cc0000';
+            (function(idx) {
+                trashBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (confirm('Delete this overlay?')) {
+                        jCaptureState();
+                        jState.overlays.splice(idx, 1);
+                        if (jState.selectedOverlayIdx === idx) {
+                            jState.selectedOverlayIdx = -1;
+                        } else if (jState.selectedOverlayIdx > idx) {
+                            jState.selectedOverlayIdx--;
+                        }
+                        jRenderCanvas();
+                        jRenderOverlayList();
+                        jUpdateActionButtons();
+                    }
+                });
+            })(i);
+            item.appendChild(trashBtn);
+        }
         (function(idx) {
             item.addEventListener('click', function() {
                 jState.selectedOverlayIdx = idx;
@@ -4172,9 +4241,12 @@ function applyContentSettings() {
             comp.w = region.w; comp.h = region.h;
             comp._boundsRectIdx = existing._boundsRectIdx;
             comp._rotation = existing._rotation || 0;
-            // Preserve the _fromAddButton flag
+            // Preserve the _fromAddButton flag and _overlayNumber
             if (existing._fromAddButton) {
                 comp._fromAddButton = true;
+            }
+            if (existing._overlayNumber) {
+                comp._overlayNumber = existing._overlayNumber;
             }
             jState.overlays[jState.editingComponentIdx] = comp;
             jState.selectedOverlayIdx = -1;
@@ -4189,6 +4261,14 @@ function applyContentSettings() {
             // Mark if created from + button
             if (jState._fromAddButton) {
                 comp._fromAddButton = true;
+                // Assign overlay number: find max existing number + 1
+                var maxNum = 0;
+                for (var i = 0; i < jState.overlays.length; i++) {
+                    if (jState.overlays[i]._overlayNumber && jState.overlays[i]._overlayNumber > maxNum) {
+                        maxNum = jState.overlays[i]._overlayNumber;
+                    }
+                }
+                comp._overlayNumber = maxNum + 1;
                 // Insert at the end of the array for top z-index on canvas
                 jState.overlays.push(comp);
                 jState.selectedOverlayIdx = jState.overlays.length - 1;
@@ -5101,6 +5181,10 @@ function jLoadLayoutFromDatabase(layoutId) {
             if (ov.isVariable && !ov.variableId) {
                 ov.variableId = 'ov_' + i + '_' + Date.now();
             }
+            // Assign overlay numbers to ALL overlays if not present (sequential 1, 2, 3...)
+            if (!ov._overlayNumber) {
+                ov._overlayNumber = i + 1;
+            }
         }
 
         if (jState.documentTree) {
@@ -5159,6 +5243,9 @@ function jLoadLayoutFromDatabase(layoutId) {
 
         // Load translation data for all translation regions
         jLoadAllTranslationData();
+
+        // Validate overlay sequence numbers
+        jValidateOverlaySequence();
     }).catch(function(err) {
         alert('Error loading layout: ' + err.message);
     });
@@ -5297,6 +5384,10 @@ function jLoadLayoutFromExport(data) {
         if (ov.isVariable && !ov.variableId) {
             ov.variableId = 'ov_' + i + '_' + Date.now();
         }
+        // Assign overlay numbers to ALL overlays if not present (sequential 1, 2, 3...)
+        if (!ov._overlayNumber) {
+            ov._overlayNumber = i + 1;
+        }
     }
 
     if (jState.documentTree) {
@@ -5349,6 +5440,9 @@ function jLoadLayoutFromExport(data) {
     jRenderLayerTree();
     jRenderOverlayList();
     jRenderEdgeList();
+
+    // Validate overlay sequence numbers
+    jValidateOverlaySequence();
 }
 
 // ─── Export ───
