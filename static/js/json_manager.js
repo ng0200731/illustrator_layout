@@ -4059,17 +4059,21 @@ function jRenderOverlayList() {
     variableManualIndices = jSortOverlaysBySpatialPosition(variableManualIndices);
     variableAutoIndices = jSortOverlaysBySpatialPosition(variableAutoIndices);
 
-    // Render in UI order: variable-active (top) → manual → auto (bottom)
-    // This matches the visual z-order on canvas
-    var uiOrder = variableManualIndices.concat(variableAutoIndices, manualIndices, autoIndices);
+    // Render in UI order: sorted by _overlayNumber ascending (#1, #2, ...)
+    var uiOrder = [];
+    for (var i = 0; i < jState.overlays.length; i++) {
+        uiOrder.push(i);
+    }
+    uiOrder.sort(function(a, b) {
+        var na = jState.overlays[a]._overlayNumber || 0;
+        var nb = jState.overlays[b]._overlayNumber || 0;
+        return na - nb;
+    });
 
-    // Create a map of overlay index to display number based on spatial order
+    // displayNumber is based on _overlayNumber (matches the list order)
     var displayNumberMap = {};
-    var allOverlaysSorted = jSortOverlaysBySpatialPosition(
-        Array.from({length: jState.overlays.length}, function(_, i) { return i; })
-    );
-    for (var j = 0; j < allOverlaysSorted.length; j++) {
-        displayNumberMap[allOverlaysSorted[j]] = j + 1;
+    for (var j = 0; j < uiOrder.length; j++) {
+        displayNumberMap[uiOrder[j]] = j + 1;
     }
 
     for (var j = 0; j < uiOrder.length; j++) {
