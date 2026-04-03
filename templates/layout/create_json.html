@@ -252,7 +252,22 @@
             <div class="panel-section">
                 <h2 class="collapsible-header">MATCHING JSON <span class="collapse-icon">▼</span></h2>
                 <div class="panel-section-body">
-                    <div class="empty-message">No matching data</div>
+                    <div style="margin-bottom: 8px;">
+                        <label style="font-size: 11px; display: block; margin-bottom: 4px;">Label Type:</label>
+                        <select id="matching-label-type" style="width: 100%; padding: 4px; font-size: 11px;">
+                            <option value="">Select label type...</option>
+                            <option value="GI001BAW">GI001BAW</option>
+                            <option value="GI000PRO">GI000PRO</option>
+                            <option value="ADHEDIST">ADHEDIST</option>
+                            <option value="PVP002XG">PVP002XG</option>
+                        </select>
+                    </div>
+                    <div id="matching-fields-container" style="max-height: 400px; overflow-y: auto;">
+                        <div class="empty-message">Select a label type</div>
+                    </div>
+                    <div style="margin-top: 8px;">
+                        <button id="btn-save-matching" style="width: 100%; padding: 6px; font-size: 11px;" disabled>Save Mappings</button>
+                    </div>
                 </div>
             </div>
 

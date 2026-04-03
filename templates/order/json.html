@@ -16,7 +16,20 @@
         <!-- Results Display Area -->
         <div id="jsonl-results" class="form-section" style="display:none;">
             <h2>Matched Data</h2>
+            <button id="btn-map-overlays" class="btn-primary" style="margin-bottom: 10px; display: none;">Map to Overlays</button>
             <div id="jsonl-table-container"></div>
+        </div>
+    </div>
+
+    <!-- Overlay Mapping Modal -->
+    <div id="overlay-mapping-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content" style="max-width: 800px;">
+            <h2>Map Fields to Overlays</h2>
+            <div id="mapping-fields-container"></div>
+            <div class="modal-buttons">
+                <button type="button" class="btn-secondary" onclick="closeMappingModal()">Cancel</button>
+                <button type="button" class="btn-primary" onclick="saveMappings()">Save Mappings</button>
+            </div>
         </div>
     </div>
 

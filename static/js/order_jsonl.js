@@ -251,6 +251,15 @@
 
         tableContainer.innerHTML = html;
         resultsSection.style.display = 'block';
+
+        // Show "Map to Overlays" button
+        const mapButton = document.getElementById('btn-map-overlays');
+        if (mapButton) {
+            mapButton.style.display = 'inline-block';
+            mapButton.onclick = function() {
+                showMappingModal(Object.keys(groupedRows)[0]); // Use first label type
+            };
+        }
     }
 
     // Toggle label section visibility
@@ -288,4 +297,140 @@
         div.textContent = text;
         return div.innerHTML;
     }
+
+    // Field definitions for GI001BAW
+    const GI001BAW_FIELDS = [
+        {name: 'item_qty', label: '1 ITEM DATATQTY', parts: []},
+        {name: 'order_id', label: '2 Code of order', parts: []},
+        {name: 'product_type', label: '3 FAM CODE', parts: []},
+        {name: 'line', label: '4.0 FAM LINE DESCRIPTION', parts: []},
+        {name: 'age', label: '4.1 FAM LINE DESCRIPTION', parts: []},
+        {name: 'gender', label: '4.2 FAM LINE DESCRIPTION', parts: []},
+        {name: 'ref_first_4', label: '5.1 Reference number (First 4)', parts: []},
+        {name: 'ref_last_4', label: '5.2 Reference number (Last 4)', parts: []},
+        {name: 'color', label: '6 The colour of the garment', parts: ['MangoColorCode', 'Color']},
+        {name: 'size', label: '7 Size: EUR', parts: []},
+        {name: 'full_product', label: '8 Family+Generic+code design text', parts: ['ProductType', 'ProductTypeCodeLegacy', 'Generic']}
+    ];
+
+    // Show mapping modal
+    function showMappingModal(labelType) {
+        const modal = document.getElementById('overlay-mapping-modal');
+        if (!modal) return;
+
+        // Get field definitions based on label type
+        let fields = [];
+        if (labelType === 'GI001BAW' || labelType === 'GI000PRO') {
+            fields = GI001BAW_FIELDS;
+        } else {
+            showMessage('Mapping not yet supported for ' + labelType, 'error');
+            return;
+        }
+
+        // Load saved mappings
+        fetch('/order/api/jsonl/get-mappings/' + labelType)
+            .then(response => response.json())
+            .then(data => {
+                const savedMappings = data.success ? data.mappings : {};
+                renderMappingFields(fields, savedMappings, labelType);
+                modal.style.display = 'flex';
+            })
+            .catch(error => {
+                console.error('Error loading mappings:', error);
+                renderMappingFields(fields, {}, labelType);
+                modal.style.display = 'flex';
+            });
+    }
+
+    // Render mapping fields
+    function renderMappingFields(fields, savedMappings, labelType) {
+        const container = document.getElementById('mapping-fields-container');
+        if (!container) return;
+
+        let html = '<div class="mapping-fields">';
+
+        fields.forEach(function(field) {
+            html += '<div class="mapping-field-row">';
+            html += '<label class="mapping-field-label">' + escapeHtml(field.label) + '</label>';
+            html += '<div class="mapping-field-inputs">';
+
+            if (field.parts.length === 0) {
+                // Simple field - single dropdown
+                const value = savedMappings[field.name] || '';
+                html += '<input type="number" class="mapping-overlay-input" data-field="' + field.name + '" ';
+                html += 'placeholder="Overlay #" min="1" value="' + value + '">';
+            } else {
+                // Concatenated field - multiple dropdowns with labels
+                field.parts.forEach(function(partName, index) {
+                    html += '<div class="mapping-part">';
+                    html += '<span class="mapping-part-label">' + escapeHtml(partName) + ':</span>';
+                    const savedArray = savedMappings[field.name] || [];
+                    const value = savedArray[index] || '';
+                    html += '<input type="number" class="mapping-overlay-input" data-field="' + field.name + '" ';
+                    html += 'data-part="' + (index + 1) + '" placeholder="Overlay #" min="1" value="' + value + '">';
+                    html += '</div>';
+                });
+            }
+
+            html += '</div>';
+            html += '</div>';
+        });
+
+        html += '</div>';
+        html += '<input type="hidden" id="current-label-type" value="' + labelType + '">';
+
+        container.innerHTML = html;
+    }
+
+    // Close mapping modal
+    window.closeMappingModal = function() {
+        const modal = document.getElementById('overlay-mapping-modal');
+        if (modal) modal.style.display = 'none';
+    };
+
+    // Save mappings
+    window.saveMappings = function() {
+        const labelType = document.getElementById('current-label-type').value;
+        const inputs = document.querySelectorAll('.mapping-overlay-input');
+        const mappings = {};
+
+        inputs.forEach(function(input) {
+            const fieldName = input.getAttribute('data-field');
+            const partIndex = input.getAttribute('data-part');
+            const value = parseInt(input.value) || null;
+
+            if (value) {
+                if (partIndex) {
+                    // Concatenated field
+                    if (!mappings[fieldName]) {
+                        mappings[fieldName] = [];
+                    }
+                    mappings[fieldName][parseInt(partIndex) - 1] = value;
+                } else {
+                    // Simple field
+                    mappings[fieldName] = value;
+                }
+            }
+        });
+
+        // Save to backend
+        fetch('/order/api/jsonl/save-mappings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({label_type: labelType, mappings: mappings})
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showMessage('Mappings saved successfully', 'success');
+                closeMappingModal();
+            } else {
+                showMessage(data.error || 'Failed to save mappings', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error saving mappings:', error);
+            showMessage('Error saving mappings: ' + error.message, 'error');
+        });
+    };
 })();

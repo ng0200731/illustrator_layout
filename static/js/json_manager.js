@@ -103,6 +103,7 @@ function jsonInitWithTabPane(tabPane) {
     jSetupCanvasInteraction();
     jSetupCollapsibleSections();
     jSetupAlignmentButtons();
+    jSetupMatchingJSON();
 
     var typeSelect = tabPane.querySelector('#ct-type-select');
     if (typeSelect) typeSelect.addEventListener('change', jOnContentTypeChange);
@@ -348,6 +349,84 @@ function jSetupAlignmentButtons() {
                 jRenderCanvas();
             });
         });
+    });
+}
+
+function jSetupMatchingJSON() {
+    var tabPane = jCanvas.closest('.tab-pane');
+    if (!tabPane) return;
+
+    var labelTypeSelect = tabPane.querySelector('#matching-label-type');
+    var fieldsContainer = tabPane.querySelector('#matching-fields-container');
+    var saveBtn = tabPane.querySelector('#btn-save-matching');
+
+    if (!labelTypeSelect || !fieldsContainer || !saveBtn) return;
+
+    var fieldMappings = {
+        'GI001BAW': [
+            { id: 1, label: 'ITEM DATA QTY', path: 'StyleColor[0].ItemData[#].itemQty' },
+            { id: 2, label: 'Code of order', path: 'LabelOrder.Id' },
+            { id: 3, label: 'FAM CODE', path: 'StyleColor[0].ProductTypeCodeLegacy' },
+            { id: 4.0, label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Line' },
+            { id: 4.1, label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Age' },
+            { id: 4.2, label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Gender' },
+            { id: 5.1, label: 'Reference number (first 4)', path: 'StyleColor[0].ReferenceID (first 4)' },
+            { id: 5.2, label: 'Reference number (last 4)', path: 'StyleColor[0].ReferenceID (last 4)' },
+            { id: 6, label: 'Colour of garment', path: 'StyleColor[0].MangoColorCode + ":" + StyleColor[0].Color', concat: true },
+            { id: 7, label: 'Size: EUR', path: 'StyleColor[0].ItemData[#].SizeNameES' },
+            { id: 8, label: 'Family+Generic+code design text', path: 'StyleColor[0].ProductType + StyleColor[0].ProductTypeCodeLegacy + StyleColor[0].Generic', concat: true }
+        ]
+    };
+
+    labelTypeSelect.addEventListener('change', function() {
+        var selectedType = labelTypeSelect.value;
+        if (!selectedType || !fieldMappings[selectedType]) {
+            fieldsContainer.innerHTML = '<div class="empty-message">Select a label type</div>';
+            saveBtn.disabled = true;
+            return;
+        }
+
+        var fields = fieldMappings[selectedType];
+        var html = '';
+        fields.forEach(function(field) {
+            var overlayOptions = '<option value="">Select overlay...</option>';
+            if (jState && jState.overlays) {
+                jState.overlays.forEach(function(overlay, idx) {
+                    var name = overlay.name || 'Overlay ' + (idx + 1);
+                    overlayOptions += '<option value="' + idx + '">' + name + '</option>';
+                });
+            }
+
+            var inputHtml = '';
+            if (field.concat) {
+                inputHtml = '<div style="font-size: 10px; color: #666; margin-top: 2px;">Multiple inputs required</div>';
+            }
+
+            html += '<div style="margin-bottom: 12px; padding: 8px; background: #f5f5f5; border-radius: 4px;">';
+            html += '<div style="font-size: 11px; font-weight: bold; margin-bottom: 4px;">' + field.id + '. ' + field.label + '</div>';
+            html += '<div style="font-size: 10px; color: #666; margin-bottom: 4px;">' + field.path + '</div>';
+            html += '<select class="field-overlay-select" data-field-id="' + field.id + '" style="width: 100%; padding: 4px; font-size: 11px;">' + overlayOptions + '</select>';
+            html += inputHtml;
+            html += '</div>';
+        });
+
+        fieldsContainer.innerHTML = html;
+        saveBtn.disabled = false;
+    });
+
+    saveBtn.addEventListener('click', function() {
+        var mappings = [];
+        fieldsContainer.querySelectorAll('.field-overlay-select').forEach(function(select) {
+            if (select.value) {
+                mappings.push({
+                    fieldId: select.dataset.fieldId,
+                    overlayIdx: parseInt(select.value)
+                });
+            }
+        });
+
+        console.log('Saved mappings:', mappings);
+        alert('Mappings saved: ' + mappings.length + ' fields mapped');
     });
 }
 

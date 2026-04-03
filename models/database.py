@@ -97,6 +97,19 @@ def init_db():
         )
     ''')
 
+    # Create jsonl_field_mappings table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS jsonl_field_mappings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            label_type TEXT NOT NULL,
+            field_name TEXT NOT NULL,
+            field_part INTEGER DEFAULT 0,
+            overlay_number INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(label_type, field_name, field_part)
+        )
+    ''')
+
     conn.commit()
     conn.close()
     print(f"Database initialized at {DATABASE_PATH}")

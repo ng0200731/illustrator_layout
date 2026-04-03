@@ -223,6 +223,80 @@ def api_excel_upload():
         return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
 
 
+@order_bp.route('/api/jsonl/get-mappings/<label_type>', methods=['GET'])
+def api_get_jsonl_mappings(label_type):
+    """Get saved field mappings for a label type"""
+    try:
+        query = '''
+            SELECT field_name, field_part, overlay_number
+            FROM jsonl_field_mappings
+            WHERE label_type = ?
+            ORDER BY field_name, field_part
+        '''
+        rows = execute_query(query, (label_type,), fetch_all=True)
+
+        # Group by field_name
+        mappings = {}
+        for row in rows:
+            field_name = row['field_name']
+            field_part = row['field_part']
+            overlay_number = row['overlay_number']
+
+            if field_part == 0:
+                # Simple field
+                mappings[field_name] = overlay_number
+            else:
+                # Concatenated field
+                if field_name not in mappings:
+                    mappings[field_name] = []
+                mappings[field_name].append(overlay_number)
+
+        return jsonify({'success': True, 'mappings': mappings})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+
+
+@order_bp.route('/api/jsonl/save-mappings', methods=['POST'])
+def api_save_jsonl_mappings():
+    """Save field mappings for a label type"""
+    try:
+        data = request.get_json()
+        label_type = data.get('label_type')
+        mappings = data.get('mappings', {})
+
+        if not label_type:
+            return jsonify({'success': False, 'error': 'label_type is required'}), 400
+
+        # Delete existing mappings for this label type
+        delete_query = 'DELETE FROM jsonl_field_mappings WHERE label_type = ?'
+        execute_query(delete_query, (label_type,))
+
+        # Insert new mappings
+        insert_query = '''
+            INSERT INTO jsonl_field_mappings (label_type, field_name, field_part, overlay_number)
+            VALUES (?, ?, ?, ?)
+        '''
+
+        for field_name, overlay_value in mappings.items():
+            if isinstance(overlay_value, list):
+                # Concatenated field
+                for part_index, overlay_num in enumerate(overlay_value, start=1):
+                    if overlay_num:  # Only save if overlay number is provided
+                        execute_query(insert_query, (label_type, field_name, part_index, overlay_num))
+            else:
+                # Simple field
+                if overlay_value:  # Only save if overlay number is provided
+                    execute_query(insert_query, (label_type, field_name, 0, overlay_value))
+
+        return jsonify({'success': True})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+
+
 @order_bp.route('/api/jsonl/parse', methods=['POST'])
 def api_jsonl_parse():
     """Parse uploaded JSONL file and return matched data"""
