@@ -5872,10 +5872,22 @@ function jLoadLayoutFromDatabase(layoutId) {
         jRenderOverlayList();
         jRenderEdgeList();
 
-        // Restore matching label type dropdown
+        // Restore matching label type dropdown (with prefix fallback)
         if (jState.matchingLabelType) {
             var ltSelect = _jel('matching-label-type');
-            if (ltSelect) ltSelect.value = jState.matchingLabelType;
+            if (ltSelect) {
+                ltSelect.value = jState.matchingLabelType;
+                // If exact match failed, try prefix match
+                if (ltSelect.value !== jState.matchingLabelType) {
+                    for (var oi = 0; oi < ltSelect.options.length; oi++) {
+                        var optVal = ltSelect.options[oi].value;
+                        if (optVal && (jState.matchingLabelType.startsWith(optVal) || optVal.startsWith(jState.matchingLabelType))) {
+                            ltSelect.value = optVal;
+                            break;
+                        }
+                    }
+                }
+            }
         }
         if (typeof window._jRefreshMatchingPanel === 'function') {
             window._jRefreshMatchingPanel();
