@@ -356,6 +356,11 @@ function jSetupMatchingJSON() {
     var tabPane = jCanvas.closest('.tab-pane');
     if (!tabPane) return;
 
+    var modal = tabPane.querySelector('#matching-json-modal');
+    var openBtn = tabPane.querySelector('#btn-open-matching-modal');
+    var closeBtn = tabPane.querySelector('#btn-close-matching-modal');
+    var modalHeader = tabPane.querySelector('#matching-modal-header');
+
     var labelTypeSelect = tabPane.querySelector('#matching-label-type');
     var fieldsContainer = tabPane.querySelector('#matching-fields-container');
     var overlayList = tabPane.querySelector('#matching-overlay-list');
@@ -363,6 +368,43 @@ function jSetupMatchingJSON() {
     var exportBtn = tabPane.querySelector('#btn-export-matching-excel');
 
     if (!labelTypeSelect || !fieldsContainer || !overlayList || !saveBtn || !exportBtn) return;
+
+    // --- Modal open / close ---
+    if (openBtn && modal) {
+        openBtn.addEventListener('click', function() {
+            modal.style.display = 'block';
+            if (!modal.dataset.positioned) {
+                modal.style.top = '60px';
+                modal.style.left = Math.max(60, window.innerWidth - 420) + 'px';
+                modal.dataset.positioned = '1';
+            }
+            renderOverlayDropZones();
+            renderFieldCards();
+        });
+    }
+    if (closeBtn && modal) {
+        closeBtn.addEventListener('click', function() {
+            modal.style.display = 'none';
+        });
+    }
+
+    // --- Modal drag ---
+    if (modalHeader && modal) {
+        var mDrag = { active: false, ox: 0, oy: 0 };
+        modalHeader.addEventListener('mousedown', function(e) {
+            if (e.target === closeBtn) return;
+            mDrag.active = true;
+            mDrag.ox = e.clientX - modal.offsetLeft;
+            mDrag.oy = e.clientY - modal.offsetTop;
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', function(e) {
+            if (!mDrag.active) return;
+            modal.style.left = Math.max(0, Math.min(e.clientX - mDrag.ox, window.innerWidth - 100)) + 'px';
+            modal.style.top = Math.max(0, Math.min(e.clientY - mDrag.oy, window.innerHeight - 40)) + 'px';
+        });
+        document.addEventListener('mouseup', function() { mDrag.active = false; });
+    }
 
     if (!jState.matchingMappings) jState.matchingMappings = {};
 
@@ -394,31 +436,56 @@ function jSetupMatchingJSON() {
         return labelMap[ov.type] || ov.type;
     }
 
+    // Build a reverse map: overlayIdx → [field ids]
+    function getOverlayToFieldsMap() {
+        var map = {};
+        for (var fid in jState.matchingMappings) {
+            var val = jState.matchingMappings[fid];
+            var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
+            for (var i = 0; i < indices.length; i++) {
+                if (!map[indices[i]]) map[indices[i]] = [];
+                map[indices[i]].push(fid);
+            }
+        }
+        return map;
+    }
+
     // Render the overlay drop zone list
     function renderOverlayDropZones() {
         if (!jState.overlays || jState.overlays.length === 0) {
             overlayList.innerHTML = '<div style="font-size: 10px; color: #999; padding: 6px;">No overlays yet</div>';
             return;
         }
+
+        var ovToFields = getOverlayToFieldsMap();
+        var fields = fieldMappings[labelTypeSelect.value];
         var html = '';
         jState.overlays.forEach(function(ov, idx) {
-            var mappedField = null;
-            for (var fid in jState.matchingMappings) {
-                if (jState.matchingMappings[fid] === idx) mappedField = fid;
-            }
+            var matchedFieldIds = ovToFields[idx] || [];
+            var isMatched = matchedFieldIds.length > 0;
+
             var mappedLabel = '';
-            if (mappedField) {
-                var fields = fieldMappings[labelTypeSelect.value];
-                if (fields) {
-                    var mf = fields.find(function(f) { return f.id === mappedField; });
-                    if (mf) mappedLabel = ' <span style="color:#000;font-weight:bold;">← ' + mf.id + '. ' + mf.label + '</span>';
+            if (isMatched && fields) {
+                var parts = [];
+                matchedFieldIds.forEach(function(fid) {
+                    var mf = fields.find(function(f) { return f.id === fid; });
+                    if (mf) parts.push(mf.id + '. ' + mf.label);
+                });
+                if (parts.length > 0) {
+                    mappedLabel = '<span style="color:#fff;font-weight:bold;">← ' + parts.join(', ') + '</span>';
                 }
             }
 
+            var bgColor = isMatched ? '#dc3545' : '';
+            var borderColor = isMatched ? '#dc3545' : '#ddd';
+            var textColor = isMatched ? '#fff' : '#000';
+
             html += '<div class="matching-drop-zone" data-overlay-idx="' + idx + '" ';
-            html += 'style="padding:4px 6px;font-size:11px;border:1px solid #ddd;border-radius:3px;margin-bottom:3px;cursor:default;display:flex;justify-content:space-between;align-items:center;transition:background 0.15s,border-color 0.15s;">';
-            html += '<span>#' + String(idx + 1).padStart(2, '0') + ' ' + getOverlayLabel(ov) + '</span>';
-            html += '<span style="font-size:9px;color:#666;">' + (mappedLabel || '<span style="color:#bbb;">drop here</span>') + '</span>';
+            html += 'style="padding:4px 6px;font-size:11px;border:1px solid ' + borderColor + ';';
+            if (bgColor) html += 'background:' + bgColor + ';';
+            html += 'border-radius:3px;margin-bottom:3px;cursor:default;display:flex;justify-content:space-between;align-items:center;transition:background 0.15s,border-color 0.15s;">';
+            html += '<span style="color:' + textColor + ';">#' + String(idx + 1).padStart(2, '0') + ' ' + getOverlayLabel(ov) + '</span>';
+            html += '<span style="font-size:9px;">' + (mappedLabel || '<span style="color:#bbb;">drop here</span>') + '</span>';
             html += '</div>';
         });
         overlayList.innerHTML = html;
@@ -432,17 +499,32 @@ function jSetupMatchingJSON() {
                 zone.style.borderColor = '#000';
             });
             zone.addEventListener('dragleave', function() {
-                zone.style.background = '';
-                zone.style.borderColor = '#ddd';
+                var ovIdx = parseInt(zone.dataset.overlayIdx);
+                var isM = (ovToFields[ovIdx] || []).length > 0;
+                zone.style.background = isM ? '#dc3545' : '';
+                zone.style.borderColor = isM ? '#dc3545' : '#ddd';
             });
             zone.addEventListener('drop', function(e) {
                 e.preventDefault();
-                zone.style.background = '';
-                zone.style.borderColor = '#ddd';
                 var fieldId = e.dataTransfer.getData('text/plain');
                 var overlayIdx = parseInt(zone.dataset.overlayIdx);
                 if (fieldId && !isNaN(overlayIdx)) {
-                    jState.matchingMappings[fieldId] = overlayIdx;
+                    var current = jState.matchingMappings[fieldId];
+                    // Find the field definition to check concat
+                    var fd = fields ? fields.find(function(f) { return f.id === fieldId; }) : null;
+                    if (fd && fd.concat) {
+                        // For concat fields: allow multiple overlays
+                        if (Array.isArray(current)) {
+                            if (current.indexOf(overlayIdx) === -1) current.push(overlayIdx);
+                        } else if (current !== undefined) {
+                            if (current !== overlayIdx) jState.matchingMappings[fieldId] = [current, overlayIdx];
+                        } else {
+                            jState.matchingMappings[fieldId] = [overlayIdx];
+                        }
+                    } else {
+                        // Single mapping: replace
+                        jState.matchingMappings[fieldId] = overlayIdx;
+                    }
                     renderOverlayDropZones();
                     renderFieldCards();
                 }
@@ -463,11 +545,19 @@ function jSetupMatchingJSON() {
         var fields = fieldMappings[selectedType];
         var html = '';
         fields.forEach(function(field) {
-            var mappedIdx = jState.matchingMappings[field.id];
+            var val = jState.matchingMappings[field.id];
+            var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
             var mappedLabel = '';
-            if (mappedIdx !== undefined && jState.overlays[mappedIdx]) {
-                var ov = jState.overlays[mappedIdx];
-                mappedLabel = '<span style="font-size:9px;color:#000;background:#e0e0e0;padding:1px 4px;border-radius:2px;">→ #' + String(mappedIdx + 1).padStart(2, '0') + ' ' + getOverlayLabel(ov) + '</span>';
+            if (indices.length > 0) {
+                var parts = [];
+                indices.forEach(function(idx) {
+                    if (jState.overlays[idx]) {
+                        parts.push('#' + String(idx + 1).padStart(2, '0') + ' ' + getOverlayLabel(jState.overlays[idx]));
+                    }
+                });
+                if (parts.length > 0) {
+                    mappedLabel = '<span style="font-size:9px;color:#000;background:#e0e0e0;padding:1px 4px;border-radius:2px;">→ ' + parts.join(', ') + '</span>';
+                }
             }
 
             html += '<div class="matching-field-card" draggable="true" data-field-id="' + field.id + '" ';
@@ -537,18 +627,40 @@ function jSetupMatchingJSON() {
                         return;
                     }
 
-                    // Expected columns: Field # | Label | JSON Path | Overlay (optional) | Concat (optional)
+                    // Expected columns: Field # | Label | JSON Path | Overlay (e.g. "#01" or "#07, #02, #01") | Concat
                     // First row is header
                     var typeFields = [];
+                    var importedMappings = {};
                     for (var r = 1; r < rows.length; r++) {
                         var row = rows[r];
                         if (!row || !row[0]) continue;
-                        typeFields.push({
+                        var field = {
                             id: String(row[0]),
                             label: String(row[1] || ''),
                             path: String(row[2] || ''),
                             concat: (String(row[4] || '').toLowerCase() === 'yes')
-                        });
+                        };
+                        typeFields.push(field);
+
+                        // Parse overlay column: "#01" or "#07, #02, #01" → overlay indices [0], [6,1,0]
+                        var overlayStr = String(row[3] || '').trim();
+                        if (overlayStr) {
+                            var overlayNums = overlayStr.match(/#(\d+)/g);
+                            if (overlayNums) {
+                                var indices = [];
+                                for (var m = 0; m < overlayNums.length; m++) {
+                                    var num = parseInt(overlayNums[m].replace('#', ''));
+                                    if (!isNaN(num) && num >= 1) indices.push(num - 1);
+                                }
+                                if (indices.length > 0) {
+                                    if (field.concat) {
+                                        importedMappings[field.id] = indices;
+                                    } else {
+                                        importedMappings[field.id] = indices[0];
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     if (typeFields.length === 0) {
@@ -559,6 +671,11 @@ function jSetupMatchingJSON() {
                     // Create a new label type entry from filename (without extension)
                     var typeName = file.name.replace(/\.(xlsx|xls)$/i, '');
                     fieldMappings[typeName] = typeFields;
+
+                    // Apply imported overlay mappings
+                    for (var fid in importedMappings) {
+                        jState.matchingMappings[fid] = importedMappings[fid];
+                    }
 
                     // Add option to dropdown if not exists
                     var exists = false;
@@ -594,16 +711,19 @@ function jSetupMatchingJSON() {
         var fields = fieldMappings[selectedType];
         var rows = [['Field #', 'Label', 'JSON Path', 'Overlay', 'Concat']];
         fields.forEach(function(field) {
-            var mappedIdx = jState.matchingMappings[field.id];
-            var overlayLabel = '';
-            if (mappedIdx !== undefined && jState.overlays[mappedIdx]) {
-                overlayLabel = '#' + String(mappedIdx + 1).padStart(2, '0') + ' ' + getOverlayLabel(jState.overlays[mappedIdx]);
-            }
+            var val = jState.matchingMappings[field.id];
+            var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
+            var overlayParts = [];
+            indices.forEach(function(idx) {
+                if (jState.overlays[idx]) {
+                    overlayParts.push('#' + String(idx + 1).padStart(2, '0') + ' ' + getOverlayLabel(jState.overlays[idx]));
+                }
+            });
             rows.push([
                 field.id,
                 field.label,
                 field.path,
-                overlayLabel,
+                overlayParts.join(', '),
                 field.concat ? 'Yes' : 'No'
             ]);
         });
@@ -3083,8 +3203,20 @@ function jRenderOverlayItem(c, ov, idx) {
     // Draw region border
     c.save();
     if (!jState.hideGuides) {
-    // Red for variable overlays, blue for selected, green for normal
-    if (ov.isVariable) {
+    // Check if this overlay is matched in matching JSON
+    var isMatchedOverlay = false;
+    if (jState.matchingMappings) {
+        for (var _mfid in jState.matchingMappings) {
+            var _mval = jState.matchingMappings[_mfid];
+            var _mindices = Array.isArray(_mval) ? _mval : (_mval !== undefined ? [_mval] : []);
+            if (_mindices.indexOf(idx) >= 0) { isMatchedOverlay = true; break; }
+        }
+    }
+    // Red for variable overlays, red thick for matched, blue for selected, green for normal
+    if (isMatchedOverlay) {
+        c.strokeStyle = '#dc3545';
+        c.lineWidth = 0.3;
+    } else if (ov.isVariable) {
         c.strokeStyle = '#ff0000';
         c.lineWidth = 0.15;
     } else {
@@ -3094,6 +3226,17 @@ function jRenderOverlayItem(c, ov, idx) {
     c.setLineDash([1, 1]);
     c.strokeRect(x, y, w, h);
     c.setLineDash([]);
+    // Red corner triangle for matched overlays
+    if (isMatchedOverlay) {
+        c.fillStyle = 'rgba(220, 53, 69, 0.4)';
+        var triSize = Math.min(w, h, 4);
+        c.beginPath();
+        c.moveTo(x, y);
+        c.lineTo(x + triSize, y);
+        c.lineTo(x, y + triSize);
+        c.closePath();
+        c.fill();
+    }
     }
 
     if (ov.type === 'textregion' && ov.content && ov.fontFamily) {
@@ -4205,6 +4348,24 @@ function jRenderOverlayList() {
             item.classList.add('from-add-button');
         }
 
+        // Highlight matched overlays in red (from matching JSON panel)
+        if (jState.matchingMappings) {
+            var isMatched = false;
+            var matchedFieldLabels = [];
+            for (var fid in jState.matchingMappings) {
+                var val = jState.matchingMappings[fid];
+                var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
+                if (indices.indexOf(i) >= 0) {
+                    isMatched = true;
+                    matchedFieldLabels.push(fid);
+                }
+            }
+            if (isMatched) {
+                item.style.background = '#ffe0e0';
+                item.style.borderLeft = '3px solid #dc3545';
+            }
+        }
+
         var eyeBtn = document.createElement('button');
         eyeBtn.className = 'icon-btn';
         eyeBtn.textContent = ov.visible ? '👁' : '-';
@@ -4289,6 +4450,22 @@ function jRenderOverlayList() {
             labelText = '#' + displayNumber + ' - ' + labelText;
         }
         label.textContent = labelText;
+
+        // Append matching field label if this overlay is mapped
+        if (jState.matchingMappings) {
+            var matchedFields = [];
+            for (var fid in jState.matchingMappings) {
+                var val = jState.matchingMappings[fid];
+                var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
+                if (indices.indexOf(i) >= 0) matchedFields.push(fid);
+            }
+            if (matchedFields.length > 0) {
+                var matchSpan = document.createElement('span');
+                matchSpan.style.cssText = 'font-size:9px;color:#dc3545;margin-left:6px;font-weight:bold;';
+                matchSpan.textContent = '← ' + matchedFields.join(', ');
+                label.appendChild(matchSpan);
+            }
+        }
 
         var rotCW = document.createElement('button');
         rotCW.className = 'icon-btn';

@@ -250,45 +250,7 @@
             </div>
 
             <div class="panel-section">
-                <h2 class="collapsible-header">MATCHING JSON <span class="collapse-icon">▼</span></h2>
-                <div class="panel-section-body">
-                    <div style="margin-bottom: 8px;">
-                        <label style="font-size: 11px; display: block; margin-bottom: 4px;">Label Type:</label>
-                        <select id="matching-label-type" style="width: 100%; padding: 4px; font-size: 11px;">
-                            <option value="">Select label type...</option>
-                            <option value="GI001BAW">GI001BAW</option>
-                            <option value="GI000PRO">GI000PRO</option>
-                            <option value="ADHEDIST">ADHEDIST</option>
-                            <option value="PVP002XG">PVP002XG</option>
-                        </select>
-                    </div>
-
-                    <!-- Overlay list for drop targets -->
-                    <div style="margin-bottom: 8px;">
-                        <label style="font-size: 11px; display: block; margin-bottom: 4px; color: #666;">Overlays (drop zone):</label>
-                        <div id="matching-overlay-list" style="max-height: 120px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 4px;">
-                            <div class="empty-message" style="font-size: 10px; color: #999;">No overlays yet</div>
-                        </div>
-                    </div>
-
-                    <!-- Draggable field cards -->
-                    <div id="matching-fields-container" style="max-height: 300px; overflow-y: auto;">
-                        <div class="empty-message">Select a label type</div>
-                    </div>
-
-                    <div style="margin-top: 8px; display: flex; gap: 6px;">
-                        <button id="btn-save-matching" style="flex:1; padding: 6px; font-size: 11px;" disabled>Save</button>
-                        <button id="btn-export-matching-excel" style="flex:1; padding: 6px; font-size: 11px;" disabled>Export Excel</button>
-                    </div>
-                    <div style="margin-top: 6px;">
-                        <label style="display:block;padding:6px;border:1px dashed #999;border-radius:4px;text-align:center;font-size:11px;cursor:pointer;color:#666;transition:border-color 0.2s,color 0.2s;"
-                               onmouseover="this.style.borderColor='#000';this.style.color='#000'"
-                               onmouseout="this.style.borderColor='#999';this.style.color='#666'">
-                            Import Excel Mappings
-                            <input type="file" id="matching-excel-import" accept=".xlsx,.xls" style="display:none;">
-                        </label>
-                    </div>
-                </div>
+                <button id="btn-open-matching-modal" style="width:100%;padding:8px;font-size:12px;font-weight:600;cursor:pointer;">MATCHING JSON</button>
             </div>
 
             <div class="panel-section">
@@ -327,7 +289,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script>
         document.addEventListener('dragover', function(e) { e.preventDefault(); }, false);
         document.addEventListener('drop', function(e) { e.preventDefault(); }, false);
@@ -336,17 +297,39 @@
             var allTabPanes = document.querySelectorAll('.tab-pane[data-tab-instance]');
             var currentTabPane = allTabPanes[allTabPanes.length - 1];
 
-            if (typeof jsonInitWithTabPane === 'function') {
-                jsonInitWithTabPane(currentTabPane);
+            function initEditor() {
+                if (typeof jsonInitWithTabPane === 'function') {
+                    jsonInitWithTabPane(currentTabPane);
+                }
+            }
+
+            function loadJsonManager() {
+                if (typeof jsonInitWithTabPane === 'function') {
+                    initEditor();
+                } else {
+                    var managerScript = document.createElement('script');
+                    managerScript.src = "{{ url_for('static', filename='js/json_manager.js') }}";
+                    managerScript.onload = function() {
+                        initEditor();
+                    };
+                    document.body.appendChild(managerScript);
+                }
+            }
+
+            // Load XLSX library if not already available
+            if (typeof XLSX !== 'undefined') {
+                loadJsonManager();
             } else {
-                var managerScript = document.createElement('script');
-                managerScript.src = "{{ url_for('static', filename='js/json_manager.js') }}";
-                managerScript.onload = function() {
-                    if (currentTabPane && typeof jsonInitWithTabPane === 'function') {
-                        jsonInitWithTabPane(currentTabPane);
-                    }
+                var xlsxScript = document.createElement('script');
+                xlsxScript.src = "{{ url_for('static', filename='js/xlsx.full.min.js') }}";
+                xlsxScript.onload = function() {
+                    loadJsonManager();
                 };
-                document.body.appendChild(managerScript);
+                xlsxScript.onerror = function() {
+                    console.warn('XLSX library failed to load, Excel features disabled');
+                    loadJsonManager();
+                };
+                document.body.appendChild(xlsxScript);
             }
         })();
     </script>
@@ -380,6 +363,47 @@
                     <button type="button" class="btn-secondary" onclick="cancelOverwrite()">Cancel</button>
                     <button type="button" class="btn-primary" onclick="confirmOverwrite()">Overwrite</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Matching JSON Draggable Modal -->
+    <div id="matching-json-modal" style="display:none;position:fixed;z-index:10000;background:#fff;border:1px solid #000;box-shadow:0 4px 20px rgba(0,0,0,0.3);border-radius:6px;width:360px;max-height:90vh;font-family:inherit;">
+        <div id="matching-modal-header" style="padding:8px 12px;background:#000;color:#fff;cursor:move;display:flex;justify-content:space-between;align-items:center;border-radius:6px 6px 0 0;user-select:none;">
+            <span style="font-size:12px;font-weight:600;">MATCHING JSON</span>
+            <button id="btn-close-matching-modal" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;line-height:1;padding:0 2px;">&times;</button>
+        </div>
+        <div style="padding:10px;overflow-y:auto;max-height:calc(90vh - 40px);">
+            <div style="margin-bottom: 8px;">
+                <label style="font-size: 11px; display: block; margin-bottom: 4px;">Label Type:</label>
+                <select id="matching-label-type" style="width: 100%; padding: 4px; font-size: 11px;">
+                    <option value="">Select label type...</option>
+                    <option value="GI001BAW">GI001BAW</option>
+                    <option value="GI000PRO">GI000PRO</option>
+                    <option value="ADHEDIST">ADHEDIST</option>
+                    <option value="PVP002XG">PVP002XG</option>
+                </select>
+            </div>
+            <div style="margin-bottom: 8px;">
+                <label style="font-size: 11px; display: block; margin-bottom: 4px; color: #666;">Overlays (drop zone):</label>
+                <div id="matching-overlay-list" style="max-height: 120px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 4px;">
+                    <div class="empty-message" style="font-size: 10px; color: #999;">No overlays yet</div>
+                </div>
+            </div>
+            <div id="matching-fields-container" style="max-height: 300px; overflow-y: auto;">
+                <div class="empty-message">Select a label type</div>
+            </div>
+            <div style="margin-top: 8px; display: flex; gap: 6px;">
+                <button id="btn-save-matching" style="flex:1; padding: 6px; font-size: 11px;" disabled>Save</button>
+                <button id="btn-export-matching-excel" style="flex:1; padding: 6px; font-size: 11px;" disabled>Export Excel</button>
+            </div>
+            <div style="margin-top: 6px;">
+                <label style="display:block;padding:6px;border:1px dashed #999;border-radius:4px;text-align:center;font-size:11px;cursor:pointer;color:#666;transition:border-color 0.2s,color 0.2s;"
+                       onmouseover="this.style.borderColor='#000';this.style.color='#000'"
+                       onmouseout="this.style.borderColor='#999';this.style.color='#666'">
+                    Import Excel Mappings
+                    <input type="file" id="matching-excel-import" accept=".xlsx,.xls" style="display:none;">
+                </label>
             </div>
         </div>
     </div>
