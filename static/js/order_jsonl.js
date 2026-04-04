@@ -15,6 +15,7 @@
     function init() {
         setupFileUpload();
         setupPreviewClose();
+        setupMatchingJsonModal();
     }
 
     function setupPreviewClose() {
@@ -266,12 +267,12 @@
         tableContainer.innerHTML = html;
         resultsSection.style.display = 'block';
 
-        // Show "Map to Overlays" button
+        // Show "Map to Overlays" button - opens the matching JSON popup
         const mapButton = document.getElementById('btn-map-overlays');
         if (mapButton) {
             mapButton.style.display = 'inline-block';
             mapButton.onclick = function() {
-                showMappingModal(Object.keys(groupedRows)[0]); // Use first label type
+                openMatchingJsonModal(Object.keys(groupedRows)[0]);
             };
         }
     }
@@ -447,6 +448,391 @@
             showMessage('Error saving mappings: ' + error.message, 'error');
         });
     };
+
+    // ─── Matching JSON Draggable Popup ───
+
+    // Field definitions per label type (same as create_json page)
+    var MATCHING_FIELDS = {
+        'GI001BAW': [
+            { id: '1', label: 'ITEM DATA QTY', path: 'StyleColor[0].ItemData[#].itemQty' },
+            { id: '2', label: 'Code of order', path: 'LabelOrder.Id' },
+            { id: '3', label: 'FAM CODE', path: 'StyleColor[0].ProductTypeCodeLegacy' },
+            { id: '4.0', label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Line' },
+            { id: '4.1', label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Age' },
+            { id: '4.2', label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Gender' },
+            { id: '5.1', label: 'Reference number (first 4)', path: 'StyleColor[0].ReferenceID (first 4)' },
+            { id: '5.2', label: 'Reference number (last 4)', path: 'StyleColor[0].ReferenceID (last 4)' },
+            { id: '6', label: 'Colour of garment', path: 'StyleColor[0].MangoColorCode + ":" + StyleColor[0].Color', concat: true },
+            { id: '7', label: 'Size: EUR', path: 'StyleColor[0].ItemData[#].SizeNameES' },
+            { id: '8', label: 'Family+Generic+code design text', path: 'StyleColor[0].ProductType + StyleColor[0].ProductTypeCodeLegacy + StyleColor[0].Generic', concat: true }
+        ]
+    };
+
+    // State for matching popup
+    var matchingState = {
+        overlays: [],           // Overlays from the fetched layout
+        mappings: {},           // fieldId -> overlayIdx or [overlayIdx, ...]
+        labelType: '',          // Selected label type
+        layoutLoaded: false,
+        layoutId: null          // ID of the loaded layout
+    };
+
+    function openMatchingJsonModal(labelType) {
+        var modal = document.getElementById('matching-json-modal');
+        if (!modal) return;
+
+        modal.style.display = 'block';
+        if (!modal.dataset.positioned) {
+            modal.style.top = '60px';
+            modal.style.left = Math.max(20, window.innerWidth - 720) + 'px';
+            modal.dataset.positioned = '1';
+        }
+
+        // Set label type if provided
+        var ltSelect = document.getElementById('matching-label-type');
+        if (ltSelect && labelType) {
+            ltSelect.value = labelType;
+        }
+
+        // Restore label type from state if dropdown is empty
+        if (ltSelect && !ltSelect.value && matchingState.labelType) {
+            ltSelect.value = matchingState.labelType;
+        }
+
+        // Fetch layout overlays for the selected label type
+        loadMatchingLayout(ltSelect ? ltSelect.value : labelType);
+    }
+
+    function loadMatchingLayout(labelType) {
+        if (!labelType) {
+            renderMatchingOverlays([]);
+            renderMatchingFields([]);
+            return;
+        }
+
+        showMessage('Loading layout for ' + labelType + '...', 'info');
+
+        fetch('/order/api/jsonl/preview-layout/' + labelType)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    matchingState.overlays = data.layout.overlays || [];
+                    // matchingMappings uses field IDs ('1','2',...) as keys, 0-based overlay indices
+                    matchingState.mappings = data.layout.matchingMappings || {};
+                    matchingState.labelType = labelType;
+                    matchingState.layoutId = data.layout.id || null;
+                    matchingState.layoutLoaded = true;
+                    showMessage('Layout loaded', 'success');
+                } else {
+                    matchingState.overlays = [];
+                    matchingState.mappings = {};
+                    matchingState.layoutLoaded = false;
+                    matchingState.layoutId = null;
+                }
+                renderMatchingOverlays(matchingState.overlays);
+                renderMatchingFields(MATCHING_FIELDS[labelType] || []);
+            })
+            .catch(function(err) {
+                console.error('Error loading layout:', err);
+                matchingState.overlays = [];
+                matchingState.mappings = {};
+                matchingState.layoutLoaded = false;
+                renderMatchingOverlays([]);
+                renderMatchingFields(MATCHING_FIELDS[labelType] || []);
+            });
+    }
+
+    function getOverlayLabel(ov) {
+        var labelMap = {
+            'textregion': 'Text: "' + (ov.content || '').substring(0, 15) + '"',
+            'imageregion': 'Image',
+            'qrcoderegion': 'QR: ' + (ov.qrData || '').substring(0, 10),
+            'barcoderegion': 'Barcode: ' + (ov.barcodeData || '').substring(0, 10),
+            'translationregion': 'Translation'
+        };
+        return labelMap[ov.type] || ov.type || 'Overlay';
+    }
+
+    function getOverlayToFieldsMap() {
+        var map = {};
+        for (var fid in matchingState.mappings) {
+            var val = matchingState.mappings[fid];
+            var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
+            for (var i = 0; i < indices.length; i++) {
+                if (!map[indices[i]]) map[indices[i]] = [];
+                map[indices[i]].push(fid);
+            }
+        }
+        return map;
+    }
+
+    function renderMatchingOverlays(overlays) {
+        var container = document.getElementById('matching-overlay-list');
+        if (!container) return;
+
+        if (!overlays || overlays.length === 0) {
+            container.innerHTML = '<div style="font-size:10px;color:#999;padding:6px;">No overlays loaded — save a layout with overlays first</div>';
+            return;
+        }
+
+        // Sort by overlay number
+        var uiOrder = [];
+        for (var k = 0; k < overlays.length; k++) uiOrder.push(k);
+        uiOrder.sort(function(a, b) {
+            var na = overlays[a]._overlayNumber || 0;
+            var nb = overlays[b]._overlayNumber || 0;
+            return na - nb;
+        });
+
+        var ovToFields = getOverlayToFieldsMap();
+        var fields = MATCHING_FIELDS[matchingState.labelType] || [];
+        var html = '';
+
+        for (var j = 0; j < uiOrder.length; j++) {
+            var idx = uiOrder[j];
+            var ov = overlays[idx];
+            var displayNum = ov._overlayNumber || (j + 1);
+            var matchedFieldIds = ovToFields[idx] || [];
+            var isMatched = matchedFieldIds.length > 0;
+
+            var mappedLabel = '';
+            if (isMatched && fields.length > 0) {
+                var parts = [];
+                matchedFieldIds.forEach(function(fid) {
+                    var mf = fields.find(function(f) { return f.id === fid; });
+                    if (mf) parts.push(mf.id + '. ' + mf.label);
+                });
+                if (parts.length > 0) {
+                    mappedLabel = '<span style="color:#fff;font-weight:bold;">→ ' + parts.join(', ') + '</span>';
+                }
+            }
+
+            var bgColor = isMatched ? '#dc3545' : '';
+            var borderColor = isMatched ? '#dc3545' : '#ddd';
+            var textColor = isMatched ? '#fff' : '#000';
+
+            html += '<div class="matching-overlay-item" draggable="true" data-overlay-idx="' + idx + '" ';
+            html += 'style="padding:4px 6px;font-size:11px;border:1px solid ' + borderColor + ';';
+            if (bgColor) html += 'background:' + bgColor + ';';
+            html += 'border-radius:3px;margin-bottom:3px;cursor:grab;display:flex;justify-content:space-between;align-items:center;transition:background 0.15s,border-color 0.15s;">';
+            html += '<span style="color:' + textColor + ';">#' + String(displayNum).padStart(2, '0') + ' ' + getOverlayLabel(ov) + '</span>';
+            html += '<span style="font-size:9px;">' + (mappedLabel || '') + '</span>';
+            html += '</div>';
+        }
+
+        container.innerHTML = html;
+
+        // Attach dragstart/dragend to each overlay item
+        container.querySelectorAll('.matching-overlay-item').forEach(function(item) {
+            item.addEventListener('dragstart', function(e) {
+                e.dataTransfer.setData('text/plain', item.dataset.overlayIdx);
+                e.dataTransfer.effectAllowed = 'link';
+                item.style.opacity = '0.5';
+            });
+            item.addEventListener('dragend', function() {
+                item.style.opacity = '1';
+            });
+        });
+    }
+
+    function renderMatchingFields(fields) {
+        var container = document.getElementById('matching-fields-container');
+        var saveBtn = document.getElementById('btn-save-matching');
+        if (!container) return;
+
+        if (!fields || fields.length === 0) {
+            container.innerHTML = '<div style="font-size:10px;color:#999;padding:6px;">Select a label type to see fields</div>';
+            if (saveBtn) saveBtn.disabled = true;
+            return;
+        }
+
+        if (saveBtn) saveBtn.disabled = false;
+
+        // Build display number map
+        var uiOrder = [];
+        for (var k = 0; k < matchingState.overlays.length; k++) uiOrder.push(k);
+        uiOrder.sort(function(a, b) {
+            return (matchingState.overlays[a]._overlayNumber || 0) - (matchingState.overlays[b]._overlayNumber || 0);
+        });
+        var displayNumMap = {};
+        for (var k = 0; k < uiOrder.length; k++) displayNumMap[uiOrder[k]] = k + 1;
+
+        var html = '';
+        fields.forEach(function(field) {
+            var val = matchingState.mappings[field.id];
+            var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
+            var mappedLabel = '';
+            if (indices.length > 0) {
+                var parts = [];
+                indices.forEach(function(idx) {
+                    if (matchingState.overlays[idx]) {
+                        var dn = displayNumMap[idx] || (idx + 1);
+                        parts.push('#' + String(dn).padStart(2, '0') + ' ' + getOverlayLabel(matchingState.overlays[idx]));
+                    }
+                });
+                if (parts.length > 0) {
+                    mappedLabel = '<span style="font-size:9px;color:#000;background:#e0e0e0;padding:1px 4px;border-radius:2px;">← ' + parts.join(', ') + '</span>';
+                }
+            }
+
+            var isMatched = indices.length > 0;
+            var bgColor = isMatched ? '#ffe0e0' : '#f5f5f5';
+            var borderColor = isMatched ? '#dc3545' : '#ddd';
+
+            html += '<div class="matching-field-drop-zone" data-field-id="' + field.id + '" ';
+            html += 'style="padding:6px 8px;background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:4px;margin-bottom:6px;cursor:default;transition:border-color 0.15s,background 0.15s;">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:start;">';
+            html += '<div>';
+            html += '<span style="font-size:11px;font-weight:bold;">' + field.id + '.</span> ';
+            html += '<span style="font-size:11px;">' + field.label + '</span>';
+            if (field.concat) {
+                html += ' <span style="font-size:9px;background:#333;color:#fff;padding:1px 4px;border-radius:2px;">MULTI</span>';
+            }
+            html += '</div>';
+            html += '</div>';
+            html += '<div style="font-size:9px;color:#888;margin-top:2px;">' + field.path + '</div>';
+            if (mappedLabel) {
+                html += '<div style="margin-top:3px;">' + mappedLabel + '</div>';
+            } else {
+                html += '<div style="margin-top:3px;"><span style="font-size:9px;color:#bbb;">drop here</span></div>';
+            }
+            html += '</div>';
+        });
+
+        container.innerHTML = html;
+
+        // Attach dragover/drop/dragleave to each field card
+        container.querySelectorAll('.matching-field-drop-zone').forEach(function(card) {
+            card.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'link';
+                card.style.borderColor = '#000';
+                card.style.background = '#e0e0e0';
+            });
+            card.addEventListener('dragleave', function() {
+                var fid = card.dataset.fieldId;
+                var v = matchingState.mappings[fid];
+                var ii = Array.isArray(v) ? v : (v !== undefined ? [v] : []);
+                card.style.borderColor = ii.length > 0 ? '#dc3545' : '#ddd';
+                card.style.background = ii.length > 0 ? '#ffe0e0' : '#f5f5f5';
+            });
+            card.addEventListener('drop', function(e) {
+                e.preventDefault();
+                var overlayIdx = parseInt(e.dataTransfer.getData('text/plain'));
+                var fieldId = card.dataset.fieldId;
+                if (isNaN(overlayIdx) || !fieldId) return;
+
+                var fd = fields ? fields.find(function(f) { return f.id === fieldId; }) : null;
+                var current = matchingState.mappings[fieldId];
+                if (fd && fd.concat) {
+                    if (Array.isArray(current)) {
+                        if (current.indexOf(overlayIdx) === -1) current.push(overlayIdx);
+                    } else if (current !== undefined) {
+                        if (current !== overlayIdx) matchingState.mappings[fieldId] = [current, overlayIdx];
+                    } else {
+                        matchingState.mappings[fieldId] = [overlayIdx];
+                    }
+                } else {
+                    matchingState.mappings[fieldId] = overlayIdx;
+                }
+                renderMatchingOverlays(matchingState.overlays);
+                renderMatchingFields(fields);
+            });
+        });
+    }
+
+    // Setup matching JSON modal events
+    function setupMatchingJsonModal() {
+        var modal = document.getElementById('matching-json-modal');
+        var closeBtn = document.getElementById('btn-close-matching-modal');
+        var header = document.getElementById('matching-modal-header');
+        var ltSelect = document.getElementById('matching-label-type');
+        var saveBtn = document.getElementById('btn-save-matching');
+        var resetBtn = document.getElementById('btn-reset-matching');
+
+        if (!modal) return;
+
+        // Close
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function() {
+                modal.style.display = 'none';
+            });
+        }
+
+        // Drag header
+        if (header) {
+            var mDrag = { active: false, ox: 0, oy: 0 };
+            header.addEventListener('mousedown', function(e) {
+                if (e.target === closeBtn) return;
+                mDrag.active = true;
+                mDrag.ox = e.clientX - modal.offsetLeft;
+                mDrag.oy = e.clientY - modal.offsetTop;
+                e.preventDefault();
+            });
+            document.addEventListener('mousemove', function(e) {
+                if (!mDrag.active) return;
+                modal.style.left = Math.max(0, Math.min(e.clientX - mDrag.ox, window.innerWidth - 100)) + 'px';
+                modal.style.top = Math.max(0, Math.min(e.clientY - mDrag.oy, window.innerHeight - 40)) + 'px';
+            });
+            document.addEventListener('mouseup', function() { mDrag.active = false; });
+        }
+
+        // Label type change
+        if (ltSelect) {
+            ltSelect.addEventListener('change', function() {
+                loadMatchingLayout(ltSelect.value);
+            });
+        }
+
+        // Save matching data to the layout
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function() {
+                var labelType = ltSelect ? ltSelect.value : matchingState.labelType;
+                if (!labelType) {
+                    showMessage('Please select a label type first', 'error');
+                    return;
+                }
+
+                if (!matchingState.layoutId) {
+                    showMessage('No layout loaded — cannot save matching', 'error');
+                    return;
+                }
+
+                // Save matchingMappings (0-based indices) and label type directly to layout
+                fetch('/order/api/jsonl/save-layout-matching', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        layout_id: matchingState.layoutId,
+                        matchingMappings: matchingState.mappings,
+                        matchingLabelType: labelType
+                    })
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        showMessage('Matching saved (' + Object.keys(matchingState.mappings).length + ' fields mapped)', 'success');
+                    } else {
+                        showMessage(data.error || 'Failed to save', 'error');
+                    }
+                })
+                .catch(function(err) {
+                    showMessage('Error saving: ' + err.message, 'error');
+                });
+            });
+        }
+
+        // Reset
+        if (resetBtn) {
+            resetBtn.addEventListener('click', function() {
+                if (!confirm('Clear all matching mappings?')) return;
+                matchingState.mappings = {};
+                if (ltSelect) ltSelect.value = '';
+                renderMatchingOverlays(matchingState.overlays);
+                renderMatchingFields([]);
+            });
+        }
+    }
 
     // ─── Preview Popup ───
     var PT_TO_MM = 25.4 / 72;

@@ -372,3 +372,40 @@ def api_preview_layout(label_type):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@order_bp.route('/api/jsonl/save-layout-matching', methods=['POST'])
+def api_save_layout_matching():
+    """Save matchingMappings and matchingLabelType back to the layout"""
+    try:
+        data = request.get_json()
+        layout_id = data.get('layout_id')
+        matching_mappings = data.get('matchingMappings', {})
+        matching_label_type = data.get('matchingLabelType', '')
+
+        if not layout_id:
+            return jsonify({'success': False, 'error': 'layout_id is required'}), 400
+
+        # Read current layout data
+        row = execute_query(
+            "SELECT data FROM layouts WHERE id = ?",
+            (layout_id,), fetch_all=False
+        )
+        if not row or not row['data']:
+            return jsonify({'success': False, 'error': 'Layout not found'}), 404
+
+        layout_data = json.loads(row['data']) if isinstance(row['data'], str) else row['data']
+        layout_data['matchingMappings'] = matching_mappings
+        layout_data['matchingLabelType'] = matching_label_type
+
+        # Write back
+        execute_query(
+            "UPDATE layouts SET data = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (json.dumps(layout_data), layout_id)
+        )
+
+        return jsonify({'success': True})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500

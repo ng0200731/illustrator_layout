@@ -626,7 +626,18 @@ function jSetupMatchingJSON() {
     // Render the draggable field cards
     function renderFieldCards() {
         var selectedType = labelTypeSelect.value;
-        if (!selectedType || !fieldMappings[selectedType]) {
+        // Resolve field defs: try exact match, then prefix match
+        var resolvedFields = fieldMappings[selectedType];
+        if (!resolvedFields) {
+            var knownTypes = Object.keys(fieldMappings);
+            for (var t = 0; t < knownTypes.length; t++) {
+                if (selectedType.startsWith(knownTypes[t]) || knownTypes[t].startsWith(selectedType)) {
+                    resolvedFields = fieldMappings[knownTypes[t]];
+                    break;
+                }
+            }
+        }
+        if (!selectedType || !resolvedFields) {
             // Show dropzone, hide fields
             dropzone.style.display = 'flex';
             fieldsContainer.style.display = 'none';
