@@ -142,16 +142,16 @@
             html += '<thead><tr>';
 
             if (labelType === 'GI001BAW' || labelType === 'GI000PRO') {
-                html += '<th style="width:40px;">Preview</th>';
-                html += '<th>1 ITEM DATATQTY<br><small>StyleColor[0].ItemData[#].itemQty</small></th>';
+                html += '<th style="width:40px;"></th>';
+                html += '<th>1 ITEM DATA QTY<br><small>StyleColor[0].ItemData[#].itemQty</small></th>';
                 html += '<th>2 Code of order<br><small>LabelOrder.Id</small></th>';
                 html += '<th>3 FAM CODE<br><small>StyleColor[0].ProductTypeCodeLegacy</small></th>';
                 html += '<th>4.0 FAM LINE DESCRIPTION<br><small>StyleColor[0].Line</small></th>';
                 html += '<th>4.1 FAM LINE DESCRIPTION<br><small>StyleColor[0].Age</small></th>';
                 html += '<th>4.2 FAM LINE DESCRIPTION<br><small>StyleColor[0].Gender</small></th>';
-                html += '<th>5.1 Reference number (First 4)<br><small>StyleColor[0].ReferenceID (first 4)</small></th>';
-                html += '<th>5.2 Reference number (Last 4)<br><small>StyleColor[0].ReferenceID (last 4)</small></th>';
-                html += '<th>6 The colour of the garment<br><small>StyleColor[0].MangoColorCode + ":" + StyleColor[0].Color</small></th>';
+                html += '<th>5.1 Reference number (first 4)<br><small>StyleColor[0].ReferenceID (first 4)</small></th>';
+                html += '<th>5.2 Reference number (last 4)<br><small>StyleColor[0].ReferenceID (last 4)</small></th>';
+                html += '<th>6 Colour of garment<br><small>StyleColor[0].MangoColorCode + ":" + StyleColor[0].Color</small></th>';
                 html += '<th>7 Size: EUR<br><small>StyleColor[0].ItemData[#].SizeNameES</small></th>';
                 html += '<th>8 Family+Generic+code design text<br><small>StyleColor[0].ProductType + StyleColor[0].ProductTypeCodeLegacy + StyleColor[0].Generic</small></th>';
             } else if (labelType === 'ADHEDIST') {
