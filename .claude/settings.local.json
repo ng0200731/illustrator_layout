@@ -17,7 +17,10 @@
       "Bash(grep -n \"var jLoadedFonts\\\\|var loadedFonts\" /d/project/illustrator-layout/static/js/*.js)",
       "Skill(ralph-loop:ralph-loop)",
       "Bash(git commit:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(curl -s http://localhost:5000/)",
+      "Bash(curl -s http://localhost:5000/layout/list)",
+      "Bash(curl -s http://localhost:5001/layout/list)"
     ]
   }
 }

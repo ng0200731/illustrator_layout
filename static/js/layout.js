@@ -2,6 +2,12 @@
 
 // Load and display all layouts
 function loadLayouts() {
+    const refreshBtn = document.querySelector('button[onclick="loadLayouts()"]');
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Loading...';
+    }
+
     fetch('/layout/list')
         .then(response => response.json())
         .then(data => {
@@ -13,6 +19,12 @@ function loadLayouts() {
         })
         .catch(error => {
             showLayoutMessage('Error loading layouts: ' + error, 'error');
+        })
+        .finally(() => {
+            if (refreshBtn) {
+                refreshBtn.disabled = false;
+                refreshBtn.textContent = 'Refresh List';
+            }
         });
 }
 

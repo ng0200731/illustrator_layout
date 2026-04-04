@@ -1705,8 +1705,17 @@ function resetViewport() {
 }
 
 function jResetToInitialState() {
-    if (!jState || !jState._initialSnapshot) return;
+    console.log('jResetToInitialState called');
+    console.log('jState:', jState);
+    console.log('jState._initialSnapshot:', jState ? jState._initialSnapshot : 'no jState');
+
+    if (!jState || !jState._initialSnapshot) {
+        alert('No initial state available. Please load a JSON file first.');
+        return;
+    }
+
     if (!confirm('Reset to initial state? All changes will be lost.')) return;
+
     var snap = JSON.parse(JSON.stringify(jState._initialSnapshot));
     jState.documentTree = snap.documentTree;
     jState.docWidth = snap.docWidth;
@@ -5373,6 +5382,18 @@ function jLoadLayoutFromDatabase(layoutId) {
         jState.historyStack = [];
         jState.historyIndex = -1;
         jCaptureState();
+
+        // Store initial snapshot for reset
+        jState._initialSnapshot = JSON.parse(JSON.stringify({
+            documentTree: jState.documentTree,
+            docWidth: jState.docWidth,
+            docHeight: jState.docHeight,
+            docMetadata: jState.docMetadata,
+            docSwatches: jState.docSwatches,
+            overlays: jState.overlays,
+            edges: jState.edges,
+            boundsRects: jState.boundsRects
+        }));
 
         // Fetch customer name
         if (layout.customer_id) {

@@ -36,12 +36,24 @@
     <script>
         // Load layout.js and then call loadLayouts
         (function() {
+            // Check if script already loaded
+            if (typeof loadLayouts === 'function') {
+                loadLayouts();
+                return;
+            }
+
             var script = document.createElement('script');
             script.src = "{{ url_for('static', filename='js/layout.js') }}";
             script.onload = function() {
+                console.log('layout.js loaded');
                 if (typeof loadLayouts === 'function') {
                     loadLayouts();
+                } else {
+                    console.error('loadLayouts function not found after script load');
                 }
+            };
+            script.onerror = function() {
+                console.error('Failed to load layout.js');
             };
             document.body.appendChild(script);
         })();
