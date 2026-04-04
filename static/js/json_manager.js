@@ -358,76 +358,273 @@ function jSetupMatchingJSON() {
 
     var labelTypeSelect = tabPane.querySelector('#matching-label-type');
     var fieldsContainer = tabPane.querySelector('#matching-fields-container');
+    var overlayList = tabPane.querySelector('#matching-overlay-list');
     var saveBtn = tabPane.querySelector('#btn-save-matching');
+    var exportBtn = tabPane.querySelector('#btn-export-matching-excel');
 
-    if (!labelTypeSelect || !fieldsContainer || !saveBtn) return;
+    if (!labelTypeSelect || !fieldsContainer || !overlayList || !saveBtn || !exportBtn) return;
+
+    if (!jState.matchingMappings) jState.matchingMappings = {};
 
     var fieldMappings = {
         'GI001BAW': [
-            { id: 1, label: 'ITEM DATA QTY', path: 'StyleColor[0].ItemData[#].itemQty' },
-            { id: 2, label: 'Code of order', path: 'LabelOrder.Id' },
-            { id: 3, label: 'FAM CODE', path: 'StyleColor[0].ProductTypeCodeLegacy' },
-            { id: 4.0, label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Line' },
-            { id: 4.1, label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Age' },
-            { id: 4.2, label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Gender' },
-            { id: 5.1, label: 'Reference number (first 4)', path: 'StyleColor[0].ReferenceID (first 4)' },
-            { id: 5.2, label: 'Reference number (last 4)', path: 'StyleColor[0].ReferenceID (last 4)' },
-            { id: 6, label: 'Colour of garment', path: 'StyleColor[0].MangoColorCode + ":" + StyleColor[0].Color', concat: true },
-            { id: 7, label: 'Size: EUR', path: 'StyleColor[0].ItemData[#].SizeNameES' },
-            { id: 8, label: 'Family+Generic+code design text', path: 'StyleColor[0].ProductType + StyleColor[0].ProductTypeCodeLegacy + StyleColor[0].Generic', concat: true }
+            { id: '1', label: 'ITEM DATA QTY', path: 'StyleColor[0].ItemData[#].itemQty' },
+            { id: '2', label: 'Code of order', path: 'LabelOrder.Id' },
+            { id: '3', label: 'FAM CODE', path: 'StyleColor[0].ProductTypeCodeLegacy' },
+            { id: '4.0', label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Line' },
+            { id: '4.1', label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Age' },
+            { id: '4.2', label: 'FAM LINE DESCRIPTION', path: 'StyleColor[0].Gender' },
+            { id: '5.1', label: 'Reference number (first 4)', path: 'StyleColor[0].ReferenceID (first 4)' },
+            { id: '5.2', label: 'Reference number (last 4)', path: 'StyleColor[0].ReferenceID (last 4)' },
+            { id: '6', label: 'Colour of garment', path: 'StyleColor[0].MangoColorCode + ":" + StyleColor[0].Color', concat: true },
+            { id: '7', label: 'Size: EUR', path: 'StyleColor[0].ItemData[#].SizeNameES' },
+            { id: '8', label: 'Family+Generic+code design text', path: 'StyleColor[0].ProductType + StyleColor[0].ProductTypeCodeLegacy + StyleColor[0].Generic', concat: true }
         ]
     };
 
-    labelTypeSelect.addEventListener('change', function() {
+    // Get label for an overlay (matches jRenderOverlayList format)
+    function getOverlayLabel(ov) {
+        var labelMap = {
+            'textregion': 'Text: "' + (ov.content || '').substring(0, 15) + '"',
+            'imageregion': 'Image',
+            'qrcoderegion': 'QR: ' + (ov.qrData || '').substring(0, 10),
+            'barcoderegion': 'Barcode: ' + (ov.barcodeData || '').substring(0, 10),
+            'translationregion': 'Translation'
+        };
+        return labelMap[ov.type] || ov.type;
+    }
+
+    // Render the overlay drop zone list
+    function renderOverlayDropZones() {
+        if (!jState.overlays || jState.overlays.length === 0) {
+            overlayList.innerHTML = '<div style="font-size: 10px; color: #999; padding: 6px;">No overlays yet</div>';
+            return;
+        }
+        var html = '';
+        jState.overlays.forEach(function(ov, idx) {
+            var mappedField = null;
+            for (var fid in jState.matchingMappings) {
+                if (jState.matchingMappings[fid] === idx) mappedField = fid;
+            }
+            var mappedLabel = '';
+            if (mappedField) {
+                var fields = fieldMappings[labelTypeSelect.value];
+                if (fields) {
+                    var mf = fields.find(function(f) { return f.id === mappedField; });
+                    if (mf) mappedLabel = ' <span style="color:#000;font-weight:bold;">← ' + mf.id + '. ' + mf.label + '</span>';
+                }
+            }
+
+            html += '<div class="matching-drop-zone" data-overlay-idx="' + idx + '" ';
+            html += 'style="padding:4px 6px;font-size:11px;border:1px solid #ddd;border-radius:3px;margin-bottom:3px;cursor:default;display:flex;justify-content:space-between;align-items:center;transition:background 0.15s,border-color 0.15s;">';
+            html += '<span>#' + String(idx + 1).padStart(2, '0') + ' ' + getOverlayLabel(ov) + '</span>';
+            html += '<span style="font-size:9px;color:#666;">' + (mappedLabel || '<span style="color:#bbb;">drop here</span>') + '</span>';
+            html += '</div>';
+        });
+        overlayList.innerHTML = html;
+
+        // Attach dragover/drop/dragleave to each drop zone
+        overlayList.querySelectorAll('.matching-drop-zone').forEach(function(zone) {
+            zone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'link';
+                zone.style.background = '#e0e0e0';
+                zone.style.borderColor = '#000';
+            });
+            zone.addEventListener('dragleave', function() {
+                zone.style.background = '';
+                zone.style.borderColor = '#ddd';
+            });
+            zone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                zone.style.background = '';
+                zone.style.borderColor = '#ddd';
+                var fieldId = e.dataTransfer.getData('text/plain');
+                var overlayIdx = parseInt(zone.dataset.overlayIdx);
+                if (fieldId && !isNaN(overlayIdx)) {
+                    jState.matchingMappings[fieldId] = overlayIdx;
+                    renderOverlayDropZones();
+                    renderFieldCards();
+                }
+            });
+        });
+    }
+
+    // Render the draggable field cards
+    function renderFieldCards() {
         var selectedType = labelTypeSelect.value;
         if (!selectedType || !fieldMappings[selectedType]) {
             fieldsContainer.innerHTML = '<div class="empty-message">Select a label type</div>';
             saveBtn.disabled = true;
+            exportBtn.disabled = true;
             return;
         }
 
         var fields = fieldMappings[selectedType];
         var html = '';
         fields.forEach(function(field) {
-            var overlayOptions = '<option value="">Select overlay...</option>';
-            if (jState && jState.overlays) {
-                jState.overlays.forEach(function(overlay, idx) {
-                    var name = overlay.name || 'Overlay ' + (idx + 1);
-                    overlayOptions += '<option value="' + idx + '">' + name + '</option>';
-                });
+            var mappedIdx = jState.matchingMappings[field.id];
+            var mappedLabel = '';
+            if (mappedIdx !== undefined && jState.overlays[mappedIdx]) {
+                var ov = jState.overlays[mappedIdx];
+                mappedLabel = '<span style="font-size:9px;color:#000;background:#e0e0e0;padding:1px 4px;border-radius:2px;">→ #' + String(mappedIdx + 1).padStart(2, '0') + ' ' + getOverlayLabel(ov) + '</span>';
             }
 
-            var inputHtml = '';
+            html += '<div class="matching-field-card" draggable="true" data-field-id="' + field.id + '" ';
+            html += 'style="padding:6px 8px;background:#f5f5f5;border:1px solid #ddd;border-radius:4px;margin-bottom:6px;cursor:grab;transition:border-color 0.15s;">';
+            html += '<div style="display:flex;justify-content:space-between;align-items:start;">';
+            html += '<div>';
+            html += '<span style="font-size:11px;font-weight:bold;">' + field.id + '.</span> ';
+            html += '<span style="font-size:11px;">' + field.label + '</span>';
             if (field.concat) {
-                inputHtml = '<div style="font-size: 10px; color: #666; margin-top: 2px;">Multiple inputs required</div>';
+                html += ' <span style="font-size:9px;background:#333;color:#fff;padding:1px 4px;border-radius:2px;">MULTI</span>';
             }
-
-            html += '<div style="margin-bottom: 12px; padding: 8px; background: #f5f5f5; border-radius: 4px;">';
-            html += '<div style="font-size: 11px; font-weight: bold; margin-bottom: 4px;">' + field.id + '. ' + field.label + '</div>';
-            html += '<div style="font-size: 10px; color: #666; margin-bottom: 4px;">' + field.path + '</div>';
-            html += '<select class="field-overlay-select" data-field-id="' + field.id + '" style="width: 100%; padding: 4px; font-size: 11px;">' + overlayOptions + '</select>';
-            html += inputHtml;
+            html += '</div>';
+            html += '</div>';
+            html += '<div style="font-size:9px;color:#888;margin-top:2px;">' + field.path + '</div>';
+            if (mappedLabel) {
+                html += '<div style="margin-top:3px;">' + mappedLabel + '</div>';
+            }
             html += '</div>';
         });
-
         fieldsContainer.innerHTML = html;
         saveBtn.disabled = false;
+        exportBtn.disabled = false;
+
+        // Attach dragstart to field cards
+        fieldsContainer.querySelectorAll('.matching-field-card').forEach(function(card) {
+            card.addEventListener('dragstart', function(e) {
+                e.dataTransfer.setData('text/plain', card.dataset.fieldId);
+                e.dataTransfer.effectAllowed = 'link';
+                card.style.opacity = '0.5';
+            });
+            card.addEventListener('dragend', function() {
+                card.style.opacity = '1';
+            });
+        });
+    }
+
+    // Refresh everything when overlays change
+    window._jRefreshMatchingPanel = function() {
+        renderOverlayDropZones();
+        renderFieldCards();
+    };
+
+    labelTypeSelect.addEventListener('change', function() {
+        renderOverlayDropZones();
+        renderFieldCards();
     });
 
-    saveBtn.addEventListener('click', function() {
-        var mappings = [];
-        fieldsContainer.querySelectorAll('.field-overlay-select').forEach(function(select) {
-            if (select.value) {
-                mappings.push({
-                    fieldId: select.dataset.fieldId,
-                    overlayIdx: parseInt(select.value)
-                });
+    // Import Excel — read field definitions from uploaded .xlsx
+    var importInput = tabPane.querySelector('#matching-excel-import');
+    if (importInput) {
+        importInput.addEventListener('change', function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            e.target.value = '';
+
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                try {
+                    var data = new Uint8Array(ev.target.result);
+                    var wb = XLSX.read(data, { type: 'array' });
+                    var sheetName = wb.SheetNames[0];
+                    var ws = wb.Sheets[sheetName];
+                    var rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+                    if (rows.length < 2) {
+                        alert('Excel file is empty or has no data rows');
+                        return;
+                    }
+
+                    // Expected columns: Field # | Label | JSON Path | Overlay (optional) | Concat (optional)
+                    // First row is header
+                    var typeFields = [];
+                    for (var r = 1; r < rows.length; r++) {
+                        var row = rows[r];
+                        if (!row || !row[0]) continue;
+                        typeFields.push({
+                            id: String(row[0]),
+                            label: String(row[1] || ''),
+                            path: String(row[2] || ''),
+                            concat: (String(row[4] || '').toLowerCase() === 'yes')
+                        });
+                    }
+
+                    if (typeFields.length === 0) {
+                        alert('No field definitions found in Excel');
+                        return;
+                    }
+
+                    // Create a new label type entry from filename (without extension)
+                    var typeName = file.name.replace(/\.(xlsx|xls)$/i, '');
+                    fieldMappings[typeName] = typeFields;
+
+                    // Add option to dropdown if not exists
+                    var exists = false;
+                    for (var i = 0; i < labelTypeSelect.options.length; i++) {
+                        if (labelTypeSelect.options[i].value === typeName) { exists = true; break; }
+                    }
+                    if (!exists) {
+                        var opt = document.createElement('option');
+                        opt.value = typeName;
+                        opt.textContent = typeName + ' (imported)';
+                        labelTypeSelect.appendChild(opt);
+                    }
+
+                    // Auto-select the new type
+                    labelTypeSelect.value = typeName;
+                    renderOverlayDropZones();
+                    renderFieldCards();
+
+                    alert('Imported ' + typeFields.length + ' fields from "' + typeName + '"');
+                } catch (err) {
+                    alert('Error reading Excel: ' + err.message);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    // Export Excel
+    exportBtn.addEventListener('click', function() {
+        var selectedType = labelTypeSelect.value;
+        if (!selectedType || !fieldMappings[selectedType]) return;
+
+        var fields = fieldMappings[selectedType];
+        var rows = [['Field #', 'Label', 'JSON Path', 'Overlay', 'Concat']];
+        fields.forEach(function(field) {
+            var mappedIdx = jState.matchingMappings[field.id];
+            var overlayLabel = '';
+            if (mappedIdx !== undefined && jState.overlays[mappedIdx]) {
+                overlayLabel = '#' + String(mappedIdx + 1).padStart(2, '0') + ' ' + getOverlayLabel(jState.overlays[mappedIdx]);
             }
+            rows.push([
+                field.id,
+                field.label,
+                field.path,
+                overlayLabel,
+                field.concat ? 'Yes' : 'No'
+            ]);
         });
 
-        console.log('Saved mappings:', mappings);
-        alert('Mappings saved: ' + mappings.length + ' fields mapped');
+        var wb = XLSX.utils.book_new();
+        var ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{ wch: 8 }, { wch: 30 }, { wch: 55 }, { wch: 25 }, { wch: 6 }];
+        XLSX.utils.book_append_sheet(wb, ws, 'Matching');
+        XLSX.writeFile(wb, selectedType + '_matching.xlsx');
     });
+
+    // Save mappings to jState
+    saveBtn.addEventListener('click', function() {
+        jState.matchingLabelType = labelTypeSelect.value;
+        jCaptureState();
+        alert('Mappings saved (' + Object.keys(jState.matchingMappings).length + ' fields mapped)');
+    });
+
+    // Initial render
+    renderOverlayDropZones();
+    renderFieldCards();
 }
 
 // __CONTINUE_HERE_3__
@@ -3982,6 +4179,11 @@ function jRenderOverlayList() {
     var countEl = _jel('overlay-count');
     if (countEl) countEl.textContent = '(' + jState.overlays.length + ' items)';
 
+    // Refresh matching panel overlay drop zones
+    if (typeof window._jRefreshMatchingPanel === 'function') {
+        window._jRefreshMatchingPanel();
+    }
+
     if (jState.overlays.length === 0) {
         list.innerHTML = '<div class="empty-message">No overlays added</div>';
         return;
@@ -5205,6 +5407,8 @@ function saveLayoutToDatabase() {
                     scale: jState.scale,
                     edges: jState.edges,
                     boundsRectRotations: (jState.boundsRects || []).map(function(br) { return br._rotation || 0; }),
+                    matchingMappings: jState.matchingMappings || {},
+                    matchingLabelType: jState.matchingLabelType || '',
                     components: jState.overlays.map(function(ov, idx) {
                         return {
                             type: ov.type,
@@ -5321,6 +5525,8 @@ function jLoadLayoutFromDatabase(layoutId) {
         jState.docHeight = data.docHeight || 0;
         jState.scale = data.scale || 1;
         jState.edges = data.edges || [];
+        jState.matchingMappings = data.matchingMappings || {};
+        jState.matchingLabelType = data.matchingLabelType || '';
         jState.currentLayoutId = layout.id;
         jState.currentLayoutName = layout.name;
         jState.currentCustomerId = layout.customer_id;
@@ -5410,6 +5616,15 @@ function jLoadLayoutFromDatabase(layoutId) {
         jRenderLayerTree();
         jRenderOverlayList();
         jRenderEdgeList();
+
+        // Restore matching label type dropdown
+        if (jState.matchingLabelType) {
+            var ltSelect = _jel('matching-label-type');
+            if (ltSelect) ltSelect.value = jState.matchingLabelType;
+        }
+        if (typeof window._jRefreshMatchingPanel === 'function') {
+            window._jRefreshMatchingPanel();
+        }
 
         // Load translation data for all translation regions
         jLoadAllTranslationData();
@@ -5512,7 +5727,9 @@ function jExportJson() {
         docHeight: jState.docHeight,
         scale: jState.scale,
         edges: jState.edges,
-        boundsRectRotations: (jState.boundsRects || []).map(function(br) { return br._rotation || 0; })
+        boundsRectRotations: (jState.boundsRects || []).map(function(br) { return br._rotation || 0; }),
+        matchingMappings: jState.matchingMappings || {},
+        matchingLabelType: jState.matchingLabelType || ''
     };
 
     var jsonStr = JSON.stringify(exportData, null, 2);
@@ -5539,6 +5756,8 @@ function jLoadLayoutFromExport(data) {
     jState.docHeight = data.docHeight || 0;
     jState.scale = data.scale || 1;
     jState.edges = data.edges || [];
+    jState.matchingMappings = data.matchingMappings || {};
+    jState.matchingLabelType = data.matchingLabelType || '';
     jState.selectedOverlayIdx = -1;
     jState.selectedTreePath = null;
     jState.selectedTreePaths = {};

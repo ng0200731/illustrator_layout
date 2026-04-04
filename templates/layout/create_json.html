@@ -262,11 +262,31 @@
                             <option value="PVP002XG">PVP002XG</option>
                         </select>
                     </div>
-                    <div id="matching-fields-container" style="max-height: 400px; overflow-y: auto;">
+
+                    <!-- Overlay list for drop targets -->
+                    <div style="margin-bottom: 8px;">
+                        <label style="font-size: 11px; display: block; margin-bottom: 4px; color: #666;">Overlays (drop zone):</label>
+                        <div id="matching-overlay-list" style="max-height: 120px; overflow-y: auto; border: 1px solid #ddd; border-radius: 4px; padding: 4px;">
+                            <div class="empty-message" style="font-size: 10px; color: #999;">No overlays yet</div>
+                        </div>
+                    </div>
+
+                    <!-- Draggable field cards -->
+                    <div id="matching-fields-container" style="max-height: 300px; overflow-y: auto;">
                         <div class="empty-message">Select a label type</div>
                     </div>
-                    <div style="margin-top: 8px;">
-                        <button id="btn-save-matching" style="width: 100%; padding: 6px; font-size: 11px;" disabled>Save Mappings</button>
+
+                    <div style="margin-top: 8px; display: flex; gap: 6px;">
+                        <button id="btn-save-matching" style="flex:1; padding: 6px; font-size: 11px;" disabled>Save</button>
+                        <button id="btn-export-matching-excel" style="flex:1; padding: 6px; font-size: 11px;" disabled>Export Excel</button>
+                    </div>
+                    <div style="margin-top: 6px;">
+                        <label style="display:block;padding:6px;border:1px dashed #999;border-radius:4px;text-align:center;font-size:11px;cursor:pointer;color:#666;transition:border-color 0.2s,color 0.2s;"
+                               onmouseover="this.style.borderColor='#000';this.style.color='#000'"
+                               onmouseout="this.style.borderColor='#999';this.style.color='#666'">
+                            Import Excel Mappings
+                            <input type="file" id="matching-excel-import" accept=".xlsx,.xls" style="display:none;">
+                        </label>
                     </div>
                 </div>
             </div>
@@ -307,6 +327,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script>
         document.addEventListener('dragover', function(e) { e.preventDefault(); }, false);
         document.addEventListener('drop', function(e) { e.preventDefault(); }, false);
