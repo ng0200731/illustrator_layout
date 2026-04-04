@@ -412,3 +412,163 @@ def format_pvp002xg_rows(label_entry, style_color, order_id, item_data_list, sup
         })
 
     return rows
+
+
+def parse_with_custom_fields(file_content, custom_fields, target_label_type):
+    """
+    Re-parse a JSON file using custom field definitions for a specific label type.
+    Other label types are parsed normally.
+
+    Args:
+        file_content: String content of the JSON/JSONL file
+        custom_fields: List of dicts with keys: id, label, path, concat
+        target_label_type: The label type to apply custom fields to
+
+    Returns:
+        dict with 'success', 'rows'
+    """
+    import re
+
+    def resolve_path(obj, path_str):
+        """Resolve a JSON path like 'StyleColor[0].ItemData[#].itemQty' against an object."""
+        if not path_str:
+            return ''
+
+        # Handle special path modifiers: (first N) and (last N)
+        first_match = re.match(r'(.+?)\s*\(first\s+(\d+)\)\s*$', path_str)
+        last_match = re.match(r'(.+?)\s*\(last\s+(\d+)\)\s*$', path_str)
+        if first_match:
+            base_val = resolve_single_path(obj, first_match.group(1))
+            n = int(first_match.group(2))
+            return str(base_val)[:n] if base_val else ''
+        if last_match:
+            base_val = resolve_single_path(obj, last_match.group(1))
+            n = int(last_match.group(2))
+            return str(base_val)[-n:] if base_val else ''
+
+        # Handle concatenation paths (joined with ' + ":" + ' or just ' + ')
+        if ' + ' in path_str:
+            parts_raw = path_str.split(' + ')
+            values = []
+            for part in parts_raw:
+                part = part.strip()
+                if (part.startswith('"') and part.endswith('"')) or (part.startswith("'") and part.endswith("'")):
+                    values.append(part[1:-1])
+                else:
+                    val = resolve_single_path(obj, part)
+                    values.append(str(val) if val else '')
+            return ''.join(values)
+
+        return resolve_single_path(obj, path_str) or ''
+
+    def resolve_single_path(obj, path_str):
+        """Resolve a single dot-notation path with array indices."""
+        tokens = re.findall(r'(\w+)(?:\[(\d+|#)\])?', path_str)
+        current = obj
+
+        for name, idx in tokens:
+            if current is None:
+                return ''
+            if isinstance(current, dict):
+                current = current.get(name)
+            elif isinstance(current, list):
+                results = []
+                for item in current:
+                    if isinstance(item, dict):
+                        results.append(item.get(name))
+                current = results
+                continue
+
+            if idx:
+                if idx == '#':
+                    if isinstance(current, list):
+                        results = []
+                        for item in current:
+                            if item is not None:
+                                results.append(str(item))
+                        current = results
+                        continue
+                else:
+                    i = int(idx)
+                    if isinstance(current, list) and i < len(current):
+                        current = current[i]
+                    else:
+                        return ''
+
+        if isinstance(current, list):
+            return ', '.join(str(v) for v in current if v is not None)
+        return current
+
+    def process_with_custom_fields(json_obj, fields, label_type):
+        """Process a JSON object extracting values using custom field paths."""
+        rows = []
+
+        label_order = json_obj.get('LabelOrder', {})
+        order_id = label_order.get('Id', '')
+        supplier = json_obj.get('Supplier', {})
+        supplier_code = supplier.get('SupplierCode', '')
+        style_colors = json_obj.get('StyleColor', [])
+
+        for style_color in style_colors:
+            label_data_list = style_color.get('LabelData', [])
+            item_data_list = style_color.get('ItemData', [])
+
+            if not label_data_list:
+                continue
+
+            for label_entry in label_data_list:
+                label_id = label_entry.get('LabelID', '')
+
+                if label_id != label_type:
+                    continue
+
+                if not item_data_list:
+                    row = {'label_type': label_id, 'label_id': label_id}
+                    for field in fields:
+                        row[field['id']] = resolve_path(json_obj, field['path'])
+                    rows.append(row)
+                else:
+                    for item in item_data_list:
+                        row = {'label_type': label_id, 'label_id': label_id}
+
+                        for field in fields:
+                            val = resolve_path(json_obj, field['path'])
+                            if not val:
+                                val = resolve_path(style_color, field['path'].replace('StyleColor[0].', ''))
+                            if not val and 'ItemData' in field['path']:
+                                val = resolve_path(item, field['path'].replace('StyleColor[0].ItemData[#].', ''))
+                            row[field['id']] = str(val) if val else ''
+
+                        rows.append(row)
+
+        return rows
+
+    try:
+        try:
+            json_data = json.loads(file_content)
+        except json.JSONDecodeError:
+            lines = file_content.strip().split('\n')
+            json_data = []
+            for line in lines:
+                if line.strip():
+                    json_data.append(json.loads(line))
+            if not isinstance(json_data, list):
+                json_data = [json_data]
+
+        if not isinstance(json_data, list):
+            json_data = [json_data]
+
+        rows = []
+        for item in json_data:
+            normal_rows = process_json_object(item)
+            for row in normal_rows:
+                if row.get('label_type') != target_label_type:
+                    rows.append(row)
+
+            custom_rows = process_with_custom_fields(item, custom_fields, target_label_type)
+            rows.extend(custom_rows)
+
+        return {'success': True, 'rows': rows}
+
+    except Exception as e:
+        return {'success': False, 'error': f'Error re-parsing file: {str(e)}'}

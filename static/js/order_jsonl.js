@@ -5,6 +5,10 @@
 (function() {
     'use strict';
 
+    // State: store original file for re-parsing
+    var _originalFile = null;
+    var _customFields = {}; // labelType -> [{id, label, path, concat}]
+
     // Initialize when DOM is ready
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
@@ -79,6 +83,9 @@
             return;
         }
 
+        // Store original file for re-parsing
+        _originalFile = file;
+
         // Show loading message
         showMessage('Uploading and parsing file...', 'info');
 
@@ -134,15 +141,30 @@
         Object.keys(groupedRows).forEach(function(labelType) {
             const labelRows = groupedRows[labelType];
 
-            html += '<div class="label-type-section">';
-            html += '<h3 class="label-type-header" onclick="toggleLabelSection(this)">';
+            html += '<div class="label-type-section" data-label-type="' + labelType + '">';
+            html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">';
+            html += '<h3 class="label-type-header" style="margin:0;cursor:pointer;" onclick="toggleLabelSection(this)">';
             html += '<span class="toggle-icon">▼</span> ' + labelType + ' (' + labelRows.length + ' rows)';
             html += '</h3>';
+            // Update Headers button with Excel drop support
+            html += '<label class="update-headers-btn" data-label-type="' + labelType + '" ';
+            html += 'style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;font-size:11px;border:1px solid #999;border-radius:4px;cursor:pointer;transition:border-color 0.2s,color 0.2s;" ';
+            html += 'title="Drag Excel file here or click to browse">';
+            html += 'Update Headers';
+            html += '<input type="file" accept=".xlsx,.xls" style="display:none;" class="update-headers-file-input">';
+            html += '</label>';
+            html += '</div>';
             html += '<div class="label-type-content">';
             html += '<table class="data-table">';
             html += '<thead><tr>';
 
-            if (labelType === 'GI001BAW' || labelType === 'GI000PRO') {
+            // Use custom fields if available, otherwise default headers
+            if (_customFields[labelType]) {
+                html += '<th style="width:40px;"></th>';
+                _customFields[labelType].forEach(function(field) {
+                    html += '<th>' + escapeHtml(field.id + ' ' + field.label) + '<br><small>' + escapeHtml(field.path) + '</small></th>';
+                });
+            } else if (labelType === 'GI001BAW' || labelType === 'GI000PRO') {
                 html += '<th style="width:40px;"></th>';
                 html += '<th>1 ITEM DATA QTY<br><small>StyleColor[0].ItemData[#].itemQty</small></th>';
                 html += '<th>2 Code of order<br><small>LabelOrder.Id</small></th>';
@@ -202,7 +224,12 @@
             labelRows.forEach(function(row, rowIdx) {
                 html += '<tr>';
 
-                if (labelType === 'GI001BAW' || labelType === 'GI000PRO') {
+                if (_customFields[labelType]) {
+                    html += '<td style="text-align:center;"><button class="preview-btn" data-label-type="' + labelType + '" data-row-idx="' + rowIdx + '" title="Preview layout">👁</button></td>';
+                    _customFields[labelType].forEach(function(field) {
+                        html += '<td>' + escapeHtml(row[field.id] || '') + '</td>';
+                    });
+                } else if (labelType === 'GI001BAW' || labelType === 'GI000PRO') {
                     html += '<td style="text-align:center;"><button class="preview-btn" data-label-type="' + labelType + '" data-row-idx="' + rowIdx + '" title="Preview layout">👁</button></td>';
                     html += '<td>' + escapeHtml(row.item_qty || '') + '</td>';
                     html += '<td>' + escapeHtml(row.order_id || '') + '</td>';
@@ -267,6 +294,42 @@
         tableContainer.innerHTML = html;
         resultsSection.style.display = 'block';
 
+        // Attach events to "Update Headers" buttons
+        tableContainer.querySelectorAll('.update-headers-btn').forEach(function(btn) {
+            var fileInput = btn.querySelector('.update-headers-file-input');
+            var lt = btn.getAttribute('data-label-type');
+
+            btn.addEventListener('click', function(e) {
+                if (e.target === fileInput) return;
+                fileInput.click();
+            });
+
+            fileInput.addEventListener('change', function(e) {
+                if (e.target.files[0]) handleUpdateHeadersExcel(e.target.files[0], lt);
+                e.target.value = '';
+            });
+
+            btn.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+                btn.style.borderColor = '#000';
+                btn.style.background = '#f0f0f0';
+            });
+            btn.addEventListener('dragleave', function() {
+                btn.style.borderColor = '#999';
+                btn.style.background = '';
+            });
+            btn.addEventListener('drop', function(e) {
+                e.preventDefault();
+                btn.style.borderColor = '#999';
+                btn.style.background = '';
+                var file = e.dataTransfer.files[0];
+                if (file && file.name.match(/\.(xlsx|xls)$/i)) {
+                    handleUpdateHeadersExcel(file, lt);
+                }
+            });
+        });
+
         // Show "Map to Overlays" button - opens the matching JSON popup
         const mapButton = document.getElementById('btn-map-overlays');
         if (mapButton) {
@@ -277,10 +340,98 @@
         }
     }
 
+    // Handle Excel file dropped/clicked on "Update Headers" button
+    function handleUpdateHeadersExcel(file, labelType) {
+        if (typeof XLSX === 'undefined') {
+            showMessage('Excel library not loaded', 'error');
+            return;
+        }
+
+        showMessage('Parsing Excel for ' + labelType + '...', 'info');
+
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            try {
+                var data = new Uint8Array(ev.target.result);
+                var wb = XLSX.read(data, { type: 'array' });
+                var sheetName = wb.SheetNames[0];
+                var ws = wb.Sheets[sheetName];
+                var rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+                if (rows.length < 2) {
+                    showMessage('Excel file is empty', 'error');
+                    return;
+                }
+
+                var fields = [];
+                for (var r = 1; r < rows.length; r++) {
+                    var row = rows[r];
+                    if (!row || !row[0]) continue;
+                    fields.push({
+                        id: String(row[0]),
+                        label: String(row[1] || ''),
+                        path: String(row[2] || ''),
+                        concat: (String(row[4] || '').toLowerCase() === 'yes')
+                    });
+                }
+
+                if (fields.length === 0) {
+                    showMessage('No field definitions found in Excel', 'error');
+                    return;
+                }
+
+                // Store custom fields
+                _customFields[labelType] = fields;
+
+                // Re-parse the original JSON with custom fields
+                if (!_originalFile) {
+                    showMessage('No original JSON file to re-parse', 'error');
+                    return;
+                }
+
+                var formData = new FormData();
+                formData.append('file', _originalFile);
+                formData.append('custom_fields', JSON.stringify(fields));
+                formData.append('target_label_type', labelType);
+
+                showMessage('Re-parsing JSON with new headers...', 'info');
+
+                fetch('/order/api/jsonl/reparse', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        showMessage('Headers updated for ' + labelType, 'success');
+                        // Update the stored rows and re-render
+                        window._lastParsedRows = data.rows;
+                        displayResults(data.rows);
+                    } else {
+                        showMessage(data.error || 'Failed to re-parse', 'error');
+                    }
+                })
+                .catch(function(error) {
+                    showMessage('Error re-parsing: ' + error.message, 'error');
+                });
+
+            } catch (e) {
+                showMessage('Error reading Excel: ' + e.message, 'error');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
     // Toggle label section visibility
     window.toggleLabelSection = function(header) {
-        const content = header.nextElementSibling;
-        const icon = header.querySelector('.toggle-icon');
+        // Find the label-type-content div (next sibling of the header's parent row)
+        var parentRow = header.parentElement;
+        var content = parentRow.nextElementSibling;
+        if (!content || !content.classList.contains('label-type-content')) {
+            // fallback: look in the section
+            content = header.closest('.label-type-section').querySelector('.label-type-content');
+        }
+        var icon = header.querySelector('.toggle-icon');
 
         if (content.style.display === 'none') {
             content.style.display = 'block';
@@ -451,6 +602,14 @@
 
     // ─── Matching JSON Draggable Popup ───
 
+    // Get fields for a label type — custom fields take priority
+    function getFieldsForLabelType(labelType) {
+        if (_customFields[labelType] && _customFields[labelType].length > 0) {
+            return _customFields[labelType];
+        }
+        return MATCHING_FIELDS[labelType] || [];
+    }
+
     // Field definitions per label type (same as create_json page)
     var MATCHING_FIELDS = {
         'GI001BAW': [
@@ -530,7 +689,7 @@
                     matchingState.layoutId = null;
                 }
                 renderMatchingOverlays(matchingState.overlays);
-                renderMatchingFields(MATCHING_FIELDS[labelType] || []);
+                renderMatchingFields(getFieldsForLabelType(labelType));
             })
             .catch(function(err) {
                 console.error('Error loading layout:', err);
@@ -538,7 +697,7 @@
                 matchingState.mappings = {};
                 matchingState.layoutLoaded = false;
                 renderMatchingOverlays([]);
-                renderMatchingFields(MATCHING_FIELDS[labelType] || []);
+                renderMatchingFields(getFieldsForLabelType(labelType));
             });
     }
 
@@ -585,7 +744,7 @@
         });
 
         var ovToFields = getOverlayToFieldsMap();
-        var fields = MATCHING_FIELDS[matchingState.labelType] || [];
+        var fields = getFieldsForLabelType(matchingState.labelType);
         var html = '';
 
         for (var j = 0; j < uiOrder.length; j++) {
@@ -1121,8 +1280,8 @@
         // Apply row data to overlays via matching mappings
         for (var fieldId in mappings) {
             var val = mappings[fieldId];
-            var rowKey = FIELD_TO_ROW_KEY[fieldId];
-            if (!rowKey) continue;
+            // For custom fields, row key is the fieldId itself; for default fields, use the map
+            var rowKey = FIELD_TO_ROW_KEY[fieldId] || fieldId;
             var dataValue = rowData[rowKey] || '';
             var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
             for (var i = 0; i < indices.length; i++) {

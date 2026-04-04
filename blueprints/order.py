@@ -4,7 +4,7 @@ from models.database import execute_query
 import sys, os, json
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'tools'))
 from excel_order import generate_template, generate_dummy, parse_upload
-from jsonl_parser import parse_jsonl_file
+from jsonl_parser import parse_jsonl_file, parse_with_custom_fields
 
 order_bp = Blueprint('order', __name__, url_prefix='/order')
 
@@ -317,6 +317,39 @@ def api_jsonl_parse():
 
         # Parse JSONL
         result = parse_jsonl_file(file_content)
+
+        if result['success']:
+            return jsonify({'success': True, 'rows': result['rows']})
+        else:
+            return jsonify({'success': False, 'error': result['error']}), 400
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+
+
+@order_bp.route('/api/jsonl/reparse', methods=['POST'])
+def api_jsonl_reparse():
+    """Re-parse a JSON file using custom field definitions for a specific label type"""
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    if not file or file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+
+    try:
+        custom_fields_json = request.form.get('custom_fields', '[]')
+        target_label_type = request.form.get('target_label_type', '')
+
+        if not target_label_type:
+            return jsonify({'error': 'target_label_type is required'}), 400
+
+        custom_fields = json.loads(custom_fields_json)
+
+        file_content = file.read().decode('utf-8')
+        result = parse_with_custom_fields(file_content, custom_fields, target_label_type)
 
         if result['success']:
             return jsonify({'success': True, 'rows': result['rows']})
