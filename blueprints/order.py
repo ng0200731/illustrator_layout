@@ -327,3 +327,48 @@ def api_jsonl_parse():
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': f'Server error: {str(e)}'}), 500
+
+
+@order_bp.route('/api/jsonl/preview-layout/<label_type>', methods=['GET'])
+def api_preview_layout(label_type):
+    """Get layout data that matches the given label type for preview"""
+    try:
+        rows = execute_query(
+            "SELECT id, name, data FROM layouts WHERE type = 'json' ORDER BY updated_at DESC",
+            (), fetch_all=True
+        )
+
+        for r in rows:
+            if not r['data']:
+                continue
+            try:
+                layout_data = json.loads(r['data']) if isinstance(r['data'], str) else r['data']
+            except Exception:
+                continue
+
+            mlt = layout_data.get('matchingLabelType') or ''
+            # Match if matchingLabelType equals or starts with the label type
+            if mlt == label_type or mlt.startswith(label_type + '_') or mlt.startswith(label_type):
+                return jsonify({
+                    'success': True,
+                    'layout': {
+                        'id': r['id'],
+                        'name': r['name'],
+                        'overlays': layout_data.get('overlays', []),
+                        'matchingMappings': layout_data.get('matchingMappings', {}),
+                        'matchingLabelType': layout_data.get('matchingLabelType', ''),
+                        'documentTree': layout_data.get('documentTree'),
+                        'docMetadata': layout_data.get('docMetadata'),
+                        'docSwatches': layout_data.get('docSwatches', []),
+                        'docWidth': layout_data.get('docWidth', 0),
+                        'docHeight': layout_data.get('docHeight', 0),
+                        'edges': layout_data.get('edges', []),
+                        'boundsRectRotations': layout_data.get('boundsRectRotations', {})
+                    }
+                })
+
+        return jsonify({'success': False, 'error': 'No layout found for ' + label_type})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500

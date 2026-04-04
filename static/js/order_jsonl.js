@@ -14,6 +14,17 @@
 
     function init() {
         setupFileUpload();
+        setupPreviewClose();
+    }
+
+    function setupPreviewClose() {
+        var closeBtn = document.getElementById('btn-close-preview-modal');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function() {
+                var modal = document.getElementById('preview-modal');
+                if (modal) modal.style.display = 'none';
+            });
+        }
     }
 
     function setupFileUpload() {
@@ -94,6 +105,7 @@
     }
 
     function displayResults(rows) {
+        window._lastParsedRows = rows; // Store for preview
         const resultsSection = document.getElementById('jsonl-results');
         const tableContainer = document.getElementById('jsonl-table-container');
 
@@ -130,6 +142,7 @@
             html += '<thead><tr>';
 
             if (labelType === 'GI001BAW' || labelType === 'GI000PRO') {
+                html += '<th style="width:40px;">Preview</th>';
                 html += '<th>1 ITEM DATATQTY<br><small>StyleColor[0].ItemData[#].itemQty</small></th>';
                 html += '<th>2 Code of order<br><small>LabelOrder.Id</small></th>';
                 html += '<th>3 FAM CODE<br><small>StyleColor[0].ProductTypeCodeLegacy</small></th>';
@@ -185,10 +198,11 @@
             html += '</tr></thead>';
             html += '<tbody>';
 
-            labelRows.forEach(function(row) {
+            labelRows.forEach(function(row, rowIdx) {
                 html += '<tr>';
 
                 if (labelType === 'GI001BAW' || labelType === 'GI000PRO') {
+                    html += '<td style="text-align:center;"><button class="preview-btn" data-label-type="' + labelType + '" data-row-idx="' + rowIdx + '" title="Preview layout">👁</button></td>';
                     html += '<td>' + escapeHtml(row.item_qty || '') + '</td>';
                     html += '<td>' + escapeHtml(row.order_id || '') + '</td>';
                     html += '<td>' + escapeHtml(row.product_type || '') + '</td>';
@@ -433,4 +447,247 @@
             showMessage('Error saving mappings: ' + error.message, 'error');
         });
     };
+
+    // ─── Preview Popup ───
+    var PT_TO_MM = 25.4 / 72;
+    var cachedLayout = null;
+    var cachedLabelType = null;
+
+    var FIELD_TO_ROW_KEY = {
+        '1': 'item_qty',
+        '2': 'order_id',
+        '3': 'product_type',
+        '4.0': 'line',
+        '4.1': 'age',
+        '4.2': 'gender',
+        '5.1': 'ref_first_4',
+        '5.2': 'ref_last_4',
+        '6': 'color',
+        '7': 'size',
+        '8': 'full_product'
+    };
+
+    function showPreviewPopup(labelType, rowData) {
+        // Fetch or use cached layout
+        if (cachedLayout && cachedLabelType === labelType) {
+            renderPreview(cachedLayout, rowData);
+            return;
+        }
+        showMessage('Loading layout for ' + labelType + '...', 'info');
+        fetch('/order/api/jsonl/preview-layout/' + labelType)
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    cachedLayout = data.layout;
+                    cachedLabelType = labelType;
+                    renderPreview(data.layout, rowData);
+                } else {
+                    showMessage(data.error || 'No matching layout found', 'error');
+                }
+            })
+            .catch(function(err) {
+                showMessage('Error loading layout: ' + err.message, 'error');
+            });
+    }
+
+    function renderPreview(layout, rowData) {
+        var modal = document.getElementById('preview-modal');
+        var canvas = document.getElementById('preview-canvas');
+        var rowNum = document.getElementById('preview-row-num');
+        if (!modal || !canvas) return;
+
+        rowNum.textContent = rowData._rowIndex || '?';
+        modal.style.display = 'block';
+
+        var overlays = JSON.parse(JSON.stringify(layout.overlays || []));
+        var mappings = layout.matchingMappings || {};
+
+        // Apply row data to overlays via matching mappings
+        for (var fieldId in mappings) {
+            var val = mappings[fieldId];
+            var rowKey = FIELD_TO_ROW_KEY[fieldId];
+            if (!rowKey) continue;
+            var dataValue = rowData[rowKey] || '';
+            var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
+            for (var i = 0; i < indices.length; i++) {
+                if (indices[i] >= 0 && indices[i] < overlays.length) {
+                    overlays[indices[i]].content = String(dataValue);
+                }
+            }
+        }
+
+        // Render on canvas
+        var docW = (layout.docWidth || 210);
+        var docH = (layout.docHeight || 297);
+        var container = document.getElementById('preview-modal-body');
+        var maxW = Math.min(400, window.innerWidth - 100);
+        var maxH = Math.min(500, window.innerHeight - 150);
+        var scale = Math.min(maxW / docW, maxH / docH);
+        canvas.width = Math.ceil(docW * scale);
+        canvas.height = Math.ceil(docH * scale);
+        canvas.style.width = canvas.width + 'px';
+        canvas.style.height = canvas.height + 'px';
+        canvas.style.background = '#fff';
+        canvas.style.border = '1px solid #000';
+
+        var ctx = canvas.getContext('2d');
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(scale, scale);
+        ctx.clearRect(0, 0, docW, docH);
+
+        // Draw document tree (background)
+        if (layout.documentTree) {
+            drawPreviewTree(ctx, layout.documentTree, layout.docMetadata);
+        }
+
+        // Draw overlays
+        overlays.forEach(function(ov, idx) {
+            if (ov.visible === false) return;
+            var x = ov.x || 0, y = ov.y || 0, w = ov.w || 10, h = ov.h || 10;
+
+            ctx.save();
+            if (ov._rotation) {
+                var cx = x + w / 2, cy = y + h / 2;
+                ctx.translate(cx, cy);
+                ctx.rotate(ov._rotation * Math.PI / 180);
+                ctx.translate(-cx, -cy);
+            }
+
+            if (ov.type === 'textregion' && ov.content) {
+                var fsMm = (ov.fontSize || 12) * PT_TO_MM;
+                var fontStyle = '';
+                if (ov.italic) fontStyle += 'italic ';
+                if (ov.bold) fontStyle += 'bold ';
+                fontStyle += fsMm + 'px ';
+                fontStyle += "'" + (ov.fontFamily || 'Arial') + "', sans-serif";
+                ctx.font = fontStyle;
+                ctx.fillStyle = ov.color || '#000000';
+                ctx.textAlign = ov.alignH === 'center' ? 'center' : ov.alignH === 'right' ? 'right' : 'left';
+                ctx.textBaseline = 'top';
+                var ls = (ov.letterSpacing || 0) * PT_TO_MM;
+                if (ls) ctx.letterSpacing = ls + 'px';
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(x, y, w, h);
+                ctx.clip();
+                var tx = ov.alignH === 'center' ? x + w / 2 : ov.alignH === 'right' ? x + w : x + 0.5;
+                var lh = fsMm * 1.2;
+                var lines = (ov.content || '').split('\n');
+                for (var li = 0; li < lines.length; li++) {
+                    ctx.fillText(lines[li], tx, y + 0.5 + li * lh);
+                }
+                ctx.restore();
+            } else if (ov.type === 'qrcoderegion') {
+                ctx.strokeStyle = '#ccc';
+                ctx.lineWidth = 0.2;
+                ctx.strokeRect(x, y, w, h);
+                var qrSize = Math.min(w, h) * 0.85;
+                var qrX = x + (w - qrSize) / 2;
+                var qrY = y + (h - qrSize) / 2;
+                ctx.fillStyle = '#000';
+                ctx.fillRect(qrX, qrY, qrSize, qrSize);
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(qrX + qrSize * 0.1, qrY + qrSize * 0.1, qrSize * 0.8, qrSize * 0.8);
+                ctx.fillStyle = '#000';
+                ctx.font = (qrSize * 0.15) + 'px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('QR', x + w / 2, y + h / 2 + qrSize * 0.05);
+            } else if (ov.type === 'barcoderegion') {
+                ctx.strokeStyle = '#ccc';
+                ctx.lineWidth = 0.2;
+                ctx.strokeRect(x, y, w, h);
+                var barH = h * 0.6;
+                var barY = y + (h - barH) / 2;
+                ctx.fillStyle = '#000';
+                for (var bi = 0; bi < 30; bi++) {
+                    var bw = w / 60;
+                    if (bi % 3 !== 0) {
+                        ctx.fillRect(x + bi * bw * 2, barY, bw, barH);
+                    }
+                }
+            } else if (ov.type === 'imageregion') {
+                ctx.strokeStyle = '#ccc';
+                ctx.lineWidth = 0.2;
+                ctx.strokeRect(x, y, w, h);
+                ctx.fillStyle = '#f0f0f0';
+                ctx.fillRect(x, y, w, h);
+            }
+
+            ctx.restore();
+        });
+    }
+
+    function drawPreviewTree(ctx, tree, metadata) {
+        if (!tree) return;
+        tree.forEach(function(node) {
+            if (node.type === 'path' && node.pathData && node.fill && node.fill.type !== 'none') {
+                ctx.save();
+                ctx.fillStyle = node.fill.color || '#000';
+                if (node.opacity !== undefined) ctx.globalAlpha = node.opacity / 100;
+                drawPreviewPath(ctx, node.pathData, node.bounds);
+                ctx.fill();
+                ctx.restore();
+            } else if (node.type === 'text' && node.content) {
+                ctx.save();
+                if (node.opacity !== undefined) ctx.globalAlpha = node.opacity / 100;
+                var fsMm = (node.paragraphs && node.paragraphs[0] && node.paragraphs[0].runs && node.paragraphs[0].runs[0])
+                    ? node.paragraphs[0].runs[0].fontSize * PT_TO_MM : 12 * PT_TO_MM;
+                ctx.fillStyle = '#000';
+                ctx.font = fsMm + 'px Arial, sans-serif';
+                ctx.textBaseline = 'top';
+                if (node.bounds) {
+                    ctx.fillText(node.content.substring(0, 30), node.bounds.x, node.bounds.y);
+                }
+                ctx.restore();
+            }
+            if (node.children) drawPreviewTree(ctx, node.children, metadata);
+        });
+    }
+
+    function drawPreviewPath(ctx, pathData, bounds) {
+        if (!pathData || pathData.length === 0) {
+            if (bounds) {
+                ctx.beginPath();
+                ctx.rect(bounds.x, bounds.y, bounds.width, bounds.height);
+            }
+            return;
+        }
+        ctx.beginPath();
+        ctx.moveTo(pathData[0].x, pathData[0].y);
+        for (var i = 1; i < pathData.length; i++) {
+            var p = pathData[i];
+            if (p.handleIn || p.handleOut) {
+                var prev = pathData[i - 1];
+                var cpx = p.handleIn ? p.handleIn.x : p.x;
+                var cpy = p.handleIn ? p.handleIn.y : p.y;
+                ctx.quadraticCurveTo(cpx, cpy, p.x, p.y);
+            } else {
+                ctx.lineTo(p.x, p.y);
+            }
+        }
+        ctx.closePath();
+    }
+
+    // Close preview modal
+    window.closePreviewModal = function() {
+        var modal = document.getElementById('preview-modal');
+        if (modal) modal.style.display = 'none';
+    };
+
+    // Delegate click for preview buttons
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.preview-btn');
+        if (!btn) return;
+        var labelType = btn.getAttribute('data-label-type');
+        var rowIdx = parseInt(btn.getAttribute('data-row-idx'));
+        // Find the row data from the stored rows
+        if (window._lastParsedRows) {
+            var rows = window._lastParsedRows.filter(function(r) { return r.label_type === labelType; });
+            if (rows[rowIdx]) {
+                rows[rowIdx]._rowIndex = rowIdx + 1;
+                showPreviewPopup(labelType, rows[rowIdx]);
+            }
+        }
+    });
 })();
