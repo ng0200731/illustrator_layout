@@ -363,11 +363,119 @@ function jSetupMatchingJSON() {
 
     var labelTypeSelect = tabPane.querySelector('#matching-label-type');
     var fieldsContainer = tabPane.querySelector('#matching-fields-container');
+    var dropzone = tabPane.querySelector('#matching-excel-dropzone');
+    var dropInput = tabPane.querySelector('#matching-excel-drop-input');
     var overlayList = tabPane.querySelector('#matching-overlay-list');
     var saveBtn = tabPane.querySelector('#btn-save-matching');
     var exportBtn = tabPane.querySelector('#btn-export-matching-excel');
 
-    if (!labelTypeSelect || !fieldsContainer || !overlayList || !saveBtn || !exportBtn) return;
+    if (!labelTypeSelect || !fieldsContainer || !dropzone || !overlayList || !saveBtn || !exportBtn) return;
+
+    // --- Dropzone drag & drop for Excel files ---
+    if (dropzone && dropInput) {
+        dropzone.addEventListener('click', function() { dropInput.click(); });
+        dropInput.addEventListener('change', function(e) {
+            if (e.target.files[0]) handleExcelFile(e.target.files[0]);
+            e.target.value = '';
+        });
+        dropzone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+            dropzone.style.borderColor = '#000';
+            dropzone.style.background = '#f0f0f0';
+        });
+        dropzone.addEventListener('dragleave', function() {
+            dropzone.style.borderColor = '#ccc';
+            dropzone.style.background = '';
+        });
+        dropzone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            dropzone.style.borderColor = '#ccc';
+            dropzone.style.background = '';
+            var file = e.dataTransfer.files[0];
+            if (file && file.name.match(/\.(xlsx|xls)$/i)) {
+                handleExcelFile(file);
+            }
+        });
+    }
+
+    // Shared Excel file handler
+    function handleExcelFile(file) {
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            try {
+                var data = new Uint8Array(ev.target.result);
+                var wb = XLSX.read(data, { type: 'array' });
+                var sheetName = wb.SheetNames[0];
+                var ws = wb.Sheets[sheetName];
+                var rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+                if (rows.length < 2) {
+                    alert('Excel file is empty or has no data rows');
+                    return;
+                }
+
+                var typeFields = [];
+                var importedMappings = {};
+                for (var r = 1; r < rows.length; r++) {
+                    var row = rows[r];
+                    if (!row || !row[0]) continue;
+                    var field = {
+                        id: String(row[0]),
+                        label: String(row[1] || ''),
+                        path: String(row[2] || ''),
+                        concat: (String(row[4] || '').toLowerCase() === 'yes')
+                    };
+                    typeFields.push(field);
+
+                    var overlayStr = String(row[3] || '').trim();
+                    if (overlayStr) {
+                        var overlayNums = overlayStr.match(/#(\d+)/g);
+                        if (overlayNums) {
+                            var indices = [];
+                            for (var m = 0; m < overlayNums.length; m++) {
+                                var num = parseInt(overlayNums[m].replace('#', ''));
+                                if (!isNaN(num) && num >= 1) indices.push(num - 1);
+                            }
+                            if (indices.length > 0) {
+                                importedMappings[field.id] = field.concat ? indices : indices[0];
+                            }
+                        }
+                    }
+                }
+
+                if (typeFields.length === 0) {
+                    alert('No field definitions found in Excel');
+                    return;
+                }
+
+                var typeName = file.name.replace(/\.(xlsx|xls)$/i, '');
+                fieldMappings[typeName] = typeFields;
+
+                for (var fid in importedMappings) {
+                    jState.matchingMappings[fid] = importedMappings[fid];
+                }
+
+                var exists = false;
+                for (var i = 0; i < labelTypeSelect.options.length; i++) {
+                    if (labelTypeSelect.options[i].value === typeName) { exists = true; break; }
+                }
+                if (!exists) {
+                    var opt = document.createElement('option');
+                    opt.value = typeName;
+                    opt.textContent = typeName + ' (imported)';
+                    labelTypeSelect.appendChild(opt);
+                }
+
+                labelTypeSelect.value = typeName;
+                renderOverlayDropZones();
+                renderFieldCards();
+            } catch (err) {
+                alert('Error reading Excel: ' + err.message);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
 
     // --- Modal open / close ---
     if (openBtn && modal) {
@@ -375,7 +483,7 @@ function jSetupMatchingJSON() {
             modal.style.display = 'block';
             if (!modal.dataset.positioned) {
                 modal.style.top = '60px';
-                modal.style.left = Math.max(60, window.innerWidth - 420) + 'px';
+                modal.style.left = Math.max(20, window.innerWidth - 720) + 'px';
                 modal.dataset.positioned = '1';
             }
             renderOverlayDropZones();
@@ -450,17 +558,29 @@ function jSetupMatchingJSON() {
         return map;
     }
 
-    // Render the overlay drop zone list
+    // Render the overlay list — overlays are draggable
     function renderOverlayDropZones() {
         if (!jState.overlays || jState.overlays.length === 0) {
             overlayList.innerHTML = '<div style="font-size: 10px; color: #999; padding: 6px;">No overlays yet</div>';
             return;
         }
 
+        // Sort overlays by _overlayNumber to match the OVERLAYS panel order
+        var uiOrder = [];
+        for (var k = 0; k < jState.overlays.length; k++) uiOrder.push(k);
+        uiOrder.sort(function(a, b) {
+            var na = jState.overlays[a]._overlayNumber || 0;
+            var nb = jState.overlays[b]._overlayNumber || 0;
+            return na - nb;
+        });
+
         var ovToFields = getOverlayToFieldsMap();
         var fields = fieldMappings[labelTypeSelect.value];
         var html = '';
-        jState.overlays.forEach(function(ov, idx) {
+        for (var j = 0; j < uiOrder.length; j++) {
+            var idx = uiOrder[j];
+            var ov = jState.overlays[idx];
+            var displayNum = ov._overlayNumber || (j + 1);
             var matchedFieldIds = ovToFields[idx] || [];
             var isMatched = matchedFieldIds.length > 0;
 
@@ -472,7 +592,7 @@ function jSetupMatchingJSON() {
                     if (mf) parts.push(mf.id + '. ' + mf.label);
                 });
                 if (parts.length > 0) {
-                    mappedLabel = '<span style="color:#fff;font-weight:bold;">← ' + parts.join(', ') + '</span>';
+                    mappedLabel = '<span style="color:#fff;font-weight:bold;">→ ' + parts.join(', ') + '</span>';
                 }
             }
 
@@ -480,54 +600,25 @@ function jSetupMatchingJSON() {
             var borderColor = isMatched ? '#dc3545' : '#ddd';
             var textColor = isMatched ? '#fff' : '#000';
 
-            html += '<div class="matching-drop-zone" data-overlay-idx="' + idx + '" ';
+            html += '<div class="matching-overlay-item" draggable="true" data-overlay-idx="' + idx + '" ';
             html += 'style="padding:4px 6px;font-size:11px;border:1px solid ' + borderColor + ';';
             if (bgColor) html += 'background:' + bgColor + ';';
-            html += 'border-radius:3px;margin-bottom:3px;cursor:default;display:flex;justify-content:space-between;align-items:center;transition:background 0.15s,border-color 0.15s;">';
-            html += '<span style="color:' + textColor + ';">#' + String(idx + 1).padStart(2, '0') + ' ' + getOverlayLabel(ov) + '</span>';
-            html += '<span style="font-size:9px;">' + (mappedLabel || '<span style="color:#bbb;">drop here</span>') + '</span>';
+            html += 'border-radius:3px;margin-bottom:3px;cursor:grab;display:flex;justify-content:space-between;align-items:center;transition:background 0.15s,border-color 0.15s;">';
+            html += '<span style="color:' + textColor + ';">#' + String(displayNum).padStart(2, '0') + ' ' + getOverlayLabel(ov) + '</span>';
+            html += '<span style="font-size:9px;">' + (mappedLabel || '') + '</span>';
             html += '</div>';
-        });
+        }
         overlayList.innerHTML = html;
 
-        // Attach dragover/drop/dragleave to each drop zone
-        overlayList.querySelectorAll('.matching-drop-zone').forEach(function(zone) {
-            zone.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                e.dataTransfer.dropEffect = 'link';
-                zone.style.background = '#e0e0e0';
-                zone.style.borderColor = '#000';
+        // Attach dragstart/dragend to each overlay item
+        overlayList.querySelectorAll('.matching-overlay-item').forEach(function(item) {
+            item.addEventListener('dragstart', function(e) {
+                e.dataTransfer.setData('text/plain', item.dataset.overlayIdx);
+                e.dataTransfer.effectAllowed = 'link';
+                item.style.opacity = '0.5';
             });
-            zone.addEventListener('dragleave', function() {
-                var ovIdx = parseInt(zone.dataset.overlayIdx);
-                var isM = (ovToFields[ovIdx] || []).length > 0;
-                zone.style.background = isM ? '#dc3545' : '';
-                zone.style.borderColor = isM ? '#dc3545' : '#ddd';
-            });
-            zone.addEventListener('drop', function(e) {
-                e.preventDefault();
-                var fieldId = e.dataTransfer.getData('text/plain');
-                var overlayIdx = parseInt(zone.dataset.overlayIdx);
-                if (fieldId && !isNaN(overlayIdx)) {
-                    var current = jState.matchingMappings[fieldId];
-                    // Find the field definition to check concat
-                    var fd = fields ? fields.find(function(f) { return f.id === fieldId; }) : null;
-                    if (fd && fd.concat) {
-                        // For concat fields: allow multiple overlays
-                        if (Array.isArray(current)) {
-                            if (current.indexOf(overlayIdx) === -1) current.push(overlayIdx);
-                        } else if (current !== undefined) {
-                            if (current !== overlayIdx) jState.matchingMappings[fieldId] = [current, overlayIdx];
-                        } else {
-                            jState.matchingMappings[fieldId] = [overlayIdx];
-                        }
-                    } else {
-                        // Single mapping: replace
-                        jState.matchingMappings[fieldId] = overlayIdx;
-                    }
-                    renderOverlayDropZones();
-                    renderFieldCards();
-                }
+            item.addEventListener('dragend', function() {
+                item.style.opacity = '1';
             });
         });
     }
@@ -536,11 +627,26 @@ function jSetupMatchingJSON() {
     function renderFieldCards() {
         var selectedType = labelTypeSelect.value;
         if (!selectedType || !fieldMappings[selectedType]) {
-            fieldsContainer.innerHTML = '<div class="empty-message">Select a label type</div>';
+            // Show dropzone, hide fields
+            dropzone.style.display = 'flex';
+            fieldsContainer.style.display = 'none';
             saveBtn.disabled = true;
             exportBtn.disabled = true;
             return;
         }
+
+        // Hide dropzone, show fields
+        dropzone.style.display = 'none';
+        fieldsContainer.style.display = 'block';
+
+        // Build display number map (same sort as overlay list)
+        var uiOrder = [];
+        for (var k = 0; k < jState.overlays.length; k++) uiOrder.push(k);
+        uiOrder.sort(function(a, b) {
+            return (jState.overlays[a]._overlayNumber || 0) - (jState.overlays[b]._overlayNumber || 0);
+        });
+        var displayNumMap = {};
+        for (var k = 0; k < uiOrder.length; k++) displayNumMap[uiOrder[k]] = k + 1;
 
         var fields = fieldMappings[selectedType];
         var html = '';
@@ -552,16 +658,21 @@ function jSetupMatchingJSON() {
                 var parts = [];
                 indices.forEach(function(idx) {
                     if (jState.overlays[idx]) {
-                        parts.push('#' + String(idx + 1).padStart(2, '0') + ' ' + getOverlayLabel(jState.overlays[idx]));
+                        var dn = displayNumMap[idx] || (idx + 1);
+                        parts.push('#' + String(dn).padStart(2, '0') + ' ' + getOverlayLabel(jState.overlays[idx]));
                     }
                 });
                 if (parts.length > 0) {
-                    mappedLabel = '<span style="font-size:9px;color:#000;background:#e0e0e0;padding:1px 4px;border-radius:2px;">→ ' + parts.join(', ') + '</span>';
+                    mappedLabel = '<span style="font-size:9px;color:#000;background:#e0e0e0;padding:1px 4px;border-radius:2px;">← ' + parts.join(', ') + '</span>';
                 }
             }
 
-            html += '<div class="matching-field-card" draggable="true" data-field-id="' + field.id + '" ';
-            html += 'style="padding:6px 8px;background:#f5f5f5;border:1px solid #ddd;border-radius:4px;margin-bottom:6px;cursor:grab;transition:border-color 0.15s;">';
+            var isMatched = indices.length > 0;
+            var bgColor = isMatched ? '#ffe0e0' : '#f5f5f5';
+            var borderColor = isMatched ? '#dc3545' : '#ddd';
+
+            html += '<div class="matching-field-drop-zone" data-field-id="' + field.id + '" ';
+            html += 'style="padding:6px 8px;background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:4px;margin-bottom:6px;cursor:default;transition:border-color 0.15s,background 0.15s;">';
             html += '<div style="display:flex;justify-content:space-between;align-items:start;">';
             html += '<div>';
             html += '<span style="font-size:11px;font-weight:bold;">' + field.id + '.</span> ';
@@ -574,6 +685,8 @@ function jSetupMatchingJSON() {
             html += '<div style="font-size:9px;color:#888;margin-top:2px;">' + field.path + '</div>';
             if (mappedLabel) {
                 html += '<div style="margin-top:3px;">' + mappedLabel + '</div>';
+            } else {
+                html += '<div style="margin-top:3px;"><span style="font-size:9px;color:#bbb;">drop here</span></div>';
             }
             html += '</div>';
         });
@@ -581,15 +694,44 @@ function jSetupMatchingJSON() {
         saveBtn.disabled = false;
         exportBtn.disabled = false;
 
-        // Attach dragstart to field cards
-        fieldsContainer.querySelectorAll('.matching-field-card').forEach(function(card) {
-            card.addEventListener('dragstart', function(e) {
-                e.dataTransfer.setData('text/plain', card.dataset.fieldId);
-                e.dataTransfer.effectAllowed = 'link';
-                card.style.opacity = '0.5';
+        // Attach dragover/drop/dragleave to each field card drop zone
+        fieldsContainer.querySelectorAll('.matching-field-drop-zone').forEach(function(card) {
+            card.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'link';
+                card.style.borderColor = '#000';
+                card.style.background = '#e0e0e0';
             });
-            card.addEventListener('dragend', function() {
-                card.style.opacity = '1';
+            card.addEventListener('dragleave', function() {
+                var fid = card.dataset.fieldId;
+                var v = jState.matchingMappings[fid];
+                var ii = Array.isArray(v) ? v : (v !== undefined ? [v] : []);
+                card.style.borderColor = ii.length > 0 ? '#dc3545' : '#ddd';
+                card.style.background = ii.length > 0 ? '#ffe0e0' : '#f5f5f5';
+            });
+            card.addEventListener('drop', function(e) {
+                e.preventDefault();
+                var overlayIdx = parseInt(e.dataTransfer.getData('text/plain'));
+                var fieldId = card.dataset.fieldId;
+                if (isNaN(overlayIdx) || !fieldId) return;
+
+                var fd = fields ? fields.find(function(f) { return f.id === fieldId; }) : null;
+                var current = jState.matchingMappings[fieldId];
+                if (fd && fd.concat) {
+                    if (Array.isArray(current)) {
+                        if (current.indexOf(overlayIdx) === -1) current.push(overlayIdx);
+                    } else if (current !== undefined) {
+                        if (current !== overlayIdx) jState.matchingMappings[fieldId] = [current, overlayIdx];
+                    } else {
+                        jState.matchingMappings[fieldId] = [overlayIdx];
+                    }
+                } else {
+                    jState.matchingMappings[fieldId] = overlayIdx;
+                }
+                renderOverlayDropZones();
+                renderFieldCards();
+                jRenderOverlayList();
+                jRenderCanvas();
             });
         });
     }
@@ -605,101 +747,12 @@ function jSetupMatchingJSON() {
         renderFieldCards();
     });
 
-    // Import Excel — read field definitions from uploaded .xlsx
-    var importInput = tabPane.querySelector('#matching-excel-import');
-    if (importInput) {
-        importInput.addEventListener('change', function(e) {
-            var file = e.target.files[0];
-            if (!file) return;
+    // Toolbar Import Excel button — reuse handleExcelFile
+    var toolbarImportInput = tabPane.querySelector('#matching-excel-import');
+    if (toolbarImportInput) {
+        toolbarImportInput.addEventListener('change', function(e) {
+            if (e.target.files[0]) handleExcelFile(e.target.files[0]);
             e.target.value = '';
-
-            var reader = new FileReader();
-            reader.onload = function(ev) {
-                try {
-                    var data = new Uint8Array(ev.target.result);
-                    var wb = XLSX.read(data, { type: 'array' });
-                    var sheetName = wb.SheetNames[0];
-                    var ws = wb.Sheets[sheetName];
-                    var rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
-
-                    if (rows.length < 2) {
-                        alert('Excel file is empty or has no data rows');
-                        return;
-                    }
-
-                    // Expected columns: Field # | Label | JSON Path | Overlay (e.g. "#01" or "#07, #02, #01") | Concat
-                    // First row is header
-                    var typeFields = [];
-                    var importedMappings = {};
-                    for (var r = 1; r < rows.length; r++) {
-                        var row = rows[r];
-                        if (!row || !row[0]) continue;
-                        var field = {
-                            id: String(row[0]),
-                            label: String(row[1] || ''),
-                            path: String(row[2] || ''),
-                            concat: (String(row[4] || '').toLowerCase() === 'yes')
-                        };
-                        typeFields.push(field);
-
-                        // Parse overlay column: "#01" or "#07, #02, #01" → overlay indices [0], [6,1,0]
-                        var overlayStr = String(row[3] || '').trim();
-                        if (overlayStr) {
-                            var overlayNums = overlayStr.match(/#(\d+)/g);
-                            if (overlayNums) {
-                                var indices = [];
-                                for (var m = 0; m < overlayNums.length; m++) {
-                                    var num = parseInt(overlayNums[m].replace('#', ''));
-                                    if (!isNaN(num) && num >= 1) indices.push(num - 1);
-                                }
-                                if (indices.length > 0) {
-                                    if (field.concat) {
-                                        importedMappings[field.id] = indices;
-                                    } else {
-                                        importedMappings[field.id] = indices[0];
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    if (typeFields.length === 0) {
-                        alert('No field definitions found in Excel');
-                        return;
-                    }
-
-                    // Create a new label type entry from filename (without extension)
-                    var typeName = file.name.replace(/\.(xlsx|xls)$/i, '');
-                    fieldMappings[typeName] = typeFields;
-
-                    // Apply imported overlay mappings
-                    for (var fid in importedMappings) {
-                        jState.matchingMappings[fid] = importedMappings[fid];
-                    }
-
-                    // Add option to dropdown if not exists
-                    var exists = false;
-                    for (var i = 0; i < labelTypeSelect.options.length; i++) {
-                        if (labelTypeSelect.options[i].value === typeName) { exists = true; break; }
-                    }
-                    if (!exists) {
-                        var opt = document.createElement('option');
-                        opt.value = typeName;
-                        opt.textContent = typeName + ' (imported)';
-                        labelTypeSelect.appendChild(opt);
-                    }
-
-                    // Auto-select the new type
-                    labelTypeSelect.value = typeName;
-                    renderOverlayDropZones();
-                    renderFieldCards();
-
-                    alert('Imported ' + typeFields.length + ' fields from "' + typeName + '"');
-                } catch (err) {
-                    alert('Error reading Excel: ' + err.message);
-                }
-            };
-            reader.readAsArrayBuffer(file);
         });
     }
 
@@ -734,6 +787,20 @@ function jSetupMatchingJSON() {
         XLSX.utils.book_append_sheet(wb, ws, 'Matching');
         XLSX.writeFile(wb, selectedType + '_matching.xlsx');
     });
+
+    // Reset mappings
+    var resetBtn = tabPane.querySelector('#btn-reset-matching');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', function() {
+            if (!confirm('Clear all matching mappings?')) return;
+            jState.matchingMappings = {};
+            labelTypeSelect.value = '';
+            renderOverlayDropZones();
+            renderFieldCards();
+            jRenderOverlayList();
+            jRenderCanvas();
+        });
+    }
 
     // Save mappings to jState
     saveBtn.addEventListener('click', function() {
