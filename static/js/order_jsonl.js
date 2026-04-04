@@ -404,8 +404,10 @@
                 .then(function(data) {
                     if (data.success) {
                         showMessage('Headers updated for ' + labelType, 'success');
-                        // Update the stored rows and re-render
                         window._lastParsedRows = data.rows;
+                        // Clear cached layout so preview fetches fresh data
+                        cachedLayout = null;
+                        cachedLabelType = null;
                         displayResults(data.rows);
                     } else {
                         showMessage(data.error || 'Failed to re-parse', 'error');
@@ -1276,12 +1278,22 @@
 
         var overlays = JSON.parse(JSON.stringify(layout.overlays || []));
         var mappings = layout.matchingMappings || {};
+        // Use the actual label type from row data to look up custom fields
+        // (layout.matchingLabelType may be 'GI001BAW_matching_matching_complete' but _customFields uses 'GI001BAW')
+        var rowLabelType = rowData.label_type || '';
+        var hasCustomFields = _customFields[rowLabelType] && _customFields[rowLabelType].length > 0;
 
         // Apply row data to overlays via matching mappings
         for (var fieldId in mappings) {
             var val = mappings[fieldId];
-            // For custom fields, row key is the fieldId itself; for default fields, use the map
-            var rowKey = FIELD_TO_ROW_KEY[fieldId] || fieldId;
+            // When custom fields are active, row data uses fieldId as key directly (e.g. '1', '2', '6')
+            // When using defaults, map through FIELD_TO_ROW_KEY (e.g. '2' → 'order_id')
+            var rowKey;
+            if (hasCustomFields) {
+                rowKey = fieldId;
+            } else {
+                rowKey = FIELD_TO_ROW_KEY[fieldId] || fieldId;
+            }
             var dataValue = rowData[rowKey] || '';
             var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
             for (var i = 0; i < indices.length; i++) {
