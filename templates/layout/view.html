@@ -7,9 +7,14 @@
             <button class="btn btn-primary" onclick="loadLayouts()">Refresh List</button>
         </div>
         <div id="message" style="display: none;"></div>
+        <div style="margin-bottom: 12px; display: flex; gap: 8px;">
+            <button class="btn btn-secondary" onclick="selectAllLayouts()">Select All</button>
+            <button class="btn btn-danger" id="btn-delete-selected" onclick="deleteSelectedLayouts()" disabled>Delete Selected</button>
+        </div>
         <table id="layoutTable">
             <thead>
                 <tr>
+                    <th style="width: 40px;"><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this)"></th>
                     <th>Layout ID</th>
                     <th>Name</th>
                     <th>Type</th>
@@ -22,7 +27,7 @@
             </thead>
             <tbody id="layoutTableBody">
                 <tr>
-                    <td colspan="8" style="text-align: center; padding: 40px;">Loading...</td>
+                    <td colspan="9" style="text-align: center; padding: 40px;">Loading...</td>
                 </tr>
             </tbody>
         </table>

@@ -22,7 +22,7 @@ function displayLayouts(layouts) {
     if (!tbody) return;
 
     if (layouts.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px;">No layouts found</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px;">No layouts found</td></tr>';
         return;
     }
 
@@ -47,6 +47,7 @@ function displayLayouts(layouts) {
 
         return `
             <tr>
+                <td><input type="checkbox" class="layout-checkbox" data-layout-id="${layout.id}" onchange="updateDeleteButton()"></td>
                 <td>${layout.id}</td>
                 <td>${layout.name}</td>
                 <td>${layout.type.toUpperCase()}</td>
@@ -61,6 +62,8 @@ function displayLayouts(layouts) {
             </tr>
         `;
     }).join('');
+
+    updateDeleteButton();
 }
 
 // Open a layout in a new tab
@@ -104,4 +107,85 @@ function showLayoutMessage(text, type) {
     setTimeout(() => {
         messageDiv.style.display = 'none';
     }, 5000);
+}
+
+// Toggle select all checkbox
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.layout-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = checkbox.checked;
+    });
+    updateDeleteButton();
+}
+
+// Select all layouts
+function selectAllLayouts() {
+    const selectAllCheckbox = document.getElementById('select-all-checkbox');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = true;
+        toggleSelectAll(selectAllCheckbox);
+    }
+}
+
+// Update delete button state
+function updateDeleteButton() {
+    const checkboxes = document.querySelectorAll('.layout-checkbox:checked');
+    const deleteBtn = document.getElementById('btn-delete-selected');
+    if (deleteBtn) {
+        deleteBtn.disabled = checkboxes.length === 0;
+    }
+
+    const selectAllCheckbox = document.getElementById('select-all-checkbox');
+    const allCheckboxes = document.querySelectorAll('.layout-checkbox');
+    if (selectAllCheckbox && allCheckboxes.length > 0) {
+        selectAllCheckbox.checked = checkboxes.length === allCheckboxes.length;
+    }
+}
+
+// Delete selected layouts
+function deleteSelectedLayouts() {
+    const checkboxes = document.querySelectorAll('.layout-checkbox:checked');
+    const layoutIds = Array.from(checkboxes).map(cb => cb.dataset.layoutId);
+
+    if (layoutIds.length === 0) {
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${layoutIds.length} layout(s)?`)) {
+        return;
+    }
+
+    let completed = 0;
+    let errors = 0;
+
+    layoutIds.forEach(layoutId => {
+        fetch('/layout/' + layoutId, {
+            method: 'DELETE'
+        })
+        .then(response => response.json())
+        .then(data => {
+            completed++;
+            if (!data.success) {
+                errors++;
+            }
+
+            if (completed === layoutIds.length) {
+                if (errors === 0) {
+                    showLayoutMessage(`Successfully deleted ${layoutIds.length} layout(s)`, 'success');
+                } else {
+                    showLayoutMessage(`Deleted ${layoutIds.length - errors} layout(s), ${errors} failed`, 'error');
+                }
+                loadLayouts();
+            }
+        })
+        .catch(error => {
+            completed++;
+            errors++;
+
+            if (completed === layoutIds.length) {
+                showLayoutMessage(`Deleted ${layoutIds.length - errors} layout(s), ${errors} failed`, 'error');
+                loadLayouts();
+            }
+        });
+    });
 }
