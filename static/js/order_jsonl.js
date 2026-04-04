@@ -450,6 +450,236 @@
 
     // ─── Preview Popup ───
     var PT_TO_MM = 25.4 / 72;
+
+    // ─── Color helpers (ported from json_manager.js) ───
+    function previewColorToCSS(color) {
+        if (!color || color.type === 'none') return null;
+        if (color.type === 'rgb') return 'rgb(' + (color.r||0) + ',' + (color.g||0) + ',' + (color.b||0) + ')';
+        if (color.type === 'cmyk') {
+            var r = Math.round(255 * (1 - color.c / 100) * (1 - color.k / 100));
+            var g = Math.round(255 * (1 - color.m / 100) * (1 - color.k / 100));
+            var b = Math.round(255 * (1 - color.y / 100) * (1 - color.k / 100));
+            return 'rgb(' + r + ',' + g + ',' + b + ')';
+        }
+        if (color.type === 'spot' && color.fallback) return previewColorToCSS(color.fallback);
+        if (color.type === 'gradient') {
+            if (color.stops && color.stops.length > 0) return previewColorToCSS(color.stops[0].color);
+            return '#000000';
+        }
+        return null;
+    }
+
+    // ─── Path tracing (ported from json_manager.js) ───
+    function previewTracePath(c, pts, closed) {
+        if (!pts || pts.length === 0) return;
+        c.beginPath();
+        c.moveTo(pts[0].x * PT_TO_MM, pts[0].y * PT_TO_MM);
+        for (var i = 1; i < pts.length; i++) {
+            var prev = pts[i - 1];
+            var pt = pts[i];
+            var ho = prev.handleOut;
+            var hi = pt.handleIn;
+            if (ho && hi && (ho.x !== prev.x || ho.y !== prev.y || hi.x !== pt.x || hi.y !== pt.y)) {
+                c.bezierCurveTo(ho.x * PT_TO_MM, ho.y * PT_TO_MM, hi.x * PT_TO_MM, hi.y * PT_TO_MM, pt.x * PT_TO_MM, pt.y * PT_TO_MM);
+            } else {
+                c.lineTo(pt.x * PT_TO_MM, pt.y * PT_TO_MM);
+            }
+        }
+        if (closed && pts.length > 1) {
+            var last = pts[pts.length - 1];
+            var first = pts[0];
+            var ho = last.handleOut;
+            var hi = first.handleIn;
+            if (ho && hi && (ho.x !== last.x || ho.y !== last.y || hi.x !== first.x || hi.y !== first.y)) {
+                c.bezierCurveTo(ho.x * PT_TO_MM, ho.y * PT_TO_MM, hi.x * PT_TO_MM, hi.y * PT_TO_MM, first.x * PT_TO_MM, first.y * PT_TO_MM);
+            }
+            c.closePath();
+        }
+    }
+
+    // ─── Node rendering (ported from json_manager.js jRenderNodes) ───
+    function previewRenderNodes(c, nodes, parentOpacity) {
+        if (!nodes) return;
+        for (var i = nodes.length - 1; i >= 0; i--) {
+            var node = nodes[i];
+            if (node.visible === false) continue;
+            if (node._isDoubledText) continue;
+            var opacity = parentOpacity * ((node.opacity || 100) / 100);
+
+            if (node._isBoundsRect) {
+                // Skip bounds rects — they are guide panels, not visual elements
+                continue;
+            }
+
+            if (node.children) {
+                c.save();
+                if (node.clipped && node.children.length > 0) {
+                    var clipNode = node.children[node.children.length - 1];
+                    if (clipNode.type === 'path' && clipNode.pathData && clipNode.pathData.length > 0) {
+                        previewTracePath(c, clipNode.pathData, clipNode.closed);
+                        c.clip();
+                    } else if (clipNode.type === 'compoundPath' && clipNode.paths) {
+                        c.beginPath();
+                        for (var p = 0; p < clipNode.paths.length; p++) {
+                            if (clipNode.paths[p].pathData) previewTracePath(c, clipNode.paths[p].pathData, clipNode.paths[p].closed);
+                        }
+                        c.clip('evenodd');
+                    }
+                    var clippedChildren = node.children.slice(0, node.children.length - 1);
+                    previewRenderNodes(c, clippedChildren, opacity);
+                } else {
+                    previewRenderNodes(c, node.children, opacity);
+                }
+                c.restore();
+            } else if (node.type === 'path') {
+                previewRenderPath(c, node, opacity);
+            } else if (node.type === 'compoundPath') {
+                previewRenderCompoundPath(c, node, opacity);
+            } else if (node.type === 'text') {
+                previewRenderText(c, node, opacity);
+            }
+        }
+    }
+
+    function previewRenderPath(c, node, opacity) {
+        if (!node.pathData || node.pathData.length === 0) return;
+        c.save();
+        c.globalAlpha = opacity;
+        previewTracePath(c, node.pathData, node.closed);
+
+        var fillCSS = previewColorToCSS(node.fill);
+        var strokeCSS = previewColorToCSS(node.stroke);
+        if (fillCSS) { c.fillStyle = fillCSS; c.fill(); }
+        if (strokeCSS && node.strokeWidth > 0) {
+            c.strokeStyle = strokeCSS;
+            c.lineWidth = node.strokeWidth * PT_TO_MM;
+            c.lineCap = node.strokeCap || 'butt';
+            c.lineJoin = node.strokeJoin || 'miter';
+            c.miterLimit = node.miterLimit || 10;
+            c.stroke();
+        }
+        c.restore();
+    }
+
+    function previewRenderCompoundPath(c, node, opacity) {
+        if (!node.paths || node.paths.length === 0) return;
+        c.save();
+        c.globalAlpha = opacity;
+        // All sub-paths must be in ONE beginPath for evenodd to work
+        c.beginPath();
+        for (var p = 0; p < node.paths.length; p++) {
+            var path = node.paths[p];
+            if (!path.pathData || path.pathData.length === 0) continue;
+            var pts = path.pathData;
+            c.moveTo(pts[0].x * PT_TO_MM, pts[0].y * PT_TO_MM);
+            for (var i = 1; i < pts.length; i++) {
+                var prev = pts[i - 1];
+                var pt = pts[i];
+                var ho = prev.handleOut;
+                var hi = pt.handleIn;
+                if (ho && hi && (ho.x !== prev.x || ho.y !== prev.y || hi.x !== pt.x || hi.y !== pt.y)) {
+                    c.bezierCurveTo(ho.x * PT_TO_MM, ho.y * PT_TO_MM, hi.x * PT_TO_MM, hi.y * PT_TO_MM, pt.x * PT_TO_MM, pt.y * PT_TO_MM);
+                } else {
+                    c.lineTo(pt.x * PT_TO_MM, pt.y * PT_TO_MM);
+                }
+            }
+            if (path.closed && pts.length > 1) {
+                var last = pts[pts.length - 1];
+                var first = pts[0];
+                var ho = last.handleOut;
+                var hi = first.handleIn;
+                if (ho && hi && (ho.x !== last.x || ho.y !== last.y || hi.x !== first.x || hi.y !== first.y)) {
+                    c.bezierCurveTo(ho.x * PT_TO_MM, ho.y * PT_TO_MM, hi.x * PT_TO_MM, hi.y * PT_TO_MM, first.x * PT_TO_MM, first.y * PT_TO_MM);
+                }
+                c.closePath();
+            }
+        }
+        // Check node fill/stroke, fall back to first sub-path's fill/stroke (same as json_manager.js)
+        var fillCSS = previewColorToCSS(node.fill || (node.paths[0] && node.paths[0].fill));
+        var strokeCSS = previewColorToCSS(node.stroke || (node.paths[0] && node.paths[0].stroke));
+        if (fillCSS) { c.fillStyle = fillCSS; c.fill('evenodd'); }
+        if (strokeCSS) {
+            var sw = node.strokeWidth || (node.paths[0] && node.paths[0].strokeWidth) || 0;
+            if (sw > 0) { c.strokeStyle = strokeCSS; c.lineWidth = sw * PT_TO_MM; c.stroke(); }
+        }
+        c.restore();
+    }
+
+    function previewRenderText(c, node, opacity) {
+        if (!node.content || !node.bounds) return;
+        c.save();
+        c.globalAlpha = opacity;
+
+        // Apply matrix transform if present
+        if (node.matrix && (node.matrix.a !== 1 || node.matrix.d !== 1 || node.matrix.tx || node.matrix.ty)) {
+            var m = node.matrix;
+            var bx = node.bounds.x * PT_TO_MM;
+            var by = node.bounds.y * PT_TO_MM;
+            c.translate(bx, by);
+            c.transform(m.a, m.b || 0, m.c || 0, m.d, m.tx * PT_TO_MM, m.ty * PT_TO_MM);
+            c.translate(-bx, -by);
+        }
+
+        // Render each paragraph/line
+        if (node.kind === 'area' && node.paragraphs) {
+            c.save();
+            c.beginPath();
+            c.rect(node.bounds.x * PT_TO_MM, node.bounds.y * PT_TO_MM, node.bounds.width * PT_TO_MM, node.bounds.height * PT_TO_MM);
+            c.clip();
+
+            var yPos = node.bounds.y * PT_TO_MM;
+            for (var pi = 0; pi < node.paragraphs.length; pi++) {
+                var para = node.paragraphs[pi];
+                if (!para.runs || para.runs.length === 0) continue;
+                var run = para.runs[0];
+                var fsMm = (run.fontSize || 12) * PT_TO_MM;
+                var fontFamily = (run.fontFamily || 'Arial').replace(/-/g, ' ');
+                var fontStr = '';
+                if (run.fontStyle) {
+                    var style = run.fontStyle;
+                    if (style.toLowerCase().indexOf('bold') >= 0 || style.toLowerCase().indexOf('black') >= 0) fontStr += 'bold ';
+                    if (style.toLowerCase().indexOf('italic') >= 0 || style.toLowerCase().indexOf('oblique') >= 0) fontStr += 'italic ';
+                }
+                fontStr += fsMm + 'px ' + fontFamily + ', sans-serif';
+                c.font = fontStr;
+
+                var color = '#000';
+                if (run.color && run.color.type === 'rgb') {
+                    color = 'rgb(' + (run.color.r||0) + ',' + (run.color.g||0) + ',' + (run.color.b||0) + ')';
+                }
+                c.fillStyle = color;
+                c.textBaseline = 'top';
+
+                var align = para.alignment || 'left';
+                c.textAlign = align === 'center' ? 'center' : align === 'right' ? 'right' : 'left';
+
+                var leading = (run.leading && run.leading !== 'auto') ? run.leading * PT_TO_MM : fsMm * 1.2;
+                var text = run.text || '';
+                var x = node.bounds.x * PT_TO_MM;
+                if (align === 'center') x += node.bounds.width * PT_TO_MM / 2;
+                else if (align === 'right') x += node.bounds.width * PT_TO_MM;
+
+                c.fillText(text, x, yPos);
+                yPos += leading;
+            }
+            c.restore();
+        } else if (node.paragraphs && node.paragraphs.length > 0 && node.paragraphs[0].runs) {
+            // Point text
+            var run = node.paragraphs[0].runs[0] || {};
+            var fsMm = (run.fontSize || 12) * PT_TO_MM;
+            var fontFamily = (run.fontFamily || 'Arial').replace(/-/g, ' ');
+            var fontStr = fsMm + 'px ' + fontFamily + ', sans-serif';
+            c.font = fontStr;
+            var color = '#000';
+            if (run.color && run.color.type === 'rgb') {
+                color = 'rgb(' + (run.color.r||0) + ',' + (run.color.g||0) + ',' + (run.color.b||0) + ')';
+            }
+            c.fillStyle = color;
+            c.textBaseline = 'top';
+            c.fillText(node.content, node.bounds.x * PT_TO_MM, node.bounds.y * PT_TO_MM);
+        }
+        c.restore();
+    }
     var cachedLayout = null;
     var cachedLabelType = null;
 
@@ -516,28 +746,33 @@
             }
         }
 
-        // Render on canvas
+        // Render on canvas at large scale for readability
         var docW = (layout.docWidth || 210);
         var docH = (layout.docHeight || 297);
-        var container = document.getElementById('preview-modal-body');
-        var maxW = Math.min(400, window.innerWidth - 100);
-        var maxH = Math.min(500, window.innerHeight - 150);
-        var scale = Math.min(maxW / docW, maxH / docH);
-        canvas.width = Math.ceil(docW * scale);
-        canvas.height = Math.ceil(docH * scale);
-        canvas.style.width = canvas.width + 'px';
-        canvas.style.height = canvas.height + 'px';
+        // Scale to fill viewport — aim for near 1:1 readability
+        var fitW = window.innerWidth - 80;
+        var fitH = window.innerHeight - 100;
+        var viewScale = Math.min(fitW / docW, fitH / docH);
+        // Use 2x for sharpness
+        var pixelScale = viewScale * 2;
+        canvas.width = Math.ceil(docW * pixelScale);
+        canvas.height = Math.ceil(docH * pixelScale);
+        canvas.style.width = Math.ceil(docW * viewScale) + 'px';
+        canvas.style.height = Math.ceil(docH * viewScale) + 'px';
         canvas.style.background = '#fff';
-        canvas.style.border = '1px solid #000';
 
         var ctx = canvas.getContext('2d');
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        ctx.scale(scale, scale);
+        ctx.scale(pixelScale, pixelScale);
         ctx.clearRect(0, 0, docW, docH);
 
-        // Draw document tree (background)
+        // White artboard background
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, docW, docH);
+
+        // Draw document tree using same rendering as json_manager.js
         if (layout.documentTree) {
-            drawPreviewTree(ctx, layout.documentTree, layout.docMetadata);
+            previewRenderNodes(ctx, layout.documentTree, 1.0);
         }
 
         // Draw overlays
@@ -616,57 +851,6 @@
 
             ctx.restore();
         });
-    }
-
-    function drawPreviewTree(ctx, tree, metadata) {
-        if (!tree) return;
-        tree.forEach(function(node) {
-            if (node.type === 'path' && node.pathData && node.fill && node.fill.type !== 'none') {
-                ctx.save();
-                ctx.fillStyle = node.fill.color || '#000';
-                if (node.opacity !== undefined) ctx.globalAlpha = node.opacity / 100;
-                drawPreviewPath(ctx, node.pathData, node.bounds);
-                ctx.fill();
-                ctx.restore();
-            } else if (node.type === 'text' && node.content) {
-                ctx.save();
-                if (node.opacity !== undefined) ctx.globalAlpha = node.opacity / 100;
-                var fsMm = (node.paragraphs && node.paragraphs[0] && node.paragraphs[0].runs && node.paragraphs[0].runs[0])
-                    ? node.paragraphs[0].runs[0].fontSize * PT_TO_MM : 12 * PT_TO_MM;
-                ctx.fillStyle = '#000';
-                ctx.font = fsMm + 'px Arial, sans-serif';
-                ctx.textBaseline = 'top';
-                if (node.bounds) {
-                    ctx.fillText(node.content.substring(0, 30), node.bounds.x, node.bounds.y);
-                }
-                ctx.restore();
-            }
-            if (node.children) drawPreviewTree(ctx, node.children, metadata);
-        });
-    }
-
-    function drawPreviewPath(ctx, pathData, bounds) {
-        if (!pathData || pathData.length === 0) {
-            if (bounds) {
-                ctx.beginPath();
-                ctx.rect(bounds.x, bounds.y, bounds.width, bounds.height);
-            }
-            return;
-        }
-        ctx.beginPath();
-        ctx.moveTo(pathData[0].x, pathData[0].y);
-        for (var i = 1; i < pathData.length; i++) {
-            var p = pathData[i];
-            if (p.handleIn || p.handleOut) {
-                var prev = pathData[i - 1];
-                var cpx = p.handleIn ? p.handleIn.x : p.x;
-                var cpy = p.handleIn ? p.handleIn.y : p.y;
-                ctx.quadraticCurveTo(cpx, cpy, p.x, p.y);
-            } else {
-                ctx.lineTo(p.x, p.y);
-            }
-        }
-        ctx.closePath();
     }
 
     // Close preview modal
