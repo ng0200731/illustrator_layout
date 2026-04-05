@@ -59,7 +59,8 @@ function getJCanvasState(c) {
             addOverlayHoverPoint: null,
             _addOverlayBRIdx: -1,
             selectedOverlayIndices: {},
-            hideGuides: false
+            hideGuides: false,
+            highlightedOverlayIndices: {}
         });
     }
     return jCanvasStates.get(c);
@@ -621,6 +622,28 @@ function jSetupMatchingJSON() {
             item.addEventListener('dragend', function() {
                 item.style.opacity = '1';
             });
+            // Hover cross-highlight
+            item.addEventListener('mouseenter', function() {
+                var idx = parseInt(item.dataset.overlayIdx);
+                // Highlight matching field cards on the right
+                var matchedFields = ovToFields[idx] || [];
+                fieldsContainer.querySelectorAll('.matching-field-drop-zone').forEach(function(card) {
+                    if (matchedFields.indexOf(card.dataset.fieldId) >= 0) {
+                        card.classList.add('matching-highlight');
+                    }
+                });
+                // Highlight overlay on canvas
+                jState.highlightedOverlayIndices = {};
+                jState.highlightedOverlayIndices[idx] = true;
+                jRenderCanvas();
+            });
+            item.addEventListener('mouseleave', function() {
+                fieldsContainer.querySelectorAll('.matching-highlight').forEach(function(el) {
+                    el.classList.remove('matching-highlight');
+                });
+                jState.highlightedOverlayIndices = {};
+                jRenderCanvas();
+            });
         });
     }
 
@@ -743,6 +766,30 @@ function jSetupMatchingJSON() {
                 renderOverlayDropZones();
                 renderFieldCards();
                 jRenderOverlayList();
+                jRenderCanvas();
+            });
+            // Hover cross-highlight
+            card.addEventListener('mouseenter', function() {
+                var fid = card.dataset.fieldId;
+                var val = jState.matchingMappings[fid];
+                var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
+                // Highlight matching overlay items on the left
+                overlayList.querySelectorAll('.matching-overlay-item').forEach(function(ovItem) {
+                    var ovIdx = parseInt(ovItem.dataset.overlayIdx);
+                    if (indices.indexOf(ovIdx) >= 0) {
+                        ovItem.classList.add('matching-highlight');
+                    }
+                });
+                // Highlight overlays on canvas
+                jState.highlightedOverlayIndices = {};
+                indices.forEach(function(i) { jState.highlightedOverlayIndices[i] = true; });
+                jRenderCanvas();
+            });
+            card.addEventListener('mouseleave', function() {
+                overlayList.querySelectorAll('.matching-highlight').forEach(function(el) {
+                    el.classList.remove('matching-highlight');
+                });
+                jState.highlightedOverlayIndices = {};
                 jRenderCanvas();
             });
         });
@@ -3282,6 +3329,7 @@ function jRenderOverlayItem(c, ov, idx) {
 
     // Draw region border
     c.save();
+    var isHighlighted = jState.highlightedOverlayIndices && jState.highlightedOverlayIndices[idx];
     if (!jState.hideGuides) {
     // Check if this overlay is matched in matching JSON
     var isMatchedOverlay = false;
@@ -3303,6 +3351,9 @@ function jRenderOverlayItem(c, ov, idx) {
         c.strokeStyle = isSelected ? '#0066ff' : '#00aa00';
         c.lineWidth = 0.15;
     }
+    if (isHighlighted) {
+        c.lineWidth = c.lineWidth * 1.3;
+    }
     c.setLineDash([1, 1]);
     c.strokeRect(x, y, w, h);
     c.setLineDash([]);
@@ -3317,6 +3368,13 @@ function jRenderOverlayItem(c, ov, idx) {
         c.closePath();
         c.fill();
     }
+    }
+    // Yellow highlight tint for hovered overlay
+    if (isHighlighted) {
+        c.save();
+        c.fillStyle = 'rgba(255, 255, 0, 0.15)';
+        c.fillRect(x, y, w, h);
+        c.restore();
     }
 
     if (ov.type === 'textregion' && ov.content && ov.fontFamily) {

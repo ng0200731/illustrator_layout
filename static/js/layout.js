@@ -273,7 +273,7 @@ function renderMatchingViewer(data, layoutName) {
                 var borderColor = isMatched ? '#dc3545' : '#ddd';
                 var textColor = isMatched ? '#fff' : '#000';
 
-                html += '<div style="padding:4px 6px;font-size:11px;border:1px solid ' + borderColor + ';';
+                html += '<div class="viewer-overlay-item" data-overlay-idx="' + idx + '" style="padding:4px 6px;font-size:11px;border:1px solid ' + borderColor + ';';
                 if (bgColor) html += 'background:' + bgColor + ';';
                 html += 'border-radius:3px;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center;">';
                 html += '<span style="color:' + textColor + ';">#' + String(displayNum).padStart(2, '0') + ' ' + getMatchingOverlayLabel(ov) + '</span>';
@@ -312,7 +312,7 @@ function renderMatchingViewer(data, layoutName) {
                 var bgColor = isMatched ? '#ffe0e0' : '#f5f5f5';
                 var borderColor = isMatched ? '#dc3545' : '#ddd';
 
-                fhtml += '<div style="padding:6px 8px;background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:4px;margin-bottom:6px;">';
+                fhtml += '<div class="viewer-field-card" data-field-id="' + field.id + '" style="padding:6px 8px;background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:4px;margin-bottom:6px;">';
                 fhtml += '<div><span style="font-size:11px;font-weight:bold;">' + field.id + '.</span> ';
                 fhtml += '<span style="font-size:11px;">' + field.label + '</span>';
                 if (field.concat) {
@@ -325,6 +325,44 @@ function renderMatchingViewer(data, layoutName) {
             });
             fieldsContainer.innerHTML = fhtml;
         }
+    }
+
+    // Attach hover cross-highlight events
+    if (overlayList && fieldsContainer) {
+        overlayList.querySelectorAll('.viewer-overlay-item').forEach(function(item) {
+            item.addEventListener('mouseenter', function() {
+                var idx = parseInt(item.dataset.overlayIdx);
+                var matchedFieldIds = ovToFields[idx] || [];
+                fieldsContainer.querySelectorAll('.viewer-field-card').forEach(function(card) {
+                    if (matchedFieldIds.indexOf(card.dataset.fieldId) >= 0) {
+                        card.classList.add('viewer-highlight');
+                    }
+                });
+            });
+            item.addEventListener('mouseleave', function() {
+                fieldsContainer.querySelectorAll('.viewer-highlight').forEach(function(el) {
+                    el.classList.remove('viewer-highlight');
+                });
+            });
+        });
+        fieldsContainer.querySelectorAll('.viewer-field-card').forEach(function(card) {
+            card.addEventListener('mouseenter', function() {
+                var fid = card.dataset.fieldId;
+                var val = mappings[fid];
+                var indices = Array.isArray(val) ? val : (val !== undefined ? [val] : []);
+                overlayList.querySelectorAll('.viewer-overlay-item').forEach(function(ovItem) {
+                    var ovIdx = parseInt(ovItem.dataset.overlayIdx);
+                    if (indices.indexOf(ovIdx) >= 0) {
+                        ovItem.classList.add('viewer-highlight');
+                    }
+                });
+            });
+            card.addEventListener('mouseleave', function() {
+                overlayList.querySelectorAll('.viewer-highlight').forEach(function(el) {
+                    el.classList.remove('viewer-highlight');
+                });
+            });
+        });
     }
 
     // Show modal
