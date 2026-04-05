@@ -58,6 +58,7 @@ function getJCanvasState(c) {
             addOverlaySnapPoint: null,
             addOverlayHoverPoint: null,
             _addOverlayBRIdx: -1,
+            selectedOverlayIndices: {},
             hideGuides: false
         });
     }
@@ -1862,6 +1863,7 @@ function jOnMouseDown(e) {
     } else {
         // Start rectangle selection drag on empty canvas
         jState.selectedOverlayIdx = -1;
+        jState.selectedOverlayIndices = {};
         jState._selectedTextNode = null;
         jState.pendingContentRegion = null;
         jState.pendingContentType = null;
@@ -3327,14 +3329,15 @@ function jRenderOverlayItem(c, ov, idx) {
         fontStyle += "'" + ov.fontFamily + "', sans-serif";
         c.font = fontStyle;
         c.fillStyle = ov.color || '#000000';
-        if (ov.alignH === 'center') c.textAlign = 'center';
-        else if (ov.alignH === 'right') c.textAlign = 'right';
+        var effectiveAlign = ov.hAlign || ov.alignH || 'left';
+        if (effectiveAlign === 'center') c.textAlign = 'center';
+        else if (effectiveAlign === 'right') c.textAlign = 'right';
         else c.textAlign = 'left';
         c.textBaseline = 'top';
 
         var tx = tr.x;
-        if (ov.alignH === 'center') tx = tr.x + tr.w / 2;
-        else if (ov.alignH === 'right') tx = tr.x + tr.w;
+        if (effectiveAlign === 'center') tx = tr.x + tr.w / 2;
+        else if (effectiveAlign === 'right') tx = tr.x + tr.w;
 
         var lines = ov.content.split('\n');
         var lineSpacing = (ov.letterSpacing || 0) * PT_TO_MM;
@@ -3429,13 +3432,14 @@ function jRenderOverlayItem(c, ov, idx) {
             var lines = jWrapTextWithHyphenation(c, ov._translatedText, w, ov.hyphenate);
 
             // Horizontal alignment
-            if (ov.hAlign === 'center') c.textAlign = 'center';
-            else if (ov.hAlign === 'right') c.textAlign = 'right';
+            var trAlign = ov.hAlign || ov.alignH || 'left';
+            if (trAlign === 'center') c.textAlign = 'center';
+            else if (trAlign === 'right') c.textAlign = 'right';
             else c.textAlign = 'left';
 
             var tx = x;
-            if (ov.hAlign === 'center') tx = x + w / 2;
-            else if (ov.hAlign === 'right') tx = x + w;
+            if (trAlign === 'center') tx = x + w / 2;
+            else if (trAlign === 'right') tx = x + w;
 
             // Vertical alignment
             var totalH = lines.length * lineHeight;
@@ -4415,6 +4419,7 @@ function jRenderOverlayList() {
         var item = document.createElement('div');
         item.className = 'component-item';
         if (i === jState.selectedOverlayIdx) item.classList.add('selected');
+        if (jState.selectedOverlayIndices[i]) item.classList.add('selected');
 
         // Add red dotted border for variable overlays
         if (ov.isVariable) {
@@ -4585,6 +4590,46 @@ function jRenderOverlayList() {
         item.appendChild(rotCW);
         item.appendChild(rotCCW);
 
+        // Inline alignment buttons (L/C/R)
+        var curAlign = ov.hAlign || ov.alignH || 'left';
+        var alignContainer = document.createElement('span');
+        alignContainer.style.cssText = 'display:inline-flex;gap:1px;margin-left:6px;';
+        ['left','center','right'].forEach(function(al) {
+            var ab = document.createElement('button');
+            ab.className = 'icon-btn';
+            ab.textContent = al === 'left' ? 'L' : (al === 'center' ? 'C' : 'R');
+            ab.title = 'Align ' + al;
+            ab.style.cssText = 'font-size:9px;padding:1px 4px;min-width:18px;';
+            if (curAlign === al) {
+                ab.style.background = '#000';
+                ab.style.color = '#fff';
+            }
+            (function(idx, alignVal) {
+                ab.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    jCaptureState();
+                    // If multi-selected, change all selected; otherwise just this one
+                    var targets = Object.keys(jState.selectedOverlayIndices);
+                    if (targets.length > 1 && jState.selectedOverlayIndices[idx]) {
+                        targets.forEach(function(t) {
+                            var ti = parseInt(t);
+                            if (jState.overlays[ti]) {
+                                jState.overlays[ti].alignH = alignVal;
+                                jState.overlays[ti].hAlign = alignVal;
+                            }
+                        });
+                    } else {
+                        jState.overlays[idx].alignH = alignVal;
+                        jState.overlays[idx].hAlign = alignVal;
+                    }
+                    jRenderCanvas();
+                    jRenderOverlayList();
+                });
+            })(i, al);
+            alignContainer.appendChild(ab);
+        });
+        item.appendChild(alignContainer);
+
         // Add trash button for manually added overlays
         if (ov._fromAddButton) {
             var trashBtn = document.createElement('button');
@@ -4613,8 +4658,23 @@ function jRenderOverlayList() {
             item.appendChild(trashBtn);
         }
         (function(idx) {
-            item.addEventListener('click', function() {
-                jState.selectedOverlayIdx = idx;
+            item.addEventListener('click', function(e) {
+                if (e.shiftKey) {
+                    // Toggle this overlay in multi-select
+                    if (jState.selectedOverlayIndices[idx]) {
+                        delete jState.selectedOverlayIndices[idx];
+                    } else {
+                        jState.selectedOverlayIndices[idx] = true;
+                    }
+                    // If only one selected, also set selectedOverlayIdx
+                    var keys = Object.keys(jState.selectedOverlayIndices);
+                    jState.selectedOverlayIdx = keys.length === 1 ? parseInt(keys[0]) : -1;
+                } else {
+                    // Single click — clear multi-select, select only this one
+                    jState.selectedOverlayIndices = {};
+                    jState.selectedOverlayIndices[idx] = true;
+                    jState.selectedOverlayIdx = idx;
+                }
                 jState.selectedTreePath = null;
                 jState.selectedTreePaths = {};
                 jState.lastClickedTreePath = null;
@@ -4779,7 +4839,8 @@ function jOnContentTypeChange() {
     }
 }
 
-function applyContentSettings() {
+function applyContentSettings(evt) {
+    var shiftHeld = evt && evt.shiftKey;
     if (!jState || !jState.pendingContentRegion || !jState.pendingContentType) return;
     var region = jState.pendingContentRegion;
     var type = jState.pendingContentType;
@@ -4897,6 +4958,35 @@ function applyContentSettings() {
         }
     }
 
+    // If shift held and this was a new overlay (not editing), re-enter draw mode
+    if (shiftHeld && comp && jState.editingComponentIdx < 0) {
+        // Keep the content type panel open and re-enter draw mode
+        var savedBRIdx = comp._boundsRectIdx;
+        jState.pendingContentRegion = null;
+        jState.pendingContentType = null;
+        jState.editingComponentIdx = -1;
+        jState._editingTextNode = null;
+        jState._selectedTextNode = null;
+        // Re-enter add overlay mode targeting the same panel
+        jState._fromAddButton = true;
+        jState._addOverlayBRIdx = savedBRIdx;
+        jStartAddOverlay();
+        // If we know the panel, skip directly to drawRegion
+        if (savedBRIdx >= 0) {
+            jState.addOverlayStep = 'drawRegion';
+            jState.addOverlaySelectedBRIdx = savedBRIdx;
+            if (jCanvas) jCanvas.style.cursor = 'crosshair';
+            var hint = _jel('overlay-add-hint');
+            if (hint) { hint.style.display = ''; hint.textContent = 'Batch mode: Draw next region. Esc to stop.'; }
+        }
+        // Re-show the content type panel for the next overlay
+        var panel = _jel('content-type-panel');
+        // Don't show it yet — wait for draw to complete
+        jRenderCanvas();
+        jRenderOverlayList();
+        return;
+    }
+
     jState.editingComponentIdx = -1;
     jState._editingTextNode = null;
     jState._selectedTextNode = null;
@@ -4978,7 +5068,7 @@ function jCollectTextData(region) {
         fontFamily: fontName, fontId: fontId ? parseInt(fontId) : null,
         fontSize: fontSize, bold: bold, italic: italic,
         color: color, letterSpacing: letterSpacing,
-        alignH: alignH, alignV: alignV,
+        alignH: alignH, hAlign: alignH, alignV: alignV,
         content: (_jel('ct-text-value') || {}).value || '',
         visible: true, locked: false, isVariable: false
     };

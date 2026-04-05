@@ -197,7 +197,8 @@
                     </div>
                     <div id="ct-buttons" class="ts-buttons" style="display: none;">
                         <button type="button" onclick="cancelContentSettings()">Cancel</button>
-                        <button type="button" class="btn-active" onclick="applyContentSettings()">Apply</button>
+                        <button type="button" class="btn-active" onclick="applyContentSettings(event)">Apply</button>
+                        <span id="ct-batch-hint" style="font-size:9px;color:#666;margin-left:4px;">Shift+Apply to add another</span>
                     </div>
                 </div>
             </div>
@@ -243,6 +244,7 @@
                         <button class="icon-btn" id="overlay-toggle-lock" onclick="jToggleAllOverlayLock()" title="Toggle all lock">🔓</button>
                     </div>
                     <div id="overlay-add-hint" style="display:none;font-size:11px;color:#666;padding:2px 4px;"></div>
+                    <div id="overlay-multiselect-hint" style="font-size:9px;color:#999;padding:2px 4px;">Shift+Click to multi-select</div>
                     <div id="overlay-list">
                         <div class="empty-message">No overlays added</div>
                     </div>
